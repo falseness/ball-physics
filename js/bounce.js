@@ -7,7 +7,9 @@ class Bounce
         
         this.pointsCount = 100
         
-        this.color = '#ffb6c1'
+        this.color = THEME.cyan
+        this.dotRadius = 4
+        this.spacing = 6
     }
     calc(coords)
     {
@@ -47,29 +49,26 @@ class Bounce
         if (!this.drawEnable)
             this.positions = []
     }
+    // Predicted path: small hollow cyan circles, fading along the path
     draw()
     {
-        if (this.drawEnable)
+        if (!this.drawEnable || this.positions.length == 0)
+            return
+        ctx.save()
+        ctx.strokeStyle = this.color
+        ctx.lineWidth = 1.2
+        const n = this.positions.length
+        let lx = -1e9, ly = -1e9
+        for (let i = 0; i < n; ++i)
         {
-            ctx.strokeStyle = this.color
-            
-            let startLineWidth = ctx.lineWidth
-            
-            ctx.lineWidth = ball.radius
-            
-            for (let i = 1; i < this.positions.length; ++i)
-            {
-                ctx.beginPath()
-                ctx.globalAlpha = (this.positions.length - i) / this.positions.length
-                ctx.moveTo(this.positions[i - 1].x, this.positions[i - 1].y)
-                ctx.lineTo(this.positions[i].x, this.positions[i].y)
-                ctx.stroke()
-                ctx.closePath()
-            }
-            ctx.globalAlpha = 1
-            
-            ctx.lineWidth = startLineWidth
+            const p = this.positions[i]
+            if (Math.hypot(p.x - lx, p.y - ly) < this.spacing)     // skip circles that would overlap the previous one
+                continue
+            lx = p.x; ly = p.y
+            ctx.globalAlpha = 0.9 * (n - i) / n
+            ctx.beginPath(); ctx.arc(p.x, p.y, this.dotRadius, 0, Math.PI * 2); ctx.stroke()
         }
+        ctx.restore()
     }
 }
 let bounce = new Bounce()
