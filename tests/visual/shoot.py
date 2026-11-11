@@ -149,6 +149,14 @@ def sc_complete_last(page, info):
     frames(page)
 
 
+def sc_resized(page, info):
+    # Start screen, then grow the window; the canvas keeps its start size (original behaviour).
+    frames(page)
+    page.set_viewport_size({'width': 1600, 'height': 1000})
+    frames(page, 3)
+    info['viewport'] = [1600, 1000]
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -161,6 +169,7 @@ SCENARIOS = {
     'menu_level': sc_menu_level,
     'complete_next': sc_complete_next,
     'complete_last': sc_complete_last,
+    'resized': sc_resized,
 }
 
 

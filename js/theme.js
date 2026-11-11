@@ -17,3 +17,7 @@ const THEME = Object.freeze({
     fontStack: '"Caveat", cursive'
 })
 window.THEME = THEME
+// Page background behind the canvas (the canvas is not resized when the window grows,
+// so the area around it must match the darkest background stop instead of white).
+document.documentElement.style.background = THEME.bg[2]
+if (document.body) document.body.style.background = THEME.bg[2]
