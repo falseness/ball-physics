@@ -24,6 +24,7 @@
 <body>
     <canvas id = "canvas" width = "1024" height = "750"></canvas>
     <script src = "js/theme.js"></script>
+    <script src = "js/sketch.js"></script>
     <script src = "js/sprite.js"></script>
     <script src = "js/line.js"></script>
     <script src = "js/levels.js"></script>
@@ -81,6 +82,7 @@
                 return false
             line.posX2 = coords[0]
             line.posY2 = coords[1]
+            line.type = 'player'
             lines.push(line)
             
             return true
