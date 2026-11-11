@@ -171,15 +171,27 @@ function drawLogo()
 }
 function guide()
 {
+    // Level-1 tutorial hints: handwritten THEME text at the original positions, each with a
+    // small hand-drawn arrow toward the point to click. Seeded rng -> identical every frame.
     if (thisLevel == 0)
     {
-        ctx.textAlign = 'center'
-        ctx.font = "20px Arial"
-        ctx.beginPath()
-        ctx.fillStyle = menuColor
+        const R = sketchRng(1161), col = THEME.soft
+        ctx.save()
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+        ctx.font = '26px ' + THEME.fontStack
+        ctx.fillStyle = col; ctx.globalAlpha = .95
         ctx.fillText('Click here', 800, 160)
         ctx.fillText('and here', 260, 480)
-        ctx.fillText('to draw line', 260, 500)
-        ctx.closePath()
+        ctx.fillText('to draw line', 260, 504)
+        guideArrow(R, 806, 170, 788, 202, col)
+        guideArrow(R, 330, 481, 306, 457, col)
+        ctx.restore()
     }
+}
+function guideArrow(R, x1, y1, x2, y2, color)
+{
+    ctx.save(); ctx.globalAlpha = .9
+    handLine(ctx, R, x1, y1, x2, y2, color, 1.4, 2, 1.2, 0)
+    arrowHead(ctx, x2, y2, Math.atan2(y2 - y1, x2 - x1), 7, color)
+    ctx.restore()
 }
