@@ -1,4 +1,3 @@
-let lineColor = '#0000ff'
 let levelLineColor = '#3e1170'
 let lines = []
 
