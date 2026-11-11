@@ -116,6 +116,7 @@ function draw()
 
     drawFlag(levels[thisLevel].flagX, levels[thisLevel].flagY, THEME.ink, THEME.coral)
     drawLines()
+    drawAnnotations()
     
     bounce.draw()
     
