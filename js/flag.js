@@ -7,20 +7,30 @@ let flagCoords =
     [0, -50]
 ], flag = []
 
-function drawFlag(x, y, color1, color2)
+// Ice pole + coral-hatched pennant, built from the rotated `flag` polygon (see levelChoosed),
+// so levels with flagRotate render the pennant attached to its pole.
+// flag[0..2] + origin = pole rectangle, flag[2..4] = pennant triangle (flag[2] and flag[4] lie on the pole).
+function drawFlag(x, y, poleColor, pennantColor)
 {
-    ctx.beginPath()
-
-    ctx.strokeStyle = color1
-    ctx.moveTo(x, y)
-    ctx.lineTo(x + flag[0][0], y + flag[0][1])
-    ctx.stroke()
-    ctx.fillStyle = color2
-    for (let i = 1; i < flag.length; ++i)
-        ctx.lineTo(x + flag[i][0], y + flag[i][1])
-    ctx.fill()
-
-    ctx.closePath()
+    if (flag.length < 5)
+        return
+    const P = flag.map(p => [x + p[0], y + p[1]])
+    const R = sketchRng(sketchSeed([x, y, P[3][0], P[3][1]]))
+    const tri = [P[2], P[3], P[4]]
+    const xs = tri.map(p => p[0]), ys = tri.map(p => p[1])
+    const bx = Math.min(...xs), by = Math.min(...ys)
+    hatch(ctx, () => { ctx.beginPath(); ctx.moveTo(...tri[0]); ctx.lineTo(...tri[1]); ctx.lineTo(...tri[2]); ctx.closePath() },
+        bx, by, Math.max(...xs) - bx, Math.max(...ys) - by, Math.PI / 4, 4, pennantColor, 1.4, .9)
+    ctx.save()
+    ctx.shadowColor = 'rgba(255,106,85,0.6)'; ctx.shadowBlur = 8
+    handLine(ctx, R, P[2][0], P[2][1], P[3][0], P[3][1], pennantColor, 1.6, 2, 0.8, 1)
+    handLine(ctx, R, P[3][0], P[3][1], P[4][0], P[4][1], pennantColor, 1.6, 2, 0.8, 1)
+    ctx.shadowColor = 'rgba(190,230,255,0.55)'
+    // pole along the edge the pennant hangs from: origin -> flag[2]
+    handLine(ctx, R, x, y, P[2][0], P[2][1], poleColor, 2.6, 2, 0.6, 1)
+    ctx.fillStyle = poleColor
+    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
 }
 function flagLineCollision(x1, y1, x2, y2, x0, y0, r)
 {

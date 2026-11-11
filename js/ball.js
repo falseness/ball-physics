@@ -32,15 +32,22 @@ class Ball extends Sprite
         this.radius = radius
         this.angle = 1
     }
+    // Compass-drawn circle in ice ink: hatch shading on the lower-right half, small centre cross, soft glow.
+    // rng is seeded from the radius only, so the stroke is identical every frame and just travels with the ball.
     draw()
     {
-        
+        const x = this.posX, y = this.posY, r = this.radius, R = sketchRng(sketchSeed([r, 61]))
+        hatch(ctx, () => { ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 4, Math.PI * 3 / 4); ctx.closePath() },
+            x - r, y - r, r * 2, r * 2, -Math.PI / 4, 3.2, THEME.ink, 1, .8)
+        ctx.save()
+        ctx.shadowColor = 'rgba(190,230,255,0.55)'; ctx.shadowBlur = 8
+        handCircle(ctx, R, x, y, r, THEME.ink, 2, 1.05)
+        ctx.strokeStyle = THEME.ink; ctx.lineWidth = 1
         ctx.beginPath()
-        ctx.fillStyle = this.color
-        ctx.arc(this.posX, this.posY, this.radius, 0, Math.PI * 2, false)
-        ctx.fill()
-        ctx.closePath()
-        
+        ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y)
+        ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4)
+        ctx.stroke()
+        ctx.restore()
     }
     collisionWithDot(x, y)
     {

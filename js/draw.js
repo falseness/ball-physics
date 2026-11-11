@@ -91,6 +91,19 @@ function drawIcons()
     drawLinesK()
     menuIcon()
 }
+// Dashed circle + handwritten 'start' at the level's spawn point; only shown before the level runs
+function drawStartMarker(x, y)
+{
+    ctx.save()
+    ctx.strokeStyle = THEME.soft; ctx.globalAlpha = .7; ctx.lineWidth = 1.2
+    ctx.setLineDash([4, 4])
+    ctx.beginPath(); ctx.arc(x, y, ball.radius + 6, 0, Math.PI * 2); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.globalAlpha = .9; ctx.fillStyle = THEME.soft
+    ctx.font = '22px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+    ctx.fillText('start', x, y - ball.radius - 12)
+    ctx.restore()
+}
 function draw()
 {
     if (!bgCanvas)
@@ -101,11 +114,13 @@ function draw()
     drawIcons()
 
 
-    drawFlag(levels[thisLevel].flagX, levels[thisLevel].flagY, '#ff0000', '#ff0000')
+    drawFlag(levels[thisLevel].flagX, levels[thisLevel].flagY, THEME.ink, THEME.coral)
     drawLines()
     
     bounce.draw()
     
+    if (!levelStarted)
+        drawStartMarker(levels[thisLevel].ballX, levels[thisLevel].ballY)
     ball.draw()
     drawNewLine()
     levelCompleted()
