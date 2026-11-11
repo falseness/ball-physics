@@ -94,6 +94,37 @@ def sc_menu(page, info):
     click(page, x, y)
 
 
+def open_menu(page):
+    x, y = page.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]")
+    click(page, x, y)
+
+
+def sc_menu_restart(page, info):
+    # Place a line on level3 first so the restart has something to reset.
+    sc_placed(page, info)
+    open_menu(page)
+    info['before'] = page.evaluate("({thisLevel, linesK, drawMenu, nLines: lines.length})")
+    # Centre of the 'restart' button rect, from the same expressions the click handler uses (i = 1).
+    x, y = page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+        menuCoords[1] + 300 + 1 * 85 + menuTextRect[1] / 2]""")
+    info['click'] = [x, y]
+    click(page, x, y)
+
+
+def sc_menu_level(page, info):
+    frames(page)
+    # Level 2 starts locked; unlock it exactly as completing level 1 does
+    # (levels[0].unlock = 2, levels[1].unlock = 1) so its square is clickable.
+    page.evaluate("() => { levels[0].unlock = 2; levels[1].unlock = Math.max(levels[1].unlock, 1) }")
+    open_menu(page)
+    info['before'] = page.evaluate("({thisLevel, drawMenu})")
+    # Centre of level square 2 (i = 1), same expressions as levelsRectCollision().
+    x, y = page.evaluate("""[menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * 1 + rectSize / 2,
+        menuCoords[1] + rectMarginTop + rectSize / 2]""")
+    info['click'] = [x, y]
+    click(page, x, y)
+
+
 def sc_complete(page, info):
     frames(page)
     page.evaluate("() => { levelCompletedWindow = true }")
@@ -108,6 +139,8 @@ SCENARIOS = {
     'running': sc_running,
     'menu': sc_menu,
     'complete': sc_complete,
+    'menu_restart': sc_menu_restart,
+    'menu_level': sc_menu_level,
 }
 
 

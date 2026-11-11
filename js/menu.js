@@ -3,16 +3,49 @@ let menuCoords = [canvas.width / 2, 50]
 let menuSize = [400, 650]
 let menuButtons = ['resume', 'restart', 'Levels']
 
+// Translucent navy overlay behind the pause menu / level-complete window.
+// Leaves a centred THEME-font text state behind (levelCompleted() relies on it).
 function eclipse()
 {
-    ctx.beginPath()
-    ctx.fillStyle = menuBackgroundColor
-    ctx.rect(0, 0, canvas.width, canvas.height)
-    ctx.fill()
-    
-    ctx.font = "30px Arial"
+    ctx.fillStyle = 'rgba(4,15,30,0.62)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.font = "30px " + THEME.fontStack
     ctx.textAlign = "center"
-    ctx.closePath()
+    ctx.textBaseline = "alphabetic"
+}
+// Dark glass panel with a 1.5px cyan border and a soft glow
+function glassPanel(x, y, w, h)
+{
+    ctx.save()
+    ctx.fillStyle = 'rgba(7,26,48,0.85)'
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = THEME.cyan; ctx.lineWidth = 1.5
+    ctx.shadowColor = THEME.cyan; ctx.shadowBlur = 10
+    ctx.strokeRect(x, y, w, h)
+    ctx.restore()
+}
+// Cyan outlined button rect (same rect the click handler tests) with a handwritten label centred in it
+function menuButton(x, y, w, h, label)
+{
+    ctx.save()
+    ctx.fillStyle = 'rgba(130,210,255,0.06)'
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = THEME.cyan; ctx.lineWidth = 1.5
+    ctx.shadowColor = THEME.cyan; ctx.shadowBlur = 6
+    ctx.strokeRect(x, y, w, h)
+    ctx.shadowBlur = 0
+    menuLabel(label, x + w / 2, y + h / 2)
+    ctx.restore()
+}
+function menuLabel(text, x, y, size = 34, color = THEME.ink)
+{
+    ctx.save()
+    ctx.font = size + "px " + THEME.fontStack
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"
+    ctx.fillStyle = color
+    ctx.shadowColor = 'rgba(190,230,255,0.45)'; ctx.shadowBlur = 6
+    ctx.fillText(text, x, y)
+    ctx.restore()
 }
 function collisionWithRect(x, y, x1, y1, x2, y2)
 {
@@ -25,22 +58,17 @@ function menu()
     if (drawMenu)
     {
         eclipse()
-        ctx.beginPath()
-        ctx.fillStyle = '#ffffff'
-        ctx.strokeStyle = '#000000'
-        ctx.rect(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
-        ctx.fill()
-        ctx.fillStyle = menuColor
-        
+        glassPanel(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
         for (let i = 0; i < menuButtons.length; ++i)
         {
-            ctx.fillText(menuButtons[i], menuCoords[0] + menuSize[0] / 2, menuCoords[1] + 335 + 85 * i)
             if (i == 2)
+            {
+                // 'Levels' heading above the level grid (no button rect, as before)
+                menuLabel(menuButtons[i], menuCoords[0] + menuSize[0] / 2, menuCoords[1] + 335 + 85 * i - 10, 34, THEME.soft)
                 continue
-            ctx.rect(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + 300 + i * 85, menuTextRect[0], menuTextRect[1])
+            }
+            menuButton(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + 300 + i * 85, menuTextRect[0], menuTextRect[1], menuButtons[i])
         }
-        ctx.stroke()
-        ctx.closePath()
         drawLevels()
         drawLogo()
     }
@@ -107,41 +135,39 @@ function drawLinesK()
     }
     ctx.restore()
 }
+// Logo: handwritten title over a small framed sketch (ice ball resting on a coral line)
 function drawLogo()
 {
+    const x0 = menuCoords[0], y0 = menuCoords[1]
+    menuLabel('Ball physics', x0 + menuSize[0] / 2, y0 + 38, 52)
+    ctx.save()
+    ctx.strokeStyle = 'rgba(130,210,255,0.45)'; ctx.lineWidth = 1
+    ctx.strokeRect(x0 + 30.5, y0 + 70.5, menuSize[0] - 30 * 2, 215)
+    // faint grid inside the frame
+    ctx.strokeStyle = THEME.grid.minor
     ctx.beginPath()
-    ctx.fillStyle = menuColor
-    ctx.textAling = 'center'
-    ctx.fillText('Ball physics', menuCoords[0] + menuSize[0] / 2, menuCoords[1] + 50)
-    ctx.rect(menuCoords[0] + 30, menuCoords[1] + 70, menuSize[0] - 30 * 2, 215)
-    ctx.strokeStyle = '#000000'
+    for (let gx = x0 + 30.5 + 20; gx < x0 + menuSize[0] - 30; gx += 20) { ctx.moveTo(gx, y0 + 71); ctx.lineTo(gx, y0 + 285) }
+    for (let gy = y0 + 70.5 + 20; gy < y0 + 285; gy += 20) { ctx.moveTo(x0 + 31, gy); ctx.lineTo(x0 + menuSize[0] - 30, gy) }
     ctx.stroke()
-    ctx.closePath()
-    
-    ctx.beginPath()
-    ctx.fillStyle = menuColor
-    ctx.arc(menuCoords[0] + 220, menuCoords[1] + 180, 30, 0, Math.PI * 2, false)
-    ctx.fill()
-    ctx.closePath()
-    
-    ctx.beginPath()
-    let x1 = menuCoords[0] + 50
-    let y1 = menuCoords[1] + 120
-    let x2 = menuCoords[0] + 320
-    let y2 = menuCoords[1] + 270
-        
-    ctx.strokeStyle = lineColor
-    ctx.moveTo(x1, y1)
-    ctx.lineTo(x2, y2)
-    ctx.stroke() 
-    ctx.closePath()
-    
-    ctx.beginPath()
-    ctx.fillStyle = lineColor
-    ctx.arc(x1, y1, dotRadius, 0, Math.PI * 2, false)
-    ctx.arc(x2, y2, dotRadius, 0, Math.PI * 2, false)
-    ctx.fill()
-    ctx.closePath()
+    ctx.restore()
+
+    const x1 = x0 + 50, y1 = y0 + 120, x2 = x0 + 320, y2 = y0 + 270
+    const bx = x0 + 220, by = y0 + 180, r = 30
+    const R = sketchRng(sketchSeed([x1, y1, x2, y2, 9]))
+    ctx.save()
+    ctx.shadowColor = THEME.coral; ctx.shadowBlur = 8
+    handLine(ctx, R, x1, y1, x2, y2, THEME.coral, 2.4, 2, 1.2, 0)
+    handCircle(ctx, R, x1, y1, 5, THEME.coral, 1.6)
+    handCircle(ctx, R, x2, y2, 5, THEME.coral, 1.6)
+    ctx.restore()
+    hatch(ctx, () => { ctx.beginPath(); ctx.arc(bx, by, r, -Math.PI / 4, Math.PI * 3 / 4); ctx.closePath() },
+        bx - r, by - r, r * 2, r * 2, -Math.PI / 4, 3.6, THEME.ink, 1, .8)
+    ctx.save()
+    ctx.shadowColor = 'rgba(190,230,255,0.55)'; ctx.shadowBlur = 8
+    handCircle(ctx, R, bx, by, r, THEME.ink, 2, 1.05)
+    ctx.strokeStyle = THEME.ink; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(bx - 5, by); ctx.lineTo(bx + 5, by); ctx.moveTo(bx, by - 5); ctx.lineTo(bx, by + 5); ctx.stroke()
+    ctx.restore()
 }
 function guide()
 {
