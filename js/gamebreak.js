@@ -10,27 +10,18 @@ function levelCompleted()
 {
     if (levelCompletedWindow)
     {
-        let textMargin = 34
-        let nextLevelButton = [250]
+        // Same look as the pause menu: navy overlay, dark glass panel, cyan outlined buttons.
+        // Button rects are exactly the ones the click handler in index.html tests (blocks[1], blocks[2]).
+        const bx = menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2
+        const cx = menuCoords[0] + menuSize[0] / 2
         eclipse()
-        ctx.beginPath()
-        ctx.fillStyle = '#ffffff'
-        ctx.strokeStyle = '#000000'
-        ctx.rect(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
-        ctx.rect(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + blocks[2], menuTextRect[0], menuTextRect[1])
+        glassPanel(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
+        menuLabel('Level completed!', cx, menuCoords[1] + blocks[0] + menuTextRect[1] / 2, 38, THEME.coral)
         if (thisLevel + 1 < levels.length)
-            ctx.rect(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + blocks[1], menuTextRect[0], menuTextRect[1])
-        ctx.fill()
-
-        ctx.fillStyle = menuColor
-        if (thisLevel + 1 < levels.length)
-            ctx.fillText('next level', menuCoords[0] + menuSize[0] / 2, menuCoords[1] + blocks[1] + textMargin)
+            menuButton(bx, menuCoords[1] + blocks[1], menuTextRect[0], menuTextRect[1], 'next level')
         else
-            ctx.fillText('Thanks for playing!', menuCoords[0] + menuSize[0] / 2, menuCoords[1] + blocks[1] + textMargin)
-        ctx.fillText('Level completed!', menuCoords[0] + menuSize[0] / 2, menuCoords[1] + blocks[0] + textMargin)
-        ctx.fillText('restart', menuCoords[0] + menuSize[0] / 2, menuCoords[1] + blocks[2] + textMargin)
-        ctx.stroke()
-        ctx.closePath()
+            menuLabel('Thanks for playing!', cx, menuCoords[1] + blocks[1] + menuTextRect[1] / 2, 34, THEME.soft)
+        menuButton(bx, menuCoords[1] + blocks[2], menuTextRect[0], menuTextRect[1], 'restart')
         drawLevels()
         drawLogo()
     }

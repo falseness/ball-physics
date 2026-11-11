@@ -131,6 +131,24 @@ def sc_complete(page, info):
     frames(page)
 
 
+def sc_complete_next(page, info):
+    # Level index 0 with the level-complete window open, then click the centre of the
+    # 'next level' rect, from the same expressions the click handler uses (blocks[1]).
+    sc_complete(page, info)
+    info['before'] = page.evaluate("({thisLevel, levelCompletedWindow})")
+    x, y = page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+        menuCoords[1] + blocks[1] + menuTextRect[1] / 2]""")
+    info['click'] = [x, y]
+    click(page, x, y)
+
+
+def sc_complete_last(page, info):
+    # Last level: the window shows 'Thanks for playing!' instead of the next-level button.
+    frames(page)
+    page.evaluate("() => { thisLevel = levels.length - 1; levelChoosed(thisLevel); levelCompletedWindow = true }")
+    frames(page)
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -141,6 +159,8 @@ SCENARIOS = {
     'complete': sc_complete,
     'menu_restart': sc_menu_restart,
     'menu_level': sc_menu_level,
+    'complete_next': sc_complete_next,
+    'complete_last': sc_complete_last,
 }
 
 
