@@ -49,51 +49,63 @@ function menuIcon()
 {
     if (drawMenuIcon)
     {
-        ctx.beginPath()
-        ctx.strokeStyle = '#000000'
-        ctx.rect(menuIconRect[0][0], menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1])
-        ctx.stroke()
-        ctx.closePath()
-
-        ctx.beginPath()
-        ctx.fillStyle = menuColor
+        const x = menuIconRect[0][0], y = menuIconRect[0][1]
+        ctx.save()
+        hudBox(x, y)
+        ctx.fillStyle = THEME.ink
+        ctx.shadowColor = 'rgba(130,210,255,0.6)'; ctx.shadowBlur = 6
         for (let i = 0; i < menuIconLine.length; i += 2)
-        {
-            ctx.rect(menuIconRect[0][0] + menuIconLine[i][0], menuIconRect[0][1] + menuIconLine[i][1],
-                        53, 8)
-            ctx.fill()
-        }
-        ctx.closePath()
+            ctx.fillRect(x + menuIconLine[i][0], y + menuIconLine[i][1], 53, 8)
+        ctx.restore()
     }
+}
+// 1.5px cyan outlined HUD box with a soft glow (hit areas are computed elsewhere from menuIconRect)
+function hudBox(x, y)
+{
+    ctx.save()
+    ctx.strokeStyle = THEME.cyan; ctx.lineWidth = 1.5
+    ctx.shadowColor = THEME.cyan; ctx.shadowBlur = 8
+    ctx.fillStyle = 'rgba(7,26,48,0.55)'
+    ctx.fillRect(x, y, menuIconRect[1][0], menuIconRect[1][1])
+    ctx.strokeRect(x, y, menuIconRect[1][0], menuIconRect[1][1])
+    ctx.restore()
 }
 function drawStartIcon()
 {
+    ctx.save()
+    hudBox(menuIconRect[0][0] - 73, menuIconRect[0][1])
+    const c = physics ? THEME.physicsOn : THEME.coral
+    ctx.fillStyle = c
+    ctx.shadowColor = c; ctx.shadowBlur = 8
     ctx.beginPath()
-    ctx.strokeStyle = '#000000'
-    ctx.rect(menuIconRect[0][0] - 73, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1])
-    ctx.stroke()
-    ctx.closePath()
-
-    ctx.beginPath()
-    if (physics)
-        ctx.fillStyle = '#00ff00'
-    else
-        ctx.fillStyle = menuColor
     ctx.moveTo(startIconTriangle[startIconTriangle.length - 1][0], startIconTriangle[startIconTriangle.length - 1][1])
     for (let i = 0; i < startIconTriangle.length; ++i)
-    {
         ctx.lineTo(startIconTriangle[i][0], startIconTriangle[i][1])
-    }
-    ctx.fill()
     ctx.closePath()
+    ctx.fill()
+    ctx.restore()
 }
+// Line counter option A: one mini line glyph per allowed line; used = coral, free = dashed cyan
 function drawLinesK()
 {
-    ctx.fillStyle = menuColor
-    let textLinesKCoords = [canvas.width - 120, 63 + 20 + 30]
-    ctx.textAlign = "left"
-    ctx.font = "20px Arial"
-    ctx.fillText('Lines: ' + linesK + ' / ' + levels[thisLevel].lineK, textLinesKCoords[0], textLinesKCoords[1])
+    const n = levels[thisLevel].lineK, x0 = canvas.width - 120, cy = 63 + 20 + 30
+    const w = 26, h = 10, step = 36, r = 3
+    ctx.save()
+    ctx.lineCap = 'round'
+    for (let i = 0; i < n; ++i)
+    {
+        const used = i < linesK, c = used ? THEME.coral : THEME.cyan
+        const x1 = x0 + i * step, y1 = cy + h / 2, x2 = x1 + w, y2 = cy - h / 2
+        const a = Math.atan2(y2 - y1, x2 - x1), dx = Math.cos(a) * r, dy = Math.sin(a) * r
+        ctx.strokeStyle = c; ctx.lineWidth = used ? 1.8 : 1.4
+        ctx.shadowColor = c; ctx.shadowBlur = 6
+        ctx.setLineDash(used ? [] : [3, 3])
+        ctx.beginPath(); ctx.moveTo(x1 + dx, y1 + dy); ctx.lineTo(x2 - dx, y2 - dy); ctx.stroke()
+        ctx.setLineDash([]); ctx.lineWidth = 1.4
+        ctx.beginPath(); ctx.arc(x1, y1, r, 0, Math.PI * 2); ctx.stroke()
+        ctx.beginPath(); ctx.arc(x2, y2, r, 0, Math.PI * 2); ctx.stroke()
+    }
+    ctx.restore()
 }
 function drawLogo()
 {
