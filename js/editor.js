@@ -5,7 +5,9 @@
 // Working copy shape: {ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [Line], portals: [] | [A, B]}.
 // 'exit' writes the copy back to levels[thisLevel] (this session only) and reloads the level.
 let editorMode = false
-let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null }
+let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null }
+const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
+const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
 
 // Toolbar: glass panel at the top-left, clear of the top-right HUD.
 // kind 'tool' = selectable tool (editor.tool), 'action' = one-shot action (editor.lastAction),
@@ -67,6 +69,7 @@ function editorOpen()
     editor.level = editorCloneLevel(levels[thisLevel])
     editor.tool = 'select'
     editor.lastAction = null
+    editor.pending = null
     editorMode = true
 }
 
@@ -84,6 +87,7 @@ function editorExit()
         delete L.portals
     editorMode = false
     editor.level = null
+    editor.pending = null
     levelChoosed(thisLevel)
 }
 
@@ -100,16 +104,70 @@ function editorClick(coords)
 {
     const b = editorButtonAt(coords)
     if (!b)
-        return // play-field tools: later tickets
+    {
+        const R = editorBarRect()
+        if (collisionWithRect(coords[0], coords[1], R[0], R[1], R[0] + R[2], R[1] + R[3]))
+            return // toolbar panel background
+        if (editor.tool == 'line')
+            editorLineClick(coords)
+        else if (editor.tool == 'delete')
+            editorDeleteAt(coords)
+        return
+    }
     if (b.kind == 'tool')
     {
         editor.tool = b.id
+        editor.pending = null
         return
     }
     editor.lastAction = b.id
     editor.actions++
     if (b.id == 'exit')
         editorExit()
+}
+
+// Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
+// working copy with dotСorrection); appends a level line. Zero-length lines are ignored.
+function editorLineClick(coords)
+{
+    const W = editor.level
+    const c = dotСorrection(coords[0], coords[1], dotRadius, W.lines)
+    if (!editor.pending)
+    {
+        editor.pending = [c[0], c[1]]
+        return
+    }
+    const p = editor.pending
+    editor.pending = null
+    if (p[0] == c[0] && p[1] == c[1])
+        return
+    W.lines.push(new Line(p[0], p[1], c[0], c[1], dotRadius, levelLineColor, 'line'))
+}
+
+// Delete tool: removes the single nearest line within 8 px, or the portal pair when a portal
+// opening is within 12 px; the nearest candidate wins. Elsewhere nothing is removed.
+function editorDeleteAt(coords)
+{
+    const W = editor.level, x = coords[0], y = coords[1]
+    let best = null, bestD = Infinity
+    W.lines.forEach(function(l, i)
+    {
+        const d = pointSegDist(x, y, l.posX, l.posY, l.posX2, l.posY2)
+        if (d <= EDITOR_DELETE_LINE_DIST && d < bestD) { best = ['line', i]; bestD = d }
+    })
+    for (const P of W.portals)
+    {
+        const r = portalRims(P)
+        const d = pointSegDist(x, y, r[0][0], r[0][1], r[1][0], r[1][1])
+        if (d <= EDITOR_DELETE_PORTAL_DIST && d < bestD) { best = ['portal']; bestD = d }
+    }
+    if (!best)
+        return false
+    if (best[0] == 'line')
+        W.lines.splice(best[1], 1)
+    else
+        W.portals = []
+    return true
 }
 
 function editorMouseMove(coords)
@@ -135,6 +193,8 @@ function editorDraw()
     drawPortals(W.portals)
     drawStartMarker(W.ballX, W.ballY)
     Ball.prototype.draw.call({ posX: W.ballX, posY: W.ballY, radius: ball.radius })
+    if (editor.pending && editor.mouse)
+        drawNewLine({ posX: editor.pending[0], posY: editor.pending[1], posX2: editor.mouse[0], posY2: editor.mouse[1] })
     editorDrawToolbar()
 }
 
