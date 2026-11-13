@@ -4,19 +4,26 @@
 // lines (see portalResolve); currentPortals() returns them resolved to {x, y, angle, h, ...}.
 // Front normal n = (cos angle, sin angle), tangent t = (-n.y, n.x); the opening is the
 // segment c ± h·t. For the ball centre p: d = (p - c)·n (signed distance), s = (p - c)·t.
-// A crossing (wall portal, numeric `line`) = d went from > 0 to <= 0 since the previous step
-// (front to back only) while |s| <= h; a legacy free-standing portal (no `line`, test setups)
-// still teleports on a crossing in either direction.
-// Teleport = rotation by (angleExit - angleEntry + PI): local (s, d) at the entry maps to
-// (-s, -d) at the exit and the velocity is rotated by the same angle, so entering a
-// front leaves through the other portal's front, a back leaves through its back.
-// The rims (c ± h·t) are solid points; the portal body is not a collider. A wall portal's host
-// line collides as the pieces outside the opening while the ball centre is in front of the
-// portal (d > 0) and as the whole line from behind (portalHostCollision).
+// Capture by touch (TASK-074, 'generous' edge): a ball on a portal's front (d > 0) moving toward
+// it (v·n < 0) teleports in the first step it touches the opening segment c ± h·t
+// (pointSegDist(centre, opening) <= ball.radius, rims included), so |s| up to h + ball.radius
+// is captured; it is placed at local (-clamp(s, -h, h), d) in front of the exit ('touch').
+// Fallback crossing ('cross', e.g. a ball faster than its radius per step): d went from > 0 to
+// <= 0 since the previous step while |s| <= h (a legacy free-standing portal without `line`
+// also back -> front); it maps (s, d) -> (-s, -d).
+// Both rotate the velocity by (angleExit - angleEntry + PI), so a ball entering a front leaves
+// through the other portal's front, moving away from it.
+// The rims (c ± h·t) are solid points for balls that are not being captured (behind the plane or
+// moving away); the portal body is not a collider. A wall portal's host line collides as the
+// pieces outside the opening while the ball centre is in front of the portal (d > 0) and as the
+// whole line from behind (portalHostCollision). A ball being captured (front, v·n < 0) ignores a
+// piece / line end whose contact point is within h + ball.radius of the portal centre along t
+// (portalCaptureZone); farther contacts bounce as a normal line.
 
 // rims: the first RIM_LOG_MAX rim bounces {step, rim, n, before:[vx,vy], after:[vx,vy]}
 // hostHits: host-line collisions so far; hostHit: the latest {step, line, v: [vx, vy] before}
 const RIM_LOG_MAX = 64
+const PORTAL_EXIT_MIN_D = 1e-6   // touch teleport: minimum exit distance in front of the exit plane
 let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }
 
 function portalReset()
@@ -163,6 +170,10 @@ function portalHostCollision(b, l, list)
         {
             const x1 = a === 0 ? l.posX : l.posX + a * dx, y1 = a === 0 ? l.posY : l.posY + a * dy
             const x2 = c === 1 ? l.posX2 : l.posX + c * dx, y2 = c === 1 ? l.posY2 : l.posY + c * dy
+            // a ball being captured does not bounce off the piece next to the opening (TASK-074)
+            const q = segClosestPoint(b.posX, b.posY, x1, y1, x2, y2)
+            if (portalCaptureZone(b, list, q[0], q[1]))
+                continue
             if (b.collisionWithSegment(x1, y1, x2, y2))
                 hit = true
         }
@@ -171,6 +182,40 @@ function portalHostCollision(b, l, list)
         ++portalState.hostHits
         portalState.hostHit = { step: portalState.steps + 1, line: list[0].line, v: [vx, vy], open: gaps.length > 0 }
     }
+}
+
+// True when ball b is being captured by one of `list` (front side d > 0, moving toward it v·n < 0)
+// and the contact point (qx, qy) lies within h + ball.radius of that portal's centre along t:
+// such a contact (the piece next to the opening, its rim end, a host line end) must not bounce
+// the ball, which touches the opening and teleports instead (TASK-074).
+function portalCaptureZone(b, list, qx, qy)
+{
+    for (const P of list)
+    {
+        const f = portalFrame(P)
+        if (portalLocal(P, b.posX, b.posY).d <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
+            continue
+        if (Math.abs(portalLocal(P, qx, qy).s) <= P.h + b.radius)
+            return true
+    }
+    return false
+}
+
+function segClosestPoint(px, py, x1, y1, x2, y2)
+{
+    const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy
+    const k = L2 > 0 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / L2)) : 0
+    return [x1 + k * dx, y1 + k * dy]
+}
+
+// Ball b touches portal P's opening from its front while moving toward it (capture by touch)
+function portalTouches(P, b)
+{
+    const f = portalFrame(P), L = portalLocal(P, b.posX, b.posY)
+    if (!(L.d > 0) || !(b.speedX * f.nx + b.speedY * f.ny < 0))
+        return false
+    const r = portalRims(P)
+    return pointSegDist(b.posX, b.posY, r[0][0], r[0][1], r[1][0], r[1][1]) <= b.radius
 }
 
 function currentPortals()
@@ -190,19 +235,23 @@ function portalLocal(P, x, y)
     return { s: dx * f.tx + dy * f.ty, d: dx * f.nx + dy * f.ny }
 }
 
-function portalTeleport(A, B, s, d)
+// kind 'touch': local (s, d) -> (-clamp(s, -h, h), max(d, PORTAL_EXIT_MIN_D)) at the exit (in front of it);
+// kind 'cross': (s, d) -> (-s, -d)
+function portalTeleport(A, B, s, d, kind)
 {
     const fb = portalFrame(B)
     const a = B.angle - A.angle + Math.PI, c = Math.cos(a), sn = Math.sin(a)
     const vx = ball.speedX, vy = ball.speedY
     const record = {
-        step: portalState.steps, from: A.name, to: B.name, s: s, d: d,
+        step: portalState.steps, from: A.name, to: B.name, s: s, d: d, kind: kind,
         before: [ball.posX, ball.posY, vx, vy],
         speedBefore: Math.hypot(vx, vy)
     }
-    // local (s, d) -> (-s, -d) at the exit portal
-    ball.posX = B.x - s * fb.tx - d * fb.nx
-    ball.posY = B.y - s * fb.ty - d * fb.ny
+    const se = kind === 'touch' ? Math.max(-B.h, Math.min(B.h, s)) : s
+    // touch: never exactly on the exit plane (a rounded d = 0 would count as 'behind' the exit's host line)
+    const de = kind === 'touch' ? -Math.max(d, PORTAL_EXIT_MIN_D) : d
+    ball.posX = B.x - se * fb.tx - de * fb.nx
+    ball.posY = B.y - se * fb.ty - de * fb.ny
     ball.speedX = vx * c - vy * sn
     ball.speedY = vx * sn + vy * c
     record.after = [ball.posX, ball.posY, ball.speedX, ball.speedY]
@@ -280,9 +329,11 @@ function portalStep()
         portalState.prevD[i] = L.d
         // wall portal: front -> back only; legacy free-standing portal: either direction
         const crossed = (prev > 0 && L.d <= 0) || (typeof P[i].line != 'number' && prev < 0 && L.d >= 0)
-        if (crossed && Math.abs(L.s) <= P[i].h && P[i ^ 1])
+        const kind = !P[i ^ 1] ? null : portalTouches(P[i], ball) ? 'touch'
+                   : crossed && Math.abs(L.s) <= P[i].h ? 'cross' : null
+        if (kind)
         {
-            portalTeleport(P[i], P[i ^ 1], L.s, L.d)
+            portalTeleport(P[i], P[i ^ 1], L.s, L.d, kind)
             // at most one teleport per step; every stored side (the exit's included)
             // becomes the ball's new side, so the exit cannot re-trigger next step
             for (let k = 0; k < P.length; ++k)

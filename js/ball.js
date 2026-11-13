@@ -112,13 +112,16 @@ class Ball extends Sprite
         const hosts = portalHosts()
         for (let i = 0; i < lines.length; ++i)
         {
-            if (this.collisionWithDot(lines[i].posX, lines[i].posY) || this.collisionWithDot(lines[i].posX2, lines[i].posY2))
+            const host = hosts && hosts.get(lines[i])
+            // a ball being captured by a portal on this line ignores a line end next to the opening (TASK-074)
+            if (host ? (!portalCaptureZone(this, host, lines[i].posX, lines[i].posY) && this.collisionWithDot(lines[i].posX, lines[i].posY)) ||
+                       (!portalCaptureZone(this, host, lines[i].posX2, lines[i].posY2) && this.collisionWithDot(lines[i].posX2, lines[i].posY2))
+                     : this.collisionWithDot(lines[i].posX, lines[i].posY) || this.collisionWithDot(lines[i].posX2, lines[i].posY2))
                 break
             /*
             y1 = kx1 + b
             y2 = kx2 + b
             */
-            const host = hosts && hosts.get(lines[i])
             if (host)
                 portalHostCollision(this, lines[i], host)
             else

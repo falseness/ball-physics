@@ -263,11 +263,13 @@ LEVEL11_MAX_FRAMES = 3000
 LEVEL12_LINE = ((312, 214), (388, 240))
 LEVEL12_MAX_FRAMES = 3000
 
-# Level 13 'accelerator' reference solution (TASK-071; level 12 until TASK-072): two player lines (lineK 4). The ramp under the
-# ball rolls it right onto floor portal A; it loops A -> B (shelf underside) five times, gaining speed
-# on every pass, then flies up-left into the flag (completed on physics frame 612). Searched headlessly
-# with in-page stepped frames; the motion is chaotic, so keep these exact integer coordinates.
-LEVEL13_LINES = (((394, 678), (710, 752)), ((663, 202), (594, 249)))
+# Level 13 'accelerator' reference solution (TASK-074; was TASK-071's (394,678)-(710,752) + (663,202)-(594,249),
+# which stopped winning once portal edges capture by touch): two player lines (lineK 4). The ramp under
+# the ball rolls it right onto floor portal A; it loops A -> B (shelf underside) twice, gaining speed,
+# and the second line (589,381)-(712,393), left of the shelf, kicks it up-left into the flag (completed
+# on physics frame 262). Searched headlessly with in-page stepped frames (artifacts/TASK-074/design.md);
+# 14 of 17 single-coordinate +-3 px variants also win, but keep these exact integer coordinates.
+LEVEL13_LINES = (((381, 679), (696, 744)), ((589, 381), (712, 393)))
 LEVEL13_MAX_FRAMES = 3000
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.

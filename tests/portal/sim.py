@@ -16,6 +16,8 @@ S1-S4, S6-S14 (TASK-065) run with wall portals too: wcfg() cuts every scenario p
 check_geometry() asserts the resolved portal is exactly the scenario's free-standing geometry.
 S5 (back-side entry) is retired: wall portals are one-sided. Legacy {x, y, angle} portals are
 no longer exercised by these scenarios.
+W7 (TASK-074) replays artifacts/portal_physics.png (edge capture sweep) and writes
+artifacts/<task>/edge.json and edge.png.
 W1-W6 (--scenarios W1,...) run one-sided wall portals ({line, u, side} on the scenario's own
 lines, installed by __portalTest.setup({wall: true, ...}) as a scratch level).
 --out: a bare file name is written to artifacts/<task>/, a path with a directory as given.
@@ -54,9 +56,18 @@ def local(P, x, y):
     return dx * tx + dy * ty, dx * nx + dy * ny
 
 
-def mapped(A, B, x, y, vx, vy):
-    """Independent recomputation of the teleport: (s, d) -> (-s, -d), velocity rotated."""
+EXIT_MIN_D = 1e-6      # js/portal.js PORTAL_EXIT_MIN_D
+
+
+def mapped(A, B, x, y, vx, vy, kind=None):
+    """Independent recomputation of the teleport, velocity rotated by angB - angA + PI.
+    TASK-074 'touch' capture (entry d > 0): (s, d) -> (-clamp(s, -h, h), max(d, 1e-6)) at the exit;
+    'cross' fallback (entry d <= 0): (s, d) -> (-s, -d). kind defaults to the sign of the entry d."""
     s, d = local(A, x, y)
+    if kind is None:
+        kind = 'touch' if d > 0 else 'cross'
+    if kind == 'touch':
+        s, d = max(-B['h'], min(B['h'], s)), -max(d, EXIT_MIN_D)
     nx, ny, tx, ty = frame(B)
     a = B['angle'] - A['angle'] + PI
     c, sn = math.cos(a), math.sin(a)
@@ -117,7 +128,7 @@ def teleport_checks(st, A, B, chk):
         return None
     t = tps[0]
     bx, by, bvx, bvy = t['before']
-    ex, ey, evx, evy = mapped(A, B, bx, by, bvx, bvy)
+    ex, ey, evx, evy = mapped(A, B, bx, by, bvx, bvy, t.get('kind'))
     ax, ay, avx, avy = t['after']
     chk['speedRelErr'] = rel(t['speedAfter'], t['speedBefore'])
     chk['ok_speed'] = chk['speedRelErr'] <= 1e-9
@@ -154,13 +165,15 @@ def s2(page):
 
 
 def s3(page):
-    """Ball dropped with its centre path 3 px outside A's opening lands on A's host line, 0 teleports.
+    """Ball dropped with its centre path 3 px outside A's capture zone lands on A's host line, 0 teleports.
     (Free-standing portals: the r = 2 ball fell past the plane; on a wall the line piece next to the
-    opening catches it.)"""
+    opening catches it.) TASK-074: a ball touching the opening is captured, so 'outside' now means
+    |s| = h + r + 3 (was h + 3)."""
     B = {'x': 800, 'y': 200, 'angle': PI / 2, 'h': 45, 'name': 'B', 'color': '#a259ff'}
-    x = A_FLOOR['x'] + A_FLOOR['h'] + 3
-    chk = {'x': x}
+    chk = {'x': {}}
     for r in (2, 10):
+        x = A_FLOOR['x'] + A_FLOOR['h'] + r + 3
+        chk['x']['r%d' % r] = x
         c = wcfg({'x': x, 'y': 250, 'vx': 0, 'vy': 0, 'r': r}, [A_FLOOR, B])
         page.evaluate('c => window.__portalTest.setup(c)', c)
         check_geometry(page, c)
@@ -170,7 +183,7 @@ def s3(page):
     r2, r10 = chk['r2'], chk['r10']
     chk['teleports'] = [r2['teleports'], r10['teleports']]
     chk['ok_r2_no_teleport'] = r2['teleports'] == 0
-    # r = 2 misses the rim (3 px away) and bounces off the piece: centre never closer than r to the line
+    # r = 2 misses the capture zone (3 px beyond h + r) and bounces off the piece: centre never closer than r to the line
     chk['ok_r2_bounced_off_piece'] = r2['rimHits'] == 0 and r2['hostHits'] >= 1 and r2['minD'] > 1 \
         and r2['final'][1] < A_FLOOR['y'] - 2
     chk['ok_r10_no_teleport'] = r10['teleports'] == 0
@@ -272,33 +285,52 @@ def rim_case(page, A, B, ball, steps):
 
 
 def s7(page):
-    """Edge of the opening. Rim hit with the centre path inside the opening, 4 px from the rim
-    (vertical and angled A): 0 teleports, |v| preserved, ball moves away from the rim.
-    Centre path 4 px outside the opening (the old free-standing rim case): on a wall that is the
-    host line piece, so the ball bounces off the line instead, 0 teleports, back up in front."""
+    """Edge of the opening (TASK-074 'generous' capture). Centre path inside the opening 4 px from
+    the rim (vertical and angled A): the ball touches the opening and is captured, 1 teleport,
+    no rim / host-line bounce, |v| preserved, exit in front of B moving away from it.
+    Centre path 4 px outside the capture zone (|s| = h + r + 4): the host line piece bounces it,
+    0 teleports, back up in front. A ball moving away from A (leaving the opening, v . n > 0) that
+    overlaps a rim still reflects off it (the rims stay solid for balls that are not captured)."""
     A, B = portal(300, 400, -90, 'A'), portal(900, 300, 180, 'B')
     out = {}
+
+    def capture(c, st):
+        c['bounces'] = st['rimHits'] + st['hostHits']
+        if st['teleports']:
+            t = st['teleports'][0]
+            c['kind'] = t.get('kind')
+            c['speedRelErr'] = rel(t['speedAfter'], t['speedBefore'])
+            _, c['exitD'] = local(B, t['after'][0], t['after'][1])
+            nx, ny, _, _ = frame(B)
+            c['exitVn'] = t['after'][2] * nx + t['after'][3] * ny
+        return c
     # (a) falling straight down 4 px left of the right rim (345, 400), inside the opening
-    out['vertical'] = rim_case(page, A, B, {'x': 341, 'y': 300, 'vx': 0, 'vy': 0.05}, 4000)
+    st = run(page, wcfg({'x': 341, 'y': 300, 'vx': 0, 'vy': 0.05}, [A, B]), 4000)
+    out['vertical'] = capture({'teleports': len(st['teleports'])}, st)
     # (b) angled 30 deg A, ball aimed along -n at a point 4 px inside the rim c + h t, from 30 px out
     A2 = portal(500, 400, -60, 'A')
     nx, ny, tx, ty = frame(A2)
     rx, ry = A2['x'] + 45 * tx, A2['y'] + 45 * ty
     sx, sy = rx + 30 * nx - 4 * tx, ry + 30 * ny - 4 * ty
-    out['angled'] = rim_case(page, A2, B, {'x': sx, 'y': sy, 'vx': -0.05 * nx, 'vy': -0.05 * ny}, 4000)
-    # (c) falling straight down 4 px right of the right rim: lands on the host line piece
-    out['piece'] = rim_case(page, A, B, {'x': 349, 'y': 300, 'vx': 0, 'vy': 0.05}, 4000)
-    rims = (out['vertical'], out['angled'])
-    out['teleports'] = [c['teleports'] for c in (out['vertical'], out['angled'], out['piece'])]
-    out['speedRelErr'] = max(c.get('speedRelErr', 1) for c in rims)
-    out['ok_no_teleport'] = out['teleports'] == [0, 0, 0]
-    out['ok_rim_hit'] = all(c['rimHits'] >= 1 for c in rims)
+    st = run(page, wcfg({'x': sx, 'y': sy, 'vx': -0.05 * nx, 'vy': -0.05 * ny}, [A2, B]), 4000)
+    out['angled'] = capture({'teleports': len(st['teleports'])}, st)
+    # (c) falling straight down 4 px outside the capture zone (|s| = h + r + 4): lands on the host line piece
+    out['piece'] = rim_case(page, A, B, {'x': 300 + 45 + 10 + 4, 'y': 300, 'vx': 0, 'vy': 0.05}, 4000)
+    # (d) leaving A's opening (moving up, v . n > 0) 3 px above the plane, 4 px inside the right rim,
+    #     drifting right into the rim: one rim reflection, no teleport
+    out['leaving'] = rim_case(page, A, B, {'x': 341, 'y': 397, 'vx': 0.05, 'vy': -0.01}, 4000)
+    caps = (out['vertical'], out['angled'])
+    out['teleports'] = [c['teleports'] for c in (out['vertical'], out['angled'], out['piece'], out['leaving'])]
+    out['speedRelErr'] = max([c.get('speedRelErr', 1) for c in caps] + [out['leaving'].get('speedRelErr', 1)])
+    out['ok_edge_captured'] = out['teleports'] == [1, 1, 0, 0] and all(c.get('kind') == 'touch' for c in caps)
+    out['ok_no_bounce_before_capture'] = all(c['bounces'] == 0 for c in caps)
     out['ok_speed'] = out['speedRelErr'] <= 1e-9
-    out['ok_no_nan'] = all(c['finite'] for c in (out['vertical'], out['angled'], out['piece']))
-    out['ok_moves_away'] = all(c.get('vnBefore', 0) < 0 < c.get('vnAfter', 0) and c['distFinal'] > 20
-                               and c['finalD'] > 10 for c in rims)
+    out['ok_exit_front_moving_away'] = all(c.get('exitD', -1) > 0 and c.get('exitVn', -1) > 0 for c in caps)
+    out['ok_no_nan'] = out['piece']['finite'] and out['leaving']['finite']
     p = out['piece']
     out['ok_piece_bounce'] = p['hostHits'] >= 1 and p['final'][3] < 0 and p['finalD'] > 10
+    lv = out['leaving']
+    out['ok_rim_solid_when_leaving'] = lv['rimHits'] >= 1 and lv.get('vnBefore', 0) < 0 < lv.get('vnAfter', 0)
     return out
 
 
@@ -768,7 +800,10 @@ def w5(page):
 
 
 def w6(page):
-    """Two wall portals facing each other across a 400 px gap: the run ends with <= 20 teleports in 3000 frames."""
+    """Two wall portals facing each other across a 400 px gap: the run ends (no endless loop / ping-pong).
+    TASK-074: with capture by touch (|s| <= h + r) and the exit clamped to the opening, the fast ball
+    keeps passing for longer (each pass a real 400 px trip), so the bound is <= 400 teleports in
+    3000 frames (was 20) plus >= 300 steps between consecutive teleports."""
     lines = [[400, 0, 400, 600], [800, 0, 800, 600]]
     portals = [{'line': 0, 'u': 0.5, 'side': -1, 'h': 45, 'name': 'A'},      # x = 400, front +x
                {'line': 1, 'u': 0.5, 'side': 1, 'h': 45, 'name': 'B'}]       # x = 800, front -x
@@ -776,17 +811,146 @@ def w6(page):
     for key, b in (('slow', {'x': 600, 'y': 285, 'vx': -0.2, 'vy': 0}),
                    ('fast', {'x': 600, 'y': 300, 'vx': -1.0, 'vy': 0})):
         r = w_run(page, b, lines=lines, portals=portals, steps=3000 * 500)
+        gaps = [b['step'] - a['step'] for a, b in zip(r['teleports'], r['teleports'][1:])]
         out[key] = {'teleports': len(r['teleports']), 'end': r['end'], 'steps': r['steps'],
-                    'frames': r['steps'] // 500, 'final': r['final']}
+                    'frames': r['steps'] // 500, 'final': r['final'], 'minStepsBetweenTeleports': min(gaps) if gaps else None}
     out['teleports'] = [out[k]['teleports'] for k in ('slow', 'fast')]
     out['ok_ended'] = all(out[k]['end'] in ('left', 'settled') for k in ('slow', 'fast'))
-    out['ok_teleports_le_20'] = max(out['teleports']) <= 20 and min(out['teleports']) >= 1
+    out['ok_teleports_le_400'] = max(out['teleports']) <= 400 and min(out['teleports']) >= 1
+    out['ok_no_ping_pong'] = all((out[k]['minStepsBetweenTeleports'] or 1e9) >= 300 for k in ('slow', 'fast'))
+    return out
+
+
+# ---- W7 (TASK-074): the artifacts/portal_physics.png replay ----
+# Portal A cut into a vertical level wall x = 900 (100..700) facing left (centre (900, 400); its frame
+# t = (-n.y, n.x) = (0, -1), so s = 400 - y and the lower rim is s = -h); B in a floor (150, 650)-(450, 650) facing up. A sloped
+# level line (12 deg, descending to the right, x 500..898) rolls the ball into A's lower edge. The ramp
+# is placed so the ball centre's rolling path, extended, meets the opening plane (x = 900, d = 0) at
+# y = 400 - s: s is the entry offset along the opening, swept in 1 px steps over s = -(h-10..h+20)
+# (contactS, the offset at first touch of the wall plane d = r, is about s + r tan(12 deg) = s + 2.1:
+# the ball keeps descending while it closes in).
+# Each run covers the first approach: deterministic gamePhysics() steps in frames of cyclesPerTact,
+# up to W7_MAX_FRAMES, stopped W7_AFTER frames after the first teleport or the first host-line bounce
+# (after a bounce the ball hops back up the ramp; a later approach is a new trajectory).
+W7_WALL, W7_CX, W7_CY, W7_SLOPE_DEG, W7_X0, W7_X1 = 900, 900, 400, 12, 500, 898
+W7_MAX_FRAMES, W7_AFTER = 300, 3
+
+
+W7_RIDE = 0.5        # measured: the rolling ball's centre rides ~0.5 px above the ideal r / cos(a) offset
+
+
+def w7_cfg(s, r=10):
+    """s = portal-local offset (A's t points up: s = 400 - y, the lower rim is s = -h)."""
+    a = W7_SLOPE_DEG * PI / 180
+    yc = W7_CY - s                                    # centre path height at x = 900 (the opening plane, d = 0)
+    yl = yc + r / math.cos(a) + W7_RIDE               # ramp height under that point (vertical offset r / cos a)
+    k = math.tan(a)
+    line_y = lambda x: yl + (x - W7_WALL) * k
+    ramp = [W7_X0, line_y(W7_X0), W7_X1, line_y(W7_X1)]
+    bx = W7_X0 + 25
+    by = line_y(bx) - r / math.cos(a) - 0.5           # resting 0.5 px above the ramp
+    return {'wall': True, 'ball': {'x': bx, 'y': by, 'vx': 0, 'vy': 0, 'r': r},
+            'lines': [[W7_WALL, 100, W7_WALL, 700], [150, 650, 450, 650], ramp],
+            'portals': [{'line': 0, 'u': 0.5, 'side': 1, 'h': 45, 'name': 'A'},
+                        {'line': 1, 'u': 0.5, 'side': -1, 'h': 45, 'name': 'B'}]}
+
+
+W7_JS = r"""([cfg, maxFrames, after, keepPath]) => {
+  const T = window.__portalTest; T.setup(cfg)
+  const P = currentPortals(), A = P[0], fa = portalFrame(A)
+  let contact = null, tp = null, bounces = 0, hostBounces = 0, rimBounces = 0, frame = 0, stopAt = Infinity
+  const path = [[ball.posX, ball.posY]]
+  for (; frame < maxFrames && frame < stopAt; ++frame) {
+    for (let k = 0; k < cyclesPerTact; ++k) {
+      const n0 = portalState.teleports.length, h0 = portalState.hostHits, r0 = portalState.rimHits
+      gamePhysics()
+      if (!tp && portalState.teleports.length > n0) {
+        const t = portalState.teleports[n0], Q = P.find(q => q.name === t.to), fq = portalFrame(Q), L = portalLocal(Q, t.after[0], t.after[1])
+        tp = {step: t.step, frame: frame, from: t.from, to: t.to, kind: t.kind, s: t.s, d: t.d, exitS: L.s, exitD: L.d,
+              exitVn: t.after[2] * fq.nx + t.after[3] * fq.ny, speedRelErr: Math.abs(t.speedAfter - t.speedBefore) / t.speedBefore}
+        stopAt = frame + 1 + after
+      }
+      if (!tp && portalState.hostHits && stopAt === Infinity) stopAt = frame + 1 + after
+      if (!tp) { hostBounces += portalState.hostHits - h0; rimBounces += portalState.rimHits - r0 }
+      const L = portalLocal(A, ball.posX, ball.posY)
+      if (!contact && !tp && L.d <= ball.radius) contact = {step: portalState.steps, s: L.s, d: L.d}
+    }
+    if (keepPath) { if (tp && tp.frame === frame) path.push(null); path.push([ball.posX, ball.posY]) }   // null: trail break at the teleport
+  }
+  return {tp, contact, hostBounces, rimBounces, hostHits: portalState.hostHits, rimHits: portalState.rimHits,
+          firstHostHit: portalState.hostHits ? portalState.hostHit : null, frames: frame, steps: portalState.steps,
+          teleports: portalState.teleports.length, final: [ball.posX, ball.posY, ball.speedX, ball.speedY], path,
+          h: A.h, r: ball.radius} }"""
+
+W7_SHOT_JS = r"""(path) => {
+  window.__w7path = path
+  if (!window.__w7draw) {
+    window.__w7draw = draw
+    draw = function () { window.__w7draw()
+      const p = window.__w7path; if (!p || !p.length) return
+      ctx.save(); ctx.strokeStyle = 'rgba(255,90,90,.9)'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 4])
+      ctx.beginPath(); let pen = false
+      for (const q of p) { if (!q) { pen = false; continue } if (pen) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); pen = true }
+      ctx.stroke(); ctx.restore() }
+  }
+  draw(); return true }"""
+
+TASK = None
+
+
+def w7(page):
+    """Edge capture replay of artifacts/portal_physics.png (ball rolling down a ramp into A's lower edge):
+    |s| in h-10..h+9 teleports with no bounce, |s| in h+11..h+20 bounces off the host line, no teleport."""
+    h, r = 45, 10
+    rows = []
+    mags = list(range(h - 10, h + 10)) + list(range(h + 11, h + 21))
+    for sign in (-1,):                                # the lower rim (the screenshot's case)
+        for m in mags:
+            sv = sign * m
+            res = page.evaluate(W7_JS, [w7_cfg(sv), W7_MAX_FRAMES, W7_AFTER, False])
+            tp = res['tp']
+            rows.append({'s': sv, 'teleported': tp is not None,
+                         'bouncesBeforeTeleport': (res['hostBounces'] + res['rimBounces']) if tp else None,
+                         'exitD': tp['exitD'] if tp else None, 'exitVn': tp['exitVn'] if tp else None,
+                         'kind': tp['kind'] if tp else None, 'entryS': tp['s'] if tp else None,
+                         'entryD': tp['d'] if tp else None, 'speedRelErr': tp['speedRelErr'] if tp else None,
+                         'contactS': res['contact']['s'] if res['contact'] else None,
+                         'hostHits': res['hostHits'], 'rimHits': res['rimHits'],
+                         'hostBounceLogged': res['firstHostHit'] is not None,
+                         'firstHostHitStep': res['firstHostHit']['step'] if res['firstHostHit'] else None,
+                         'frames': res['frames'], 'vxAtEnd': res['final'][2]})
+    cap = [x for x in rows if abs(x['s']) <= h + 9]
+    bounce = [x for x in rows if abs(x['s']) >= h + 11]
+    out = {'h': h, 'r': r, 'slopeDeg': W7_SLOPE_DEG, 'rows': rows, 'captureRows': len(cap), 'bounceRows': len(bounce),
+           'contactMinusS': [min(x['contactS'] - x['s'] for x in rows if x['contactS'] is not None),
+                             max(x['contactS'] - x['s'] for x in rows if x['contactS'] is not None)]}
+    out['teleports'] = sum(1 for x in rows if x['teleported'])
+    out['ok_capture_h-10..h+9'] = len(cap) == 20 and all(x['teleported'] and x['bouncesBeforeTeleport'] == 0 for x in cap)
+    out['ok_bounce_h+11..h+20'] = len(bounce) == 10 and all(not x['teleported'] and x['hostBounceLogged'] and x['hostHits'] >= 1
+                                                          and x['vxAtEnd'] < 0 for x in bounce)   # bounced back (A faces -x)
+    tps = [x for x in rows if x['teleported']]
+    out['ok_exit_front_moving_away'] = bool(tps) and all(x['exitD'] > 0 and x['exitVn'] > 0 for x in tps)
+    out['ok_speed'] = bool(tps) and all(x['speedRelErr'] <= 1e-9 for x in tps)
+    out['ok_touch_kind'] = all(x['kind'] == 'touch' for x in cap)
+    if TASK:
+        d = os.path.join(ROOT, 'artifacts', TASK)
+        os.makedirs(d, exist_ok=True)
+        # screenshot: the s = -(h + 9) replay (lower edge, the screenshot's case), W7_AFTER frames after the teleport
+        res = page.evaluate(W7_JS, [w7_cfg(-(h + 9)), W7_MAX_FRAMES, W7_AFTER, True])
+        page.evaluate(W7_SHOT_JS, res['path'])
+        page.wait_for_timeout(200)
+        page.screenshot(path=os.path.join(d, 'edge.png'))
+        page.evaluate('() => { if (window.__w7draw) { draw = window.__w7draw; delete window.__w7draw } window.__w7path = null }')
+        out['screenshot'] = {'s': -(h + 9), 'teleportFrame': res['tp']['frame'] if res['tp'] else None, 'framesRun': res['frames'],
+                             'ball': res['final'][:2]}
+        with open(os.path.join(d, 'edge.json'), 'w') as f:
+            json.dump(dict(out, passAll=all(v for k, v in out.items() if k.startswith('ok_'))), f, separators=(',', ':'))
     return out
 
 
 SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S6': s6, 'S7': s7, 'S8': s8,
              'S9': s9, 'S10': s10, 'S11': s11, 'S12': s12, 'S13': s13, 'S14': s14,
-             'W1': w1, 'W2': w2, 'W3': w3, 'W4': w4, 'W5': w5, 'W6': w6}
+             'W1': w1, 'W2': w2, 'W3': w3, 'W4': w4, 'W5': w5, 'W6': w6, 'W7': w7}
 
 TRAJ_JS = """([frames, nLevels]) => { const out = []
   for (let i = 0; i < Math.min(levels.length, nLevels || levels.length); ++i) {
@@ -812,6 +976,8 @@ def main():
     ap.add_argument('--compare', nargs=2)
     ap.add_argument('--levels', type=int, default=0)
     a = ap.parse_args()
+    global TASK
+    TASK = a.task
 
     if a.compare:
         base, cur = (json.load(open(f)) for f in a.compare)

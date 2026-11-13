@@ -17,9 +17,12 @@ Checked on every step in the page: NaN state, teleports per step, and tunnelling
 without a teleport the ball centre's path (previous -> current position) must not cross any
 level line segment (host lines included; a front-to-back pass through an opening is a teleport,
 so every non-teleport crossing went through a wall). Every teleport record is re-checked in
-Python against the resolved portals read from the page: |s| <= h, the crossing is front -> back
-(d <= 0, |d| <= |v|), the exit lands on the partner's front (d' = -d >= 0), relative speed change
-<= 1e-9, and the exit state equals an independent recomputation of (s, d) -> (-s, -d), v rotated.
+Python against the resolved portals read from the page (TASK-074): a 'touch' teleport needs the ball
+on the entry front (d > 0) moving toward it (v . n < 0) and touching the opening (centre within r of
+c +- h t, so |s| <= h + r), and lands on the partner's front (d' > 0) moving away (v . n' > 0); a
+'cross' teleport (fallback) needs |s| <= h and a front -> back crossing (d <= 0, |d| <= |v|) and lands
+on d' = -d >= 0. Both: relative speed change <= 1e-9 and the exit state equals an independent
+recomputation (sim.mapped: touch (s, d) -> (-clamp(s, h), d), cross (s, d) -> (-s, -d), v rotated).
 traceHash = sha256 over the case parameters, the ball state after every frame and every teleport
 record -> a second run with the same seed gives the same hash.
 Output: artifacts/<task>/<out>, compact JSON; exit 1 on failure.
@@ -171,7 +174,7 @@ def main():
          'sOverH': 0, 'maxAbsSOverH': 0.0, 'notFrontToBack': 0, 'exitNotFront': 0,
          'maxSpeedRelErr': 0.0, 'speedErrOver1e9': 0, 'maxMapPosErr': 0.0, 'maxMapVelErr': 0.0,
          'mapErrOver1e9': 0, 'portalOffHostLine': 0, 'rimHits': 0, 'casesWithRimHits': 0,
-         'hostHits': 0, 'casesWithHostHits': 0, 'maxTeleportsInCase': 0}
+         'hostHits': 0, 'casesWithHostHits': 0, 'maxTeleportsInCase': 0, 'kinds': {}}
     bad = []
 
     from playwright.sync_api import sync_playwright
@@ -210,19 +213,33 @@ def main():
             for t in tps:
                 hsh.update(pack([t['step'], t['s'], t['d']] + t['before'] + t['after']))
                 A, B = P[t['from']], P[t['to']]
+                kind = t.get('kind')
+                c['kinds'][kind] = c['kinds'].get(kind, 0) + 1
+                lim = A['h'] + R if kind == 'touch' else A['h']
                 aso = abs(t['s']) / A['h']
                 c['maxAbsSOverH'] = max(c['maxAbsSOverH'], aso)
-                if abs(t['s']) > A['h']:
+                if abs(t['s']) > lim + 1e-9:
                     c['sOverH'] += 1
-                    case_bad.append(('|s|>h', t['step']))
+                    case_bad.append(('|s|>limit', t['step'], kind))
                 s, d = local(A, t['before'][0], t['before'][1])
-                if abs(s - t['s']) > 1e-9 or abs(d - t['d']) > 1e-9 or d > 0 or abs(d) > t['speedBefore'] + 1e-9:
+                anx, any_ = math.cos(A['angle']), math.sin(A['angle'])
+                bnx, bny = math.cos(B['angle']), math.sin(B['angle'])
+                if abs(s - t['s']) > 1e-9 or abs(d - t['d']) > 1e-9:
                     c['notFrontToBack'] += 1
-                    case_bad.append(('crossing', t['step'], s, d))
+                    case_bad.append(('sd', t['step'], s, d))
+                elif kind == 'touch':
+                    touch = math.hypot(max(abs(s) - A['h'], 0.0), d)
+                    if not (d > 0 and t['before'][2] * anx + t['before'][3] * any_ < 0 and touch <= R + 1e-9):
+                        c['notFrontToBack'] += 1
+                        case_bad.append(('touch', t['step'], s, d, touch))
+                elif kind != 'cross' or d > 0 or abs(d) > t['speedBefore'] + 1e-9:
+                    c['notFrontToBack'] += 1
+                    case_bad.append(('crossing', t['step'], kind, s, d))
                 _, dOut = local(B, t['after'][0], t['after'][1])
-                if dOut < -1e-9:
+                vnOut = t['after'][2] * bnx + t['after'][3] * bny
+                if dOut < -1e-9 or (kind == 'touch' and not (dOut > 0 and vnOut > 0)):
                     c['exitNotFront'] += 1
-                    case_bad.append(('exitBack', t['step'], dOut))
+                    case_bad.append(('exitBack', t['step'], dOut, vnOut))
                 e = rel(t['speedAfter'], t['speedBefore']) if t['speedBefore'] > 0 else abs(t['speedAfter'])
                 e2 = rel(math.hypot(t['after'][2], t['after'][3]), math.hypot(t['before'][2], t['before'][3])) \
                     if t['speedBefore'] > 0 else 0.0
@@ -231,7 +248,7 @@ def main():
                 if e > 1e-9:
                     c['speedErrOver1e9'] += 1
                     case_bad.append(('speed', t['step'], e))
-                ex, ey, evx, evy = mapped(A, B, *t['before'])
+                ex, ey, evx, evy = mapped(A, B, *t['before'], kind=kind)
                 pe = math.hypot(t['after'][0] - ex, t['after'][1] - ey)
                 ve = math.hypot(t['after'][2] - evx, t['after'][3] - evy)
                 c['maxMapPosErr'] = max(c['maxMapPosErr'], pe)
