@@ -406,6 +406,8 @@
         {
             event.preventDefault()
             touch = null
+            if (editorMode)
+                editorCancelDrag()
         }, {passive: false})
         function gamePhysics()
         {

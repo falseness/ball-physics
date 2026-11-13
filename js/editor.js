@@ -309,6 +309,20 @@ function editorMouseUp(coords)
     }
 }
 
+// touchcancel (OS gesture, palm rejection...): no drop happened, so the dragged object goes back
+// to where it was picked up (never left where the drop check would refuse it) and the drag ends
+function editorCancelDrag()
+{
+    const d = editor.drag
+    if (!d)
+        return
+    editor.drag = null
+    const W = editor.level
+    if (d.kind == 'flag') { W.flagX = d.x0; W.flagY = d.y0 }
+    else if (d.kind == 'ball') { W.ballX = d.x0; W.ballY = d.y0 }
+    else if (W.portals[d.i]) { W.portals[d.i].x = d.x0; W.portals[d.i].y = d.y0 }
+}
+
 function editorSelectedPortal()
 {
     const s = editor.selected
