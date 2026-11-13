@@ -193,15 +193,45 @@ def sc_editor(page, info):
         raise RuntimeError('toolbar exit did not close the editor: %s' % info['exited'])
 
 
+TRAIL_COUNTER_JS = """() => { window.__trailPhysFrames = 0; window.__trailFrame0 = trailFrame;
+    const g = gameMechanics;
+    gameMechanics = function() { if (physics && !editorMode) ++window.__trailPhysFrames; return g() } }"""
+
+TRAIL_STOP_JS = """() => { physics = false; const s = trailSamples();
+    return {physicsFrames: window.__trailPhysFrames, trailFrameDelta: trailFrame - window.__trailFrame0,
+        trailSamples: s.length, trailFinite: s.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)),
+        trailFrame: trailFrame, trailMax: TRAIL_MAX} }"""
+
+
 def sc_trail(page, info):
-    # A real run (placed line + play icon) must record a trail of finite samples.
-    sc_running(page, info)
-    t = page.evaluate("(() => { const s = trailSamples(); return {n: s.length, "
-                      "finite: s.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))} })()")
-    info['trailSamples'] = t['n']
-    info['trailFinite'] = t['finite']
-    if t['n'] < 10 or not t['finite']:
-        raise RuntimeError('trail not recorded: %s' % t)
+    # Exact trail rule: one sample per frame while physics is on, none while it is off.
+    # An in-page wrapper on the global gameMechanics counts the frames that run with physics on;
+    # physics is stopped in the same evaluate that reads the counter, so no frame slips in between.
+    sc_placed(page, info)
+    page.evaluate(TRAIL_COUNTER_JS)
+    x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
+    click(page, x, y)
+    page.wait_for_timeout(1000)
+    t = page.evaluate(TRAIL_STOP_JS)
+    frames(page, 10)
+    p = page.evaluate("() => ({trailFrame: trailFrame, trailSamples: trailSamples().length})")
+    paused = (p['trailFrame'] - t['trailFrame']) + abs(p['trailSamples'] - t['trailSamples'])
+    for k in ('physicsFrames', 'trailFrameDelta', 'trailSamples', 'trailFinite'):
+        info[k] = t[k]
+    info['pausedDelta'] = paused
+    bad = []
+    if t['physicsFrames'] < 10:
+        bad.append('too few physics frames')
+    if t['trailFrameDelta'] != t['physicsFrames']:
+        bad.append('trailFrame delta != physics frames')
+    if t['trailSamples'] != min(t['physicsFrames'], t['trailMax']):
+        bad.append('samples != min(physics frames, TRAIL_MAX)')
+    if not t['trailFinite']:
+        bad.append('non-finite sample')
+    if paused:
+        bad.append('trail recorded while physics is off')
+    if bad:
+        raise RuntimeError('trail check failed (%s): %s paused=%s' % ('; '.join(bad), t, p))
 
 
 def sc_touch_line(page, info):
