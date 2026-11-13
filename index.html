@@ -306,7 +306,13 @@
         document.addEventListener('mousemove', function(event)
         {
             if (editorMode)
+            {
+                // primary button no longer down: the mouseup was lost (window lost focus, released
+                // outside the page), so no drop happened -> cancel the drag, move nothing this event
+                if (editor.drag && (event.buttons & 1) == 0)
+                    return editorCancelDrag()
                 return editorMouseMove(mouseCoords(event))
+            }
             bounce.calc(mouseCoords(event))
         })
 
