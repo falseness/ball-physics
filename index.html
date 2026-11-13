@@ -119,6 +119,8 @@
         function addNewLine(coords)
         {
             coords = dotСorrection(coords[0], coords[1], line.radius)
+            if (portalBlocksSegment(line.posX, line.posY, coords[0], coords[1]))
+                return false
             if (collisionCircleWithLine(line.posX, line.posY, coords[0], coords[1], ball.posX, ball.posY, ball.radius))
                 return false
             line.posX2 = coords[0]
@@ -252,6 +254,8 @@
                             coords = dotСorrection(coords[0], coords[1], dotRadius)
                             if (ball.collisionWithDot(coords[0], coords[1]))
                                 return
+                            if (portalBlocksPoint(coords[0], coords[1]))
+                                return
                             line = new Line(coords[0], coords[1], coords[0], coords[1], dotRadius, '#0000ff', 'line')
                             linesK++
                         }
@@ -281,7 +285,7 @@
             if (linesK >= levels[thisLevel].lineK)
                 return false
             let c = dotСorrection(coords[0], coords[1], dotRadius)
-            return !ball.collisionWithDot(c[0], c[1])
+            return !ball.collisionWithDot(c[0], c[1]) && !portalBlocksPoint(c[0], c[1])
         }
         function findTouch(list)
         {
