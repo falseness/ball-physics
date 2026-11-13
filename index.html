@@ -275,6 +275,17 @@
             }
         }
         
+        // Editor select tool: drag with the mouse (no effect outside editor mode)
+        document.addEventListener('mousedown', function(event)
+        {
+            if (editorMode)
+                editorMouseDown(mouseCoords(event))
+        })
+        document.addEventListener('mouseup', function(event)
+        {
+            if (editorMode)
+                editorMouseUp(mouseCoords(event))
+        })
         document.addEventListener('mousemove', function(event)
         {
             if (editorMode)
@@ -326,6 +337,8 @@
             let t = event.changedTouches[0]
             let coords = mouseCoords(t)
             touch = {id: t.identifier, start: coords, last: coords, moved: false, startedLine: false}
+            if (editorMode)
+                editorMouseDown(coords)
             if (lineStartAccepted(coords))
             {
                 handleClick(coords)
@@ -357,6 +370,8 @@
             let coords = mouseCoords(t)
             let s = touch
             touch = null
+            if (editorMode)
+                editorMouseUp(coords)
             let tap = Math.hypot(coords[0] - s.start[0], coords[1] - s.start[1]) <= TAP_SLOP && !s.moved
             if (tap)
             {

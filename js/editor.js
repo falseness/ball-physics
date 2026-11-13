@@ -5,9 +5,12 @@
 // Working copy shape: {ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [Line], portals: [] | [A, B]}.
 // 'exit' writes the copy back to levels[thisLevel] (this session only) and reloads the level.
 let editorMode = false
-let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null }
+let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null }
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
 const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
+const EDITOR_PICK_DIST = 20           // select tool: max distance to flag anchor / ball start / portal centre
+const EDITOR_FLAG_STEP = Math.PI / 12 // 'flag ⟲' / 'flag ⟳' rotation step
+const EDITOR_MAX_LINEK = 5
 
 // Toolbar: glass panel at the top-left, clear of the top-right HUD.
 // kind 'tool' = selectable tool (editor.tool), 'action' = one-shot action (editor.lastAction),
@@ -70,6 +73,8 @@ function editorOpen()
     editor.tool = 'select'
     editor.lastAction = null
     editor.pending = null
+    editor.drag = null
+    editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
     editorMode = true
 }
 
@@ -88,6 +93,8 @@ function editorExit()
     editorMode = false
     editor.level = null
     editor.pending = null
+    editor.drag = null
+    editor.flagPoly = null
     levelChoosed(thisLevel)
 }
 
@@ -122,8 +129,67 @@ function editorClick(coords)
     }
     editor.lastAction = b.id
     editor.actions++
-    if (b.id == 'exit')
+    const W = editor.level
+    if (b.id == 'flagCCW' || b.id == 'flagCW')
+    {
+        W.flagRotate += b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP
+        editor.flagPoly = editorFlagPolygon(W.flagRotate)
+    }
+    else if (b.id == 'linesDec' || b.id == 'linesInc')
+        W.lineK = Math.max(0, Math.min(EDITOR_MAX_LINEK, W.lineK + (b.id == 'linesInc' ? 1 : -1)))
+    else if (b.id == 'exit')
         editorExit()
+}
+
+function editorInBar(coords)
+{
+    const R = editorBarRect()
+    return collisionWithRect(coords[0], coords[1], R[0], R[1], R[0] + R[2], R[1] + R[3])
+}
+
+// Select tool: the nearest of flag anchor, ball start and portal centres within EDITOR_PICK_DIST
+function editorPickAt(coords)
+{
+    const W = editor.level, x = coords[0], y = coords[1]
+    const cand = [['flag', 0, W.flagX, W.flagY], ['ball', 0, W.ballX, W.ballY]]
+    W.portals.forEach((P, i) => cand.push(['portal', i, P.x, P.y]))
+    let best = null, bestD = Infinity
+    for (const c of cand)
+    {
+        const d = Math.hypot(x - c[2], y - c[3])
+        if (d <= EDITOR_PICK_DIST && d < bestD) { best = c; bestD = d }
+    }
+    return best
+}
+
+// mousedown / touchstart in editor mode: start dragging the picked object (select tool only).
+// The grab offset is kept, so the object moves by exactly the mouse delta.
+function editorMouseDown(coords)
+{
+    editor.drag = null
+    if (editor.tool != 'select' || editorInBar(coords))
+        return
+    const c = editorPickAt(coords)
+    if (c)
+        editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1] }
+}
+
+function editorDragTo(coords)
+{
+    const d = editor.drag, W = editor.level
+    const x = coords[0] + d.dx, y = coords[1] + d.dy
+    if (d.kind == 'flag') { W.flagX = x; W.flagY = y }
+    else if (d.kind == 'ball') { W.ballX = x; W.ballY = y }
+    else { W.portals[d.i].x = x; W.portals[d.i].y = y }
+}
+
+// mouseup / touchend: drop the dragged object at the release point
+function editorMouseUp(coords)
+{
+    if (!editor.drag)
+        return
+    editorDragTo(coords)
+    editor.drag = null
 }
 
 // Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
@@ -173,6 +239,8 @@ function editorDeleteAt(coords)
 function editorMouseMove(coords)
 {
     editor.mouse = coords
+    if (editor.drag)
+        editorDragTo(coords)
 }
 
 // Flag polygon of the working copy (same pointRotation path as levelChoosed)
@@ -187,7 +255,7 @@ function editorDraw()
     for (const l of W.lines)
         l.draw()
     const saved = flag
-    flag = editorFlagPolygon(W.flagRotate)
+    flag = editor.flagPoly
     drawFlag(W.flagX, W.flagY, THEME.ink, THEME.coral)
     flag = saved
     drawPortals(W.portals)
