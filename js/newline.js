@@ -1,8 +1,13 @@
-function mouseCoords(event)
+// client (CSS) pixels -> logical GAME_W x GAME_H coordinates of the letterboxed canvas
+function clientToLogical(clientX, clientY)
 {
     let rect = canvas.getBoundingClientRect()
-    // client (CSS) pixels -> logical GAME_W x GAME_H coordinates of the letterboxed canvas
-    return [(event.clientX - rect.left) * GAME_W / rect.width, (event.clientY - rect.top) * GAME_H / rect.height]
+    return [(clientX - rect.left) * GAME_W / rect.width, (clientY - rect.top) * GAME_H / rect.height]
+}
+// MouseEvent or Touch (both carry clientX/clientY)
+function mouseCoords(event)
+{
+    return clientToLogical(event.clientX, event.clientY)
 }
 
 function collisionTwoCircles(x1, y1, r1, x2, y2, r2)

@@ -12,6 +12,7 @@
             position:fixed;
             margin:0;
             padding:0;
+            touch-action:none;
         }
         @font-face { font-family: 'Caveat'; src: url('fonts/caveat-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
         @font-face { font-family: 'Caveat'; src: url('fonts/caveat-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
@@ -150,9 +151,24 @@
         }
         
         levelChoosed(thisLevel)
+        function inMenuIcon(coords)
+        {
+            return collisionWithRect(
+                coords[0], coords[1], menuIconRect[0][0], menuIconRect[0][1], 
+                menuIconRect[0][0] + menuIconRect[1][0], menuIconRect[0][1] + menuIconRect[1][1])
+        }
+        function inPlayIcon(coords)
+        {
+            return collisionWithRect(
+                coords[0], coords[1], menuIconRect[0][0] - 73, menuIconRect[0][1], menuIconRect[0][0] - 73 + menuIconRect[1][0], menuIconRect[0][1] + menuIconRect[1][1])
+        }
         document.addEventListener('click', function(event)
         {
-            let coords = mouseCoords(event)
+            handleClick(mouseCoords(event))
+        })
+        // One click (mouse) or tap (touch) at logical coords
+        function handleClick(coords)
+        {
             if ((levelCompletedWindow || drawMenu) && levelsRectCollision(coords[0], coords[1]))
             {
                 return    
@@ -216,16 +232,13 @@
                 }
                 else
                 {
-                    if (!line && collisionWithRect(
-                        coords[0], coords[1], menuIconRect[0][0], menuIconRect[0][1], 
-                        menuIconRect[0][0] + menuIconRect[1][0], menuIconRect[0][1] + menuIconRect[1][1]))
+                    if (!line && inMenuIcon(coords))
                     {
                         drawMenu = true
                         drawMenuIcon = false
                         physics = false
                     }
-                    else if (collisionWithRect(
-                        coords[0], coords[1], menuIconRect[0][0] - 73, menuIconRect[0][1], menuIconRect[0][0] - 73 + menuIconRect[1][0], menuIconRect[0][1] + menuIconRect[1][1]))
+                    else if (inPlayIcon(coords))
                     {
                         physics = !physics
                         levelStarted = true
@@ -243,12 +256,104 @@
                     }
                 }
             }
-        })
+        }
         
         document.addEventListener('mousemove', function(event)
         {
             bounce.calc(mouseCoords(event))
         })
+
+        // Touch: a tap (touchend within TAP_SLOP logical px of touchstart) goes through handleClick()
+        // like a mouse click; a drag on the play field starts a line at touchstart, previews it on
+        // touchmove (as mousemove does) and finishes it at touchend (as the second click does).
+        // preventDefault everywhere: no page scroll/zoom and no duplicate synthetic mouse click.
+        const TAP_SLOP = 10
+        let touch = null // {id, start, last, moved, startedLine}
+        // Would a click at coords start a new line? (same conditions as handleClick)
+        function lineStartAccepted(coords)
+        {
+            if (levelCompletedWindow || drawMenu || line || levelStarted)
+                return false
+            if (inMenuIcon(coords) || inPlayIcon(coords))
+                return false
+            if (linesK >= levels[thisLevel].lineK)
+                return false
+            let c = dotСorrection(coords[0], coords[1], dotRadius)
+            return !ball.collisionWithDot(c[0], c[1])
+        }
+        function findTouch(list)
+        {
+            for (let i = 0; i < list.length; ++i)
+                if (list[i].identifier === touch.id)
+                    return list[i]
+            return null
+        }
+        function touchMoveTo(coords)
+        {
+            if (line)
+            {
+                line.posX2 = coords[0]
+                line.posY2 = coords[1]
+            }
+            bounce.calc(coords)
+        }
+        canvas.addEventListener('touchstart', function(event)
+        {
+            event.preventDefault()
+            if (touch)
+                return // ignore extra fingers
+            let t = event.changedTouches[0]
+            let coords = mouseCoords(t)
+            touch = {id: t.identifier, start: coords, last: coords, moved: false, startedLine: false}
+            if (lineStartAccepted(coords))
+            {
+                handleClick(coords)
+                touch.startedLine = !!line
+            }
+        }, {passive: false})
+        canvas.addEventListener('touchmove', function(event)
+        {
+            event.preventDefault()
+            if (!touch)
+                return
+            let t = findTouch(event.changedTouches)
+            if (!t)
+                return
+            let coords = mouseCoords(t)
+            touch.last = coords
+            if (Math.hypot(coords[0] - touch.start[0], coords[1] - touch.start[1]) > TAP_SLOP)
+                touch.moved = true
+            touchMoveTo(coords)
+        }, {passive: false})
+        canvas.addEventListener('touchend', function(event)
+        {
+            event.preventDefault()
+            if (!touch)
+                return
+            let t = findTouch(event.changedTouches)
+            if (!t)
+                return
+            let coords = mouseCoords(t)
+            let s = touch
+            touch = null
+            let tap = Math.hypot(coords[0] - s.start[0], coords[1] - s.start[1]) <= TAP_SLOP && !s.moved
+            if (tap)
+            {
+                // a tap that started a line already acted as the first click
+                if (!s.startedLine)
+                    handleClick(s.start)
+            }
+            else if (line)
+            {
+                touchMoveTo(coords)
+                handleClick(coords)
+            }
+        }, {passive: false})
+        canvas.addEventListener('touchcancel', function(event)
+        {
+            event.preventDefault()
+            touch = null
+        }, {passive: false})
         function gamePhysics()
         {
             ball.physics()
