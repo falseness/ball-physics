@@ -37,7 +37,7 @@ function portalRestore(saved)
 
 function currentPortals()
 {
-    const level = levels[thisLevel]
+    const level = curLevel()
     return level && level.portals && level.portals.length ? level.portals : null
 }
 

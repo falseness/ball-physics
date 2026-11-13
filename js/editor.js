@@ -4,7 +4,15 @@
 // working copy of levels[thisLevel] (lines, flag, ball start, portals) and the toolbar.
 // Working copy shape: {ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [Line], portals: [] | [A, B]}.
 // 'exit' writes the copy back to levels[thisLevel] (this session only) and reloads the level.
+// 'play' play-tests a clone of the copy as `playtestLevel` (levels[] untouched); the HUD 'edit'
+// box or the completion window's 'editor' button return to the editor with the copy unchanged.
 let editorMode = false
+let playtestLevel = null // level object being play-tested (null = normal play)
+// The level the game is playing: the play-test level or levels[thisLevel]
+function curLevel()
+{
+    return playtestLevel || levels[thisLevel]
+}
 let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null,
                portalPending: null, selected: null, error: null }
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
@@ -156,8 +164,74 @@ function editorClick(coords)
     }
     else if (b.id == 'linesDec' || b.id == 'linesInc')
         W.lineK = Math.max(0, Math.min(EDITOR_MAX_LINEK, W.lineK + (b.id == 'linesInc' ? 1 : -1)))
+    else if (b.id == 'new')
+        editorNewLevel()
+    else if (b.id == 'play')
+        editorStartPlaytest()
     else if (b.id == 'exit')
         editorExit()
+}
+
+// 'new': an empty working copy (ball start top-left, flag bottom-right, lineK 1, no lines/portals)
+const EDITOR_NEW_LEVEL = { ballX: 200, ballY: 200, flagX: 1000, flagY: 600, flagRotate: 0, lineK: 1 }
+function editorNewLevel()
+{
+    editor.level = Object.assign({}, EDITOR_NEW_LEVEL, { lines: [], portals: [] })
+    editor.pending = null
+    editor.drag = null
+    editor.portalPending = null
+    editor.selected = null
+    editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
+}
+
+// 'play': load a clone of the working copy as playtestLevel and switch to normal play.
+// editor.level itself is kept as is for the way back.
+function editorStartPlaytest()
+{
+    editor.pending = null
+    editor.drag = null
+    editor.portalPending = null
+    editor.error = null
+    playtestLevel = editorCloneLevel(editor.level)
+    editorMode = false
+    drawMenu = false
+    drawMenuIcon = true
+    levelCompletedWindow = false
+    line = false
+    levelChoosed(thisLevel)
+}
+
+// HUD 'edit' box (play-test only): left of the play box, same size and style
+function editIconRect()
+{
+    return [menuIconRect[0][0] - 146, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1]]
+}
+function inEditIcon(coords)
+{
+    const r = editIconRect()
+    return collisionWithRect(coords[0], coords[1], r[0], r[1], r[0] + r[2], r[1] + r[3])
+}
+function drawEditIcon()
+{
+    if (!playtestLevel)
+        return
+    const r = editIconRect()
+    ctx.save()
+    hudBox(r[0], r[1])
+    menuLabel('edit', r[0] + r[2] / 2, r[1] + r[3] / 2, 30)
+    ctx.restore()
+}
+
+// Leave the play-test and go back to the editor; the working copy was never touched
+function editorEndPlaytest()
+{
+    playtestLevel = null
+    levelCompletedWindow = false
+    drawMenu = false
+    drawMenuIcon = true
+    line = false
+    levelChoosed(thisLevel)
+    editorMode = true
 }
 
 function editorInBar(coords)

@@ -73,7 +73,7 @@ function drawTargetLeader(x, y)
 }
 function firstSlopedLevelLine()
 {
-    const L = levels[thisLevel].lines
+    const L = curLevel().lines
     for (let i = 0; i < L.length; ++i)
         if (L[i].posX != L[i].posX2 && L[i].posY != L[i].posY2)
             return L[i]
@@ -105,7 +105,7 @@ function drawAnnotations()
     const labels = []
     const callout = drawAngleCallout(firstSlopedLevelLine())
     if (callout) labels.push(callout)
-    const target = drawTargetLeader(levels[thisLevel].flagX, levels[thisLevel].flagY)
+    const target = drawTargetLeader(curLevel().flagX, curLevel().flagY)
     if (target) labels.push(target)
     for (let i = 0; i < lines.length; ++i)
         if (lines[i].type == 'player')

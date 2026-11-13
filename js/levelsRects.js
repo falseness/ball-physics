@@ -43,6 +43,7 @@ function levelsRectCollision(x, y)
         if (levels[i].unlock && collisionWithRect(x, y, r[0], r[1], r[0] + rectSize, r[1] + rectSize))
         {
             thisLevel = i
+            playtestLevel = null // picking a real level ends a play-test
             levelChoosed(thisLevel)
             drawMenu = false
             levelCompletedWindow = false

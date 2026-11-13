@@ -91,6 +91,7 @@ function buildBackground()
 function drawIcons()
 {
     drawStartIcon()
+    drawEditIcon()
     drawLinesK()
     menuIcon()
 }
@@ -124,14 +125,14 @@ function draw()
     drawIcons()
 
 
-    drawFlag(levels[thisLevel].flagX, levels[thisLevel].flagY, THEME.ink, THEME.coral)
+    drawFlag(curLevel().flagX, curLevel().flagY, THEME.ink, THEME.coral)
     drawLines()
     drawAnnotations()
     
     bounce.draw()
     
     if (!levelStarted)
-        drawStartMarker(levels[thisLevel].ballX, levels[thisLevel].ballY)
+        drawStartMarker(curLevel().ballX, curLevel().ballY)
     drawPortals()
     if (!drawPortalBall())
         ball.draw()

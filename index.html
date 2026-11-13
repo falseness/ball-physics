@@ -137,17 +137,18 @@
         }
         function levelChoosed(i)
         {
-            ball.posX = levels[i].ballX
-            ball.posY = levels[i].ballY
+            const L = playtestLevel || levels[i]
+            ball.posX = L.ballX
+            ball.posY = L.ballY
             ball.speedX = ball.speedY = 0
-            lines = levels[i].lines.slice()
+            lines = L.lines.slice()
             linesK = 0
             levelStarted = false
             physics = false
             flag = []
             for (let i = 0; i < flagCoords.length; ++i)
             {
-                let coord = pointRotation(flagCoords[i][0], flagCoords[i][1], levels[thisLevel].flagRotate)
+                let coord = pointRotation(flagCoords[i][0], flagCoords[i][1], L.flagRotate)
                 flag.push(coord)
             }
             
@@ -179,19 +180,29 @@
                 editorClick(coords)
                 return
             }
+            if (playtestLevel && !drawMenu && inEditIcon(coords))
+            {
+                editorEndPlaytest()
+                return
+            }
             if ((levelCompletedWindow || drawMenu) && levelsRectCollision(coords[0], coords[1]))
             {
                 return    
             }
             if (levelCompletedWindow)
             {
-                if (thisLevel + 1 < levels.length && collisionWithRect(
+                if ((playtestLevel || thisLevel + 1 < levels.length) && collisionWithRect(
                         coords[0], coords[1], 
                         menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, 
                         menuCoords[1] + blocks[1], 
                         menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0], 
                         menuCoords[1] + blocks[1] + menuTextRect[1]))
                 {
+                    if (playtestLevel)
+                    {
+                        editorEndPlaytest() // play-test: 'editor' instead of 'next level'
+                        return
+                    }
                     levelChoosed(++thisLevel)
                     levelCompletedWindow = false
                 }
@@ -210,7 +221,10 @@
             {
                 if (inEditorButton(coords))
                 {
-                    editorOpen()
+                    if (playtestLevel)
+                        editorEndPlaytest() // back to the same working copy
+                    else
+                        editorOpen()
                     return
                 }
                 for (let i = 0; i < menuButtons.length - 1; ++i)
@@ -238,7 +252,7 @@
                     if (!addNewLine(coords))
                         return
                     line = false
-                    if (linesK >= levels[thisLevel].lineK)
+                    if (linesK >= curLevel().lineK)
                     {
                         bounce.setDrawEnable(false)
                         physics = true
@@ -260,7 +274,7 @@
                     }
                     else if (!levelStarted)
                     {  
-                        if (linesK < levels[thisLevel].lineK)
+                        if (linesK < curLevel().lineK)
                         {
                             coords = dotСorrection(coords[0], coords[1], dotRadius)
                             if (ball.collisionWithDot(coords[0], coords[1]))
@@ -304,9 +318,9 @@
         {
             if (editorMode || levelCompletedWindow || drawMenu || line || levelStarted)
                 return false
-            if (inMenuIcon(coords) || inPlayIcon(coords))
+            if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)))
                 return false
-            if (linesK >= levels[thisLevel].lineK)
+            if (linesK >= curLevel().lineK)
                 return false
             let c = dotСorrection(coords[0], coords[1], dotRadius)
             return !ball.collisionWithDot(c[0], c[1]) && !portalBlocksPoint(c[0], c[1])
@@ -407,8 +421,13 @@
                 for (let i = 0; i < cyclesPerTact; ++i)
                 {
                     gamePhysics()
-                    if (flagCollision(levels[thisLevel].flagX, levels[thisLevel].flagY))
+                    if (flagCollision(curLevel().flagX, curLevel().flagY))
                     {
+                        if (playtestLevel)
+                        {
+                            levelCompletedWindow = true // play-test: no unlock bookkeeping
+                            continue
+                        }
                         levels[thisLevel].unlock = 2
                         if (thisLevel + 1 < levels.length)
                             levels[thisLevel + 1].unlock = (levels[thisLevel + 1].unlock == 2)?2:1 

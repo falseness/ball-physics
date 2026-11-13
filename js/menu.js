@@ -119,7 +119,7 @@ function drawStartIcon()
 // Line counter option A: one mini line glyph per allowed line; used = coral, free = dashed cyan
 function drawLinesK()
 {
-    const n = levels[thisLevel].lineK, x0 = GAME_W - 120, cy = 63 + 20 + 30
+    const n = curLevel().lineK, x0 = GAME_W - 120, cy = 63 + 20 + 30
     const w = 26, h = 10, step = 36, r = 3
     ctx.save()
     ctx.lineCap = 'round'
@@ -176,7 +176,7 @@ function guide()
 {
     // Level-1 tutorial hints: bright coral handwritten text with a glow pass, hand-drawn
     // arrows and target rings at the points to click. Seeded rng -> identical every frame.
-    if (thisLevel == 0)
+    if (thisLevel == 0 && !playtestLevel)
     {
         const R = sketchRng(1161), col = THEME.coral
         ctx.save()
