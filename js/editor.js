@@ -18,6 +18,8 @@ let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse:
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
 const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
 const EDITOR_PICK_DIST = 20           // select tool: max distance to flag anchor / ball start / portal centre
+const EDITOR_PICK_LINE_DIST = 8       // select tool: max distance to a line segment (no point object in reach)
+const EDITOR_LINE_SEL_PAD = 10        // select tool: dashed capsule distance around a selected line
 const EDITOR_FLAG_STEP = Math.PI / 12 // 'flag ⟲' / 'flag ⟳' rotation step
 const EDITOR_MAX_LINEK = 5
 const EDITOR_PORTAL_ANGLE = -Math.PI / 2 // default angle of a placed portal (opening horizontal, front up)
@@ -244,7 +246,9 @@ function editorInBar(coords)
     return collisionWithRect(coords[0], coords[1], R[0], R[1], R[0] + R[2], R[1] + R[3])
 }
 
-// Select tool: the nearest of flag anchor, ball start and portal centres within EDITOR_PICK_DIST
+// Select tool: the nearest of flag anchor, ball start and portal centres within EDITOR_PICK_DIST;
+// with none in reach, the nearest level line within EDITOR_PICK_LINE_DIST of its segment
+// (['line', i, x, y] with the pointer as the grab point)
 function editorPickAt(coords)
 {
     const W = editor.level, x = coords[0], y = coords[1]
@@ -256,6 +260,13 @@ function editorPickAt(coords)
         const d = Math.hypot(x - c[2], y - c[3])
         if (d <= EDITOR_PICK_DIST && d < bestD) { best = c; bestD = d }
     }
+    if (best)
+        return best
+    W.lines.forEach(function(l, i)
+    {
+        const d = pointSegDist(x, y, l.posX, l.posY, l.posX2, l.posY2)
+        if (d <= EDITOR_PICK_LINE_DIST && d < bestD) { best = ['line', i, x, y]; bestD = d }
+    })
     return best
 }
 
@@ -267,9 +278,14 @@ function editorMouseDown(coords)
     if (editor.tool != 'select' || editorInBar(coords))
         return
     const c = editorPickAt(coords)
-    // selection: a portal picked with the select tool (⟲ / ⟳ then rotate it); anything else clears it
-    editor.selected = c && c[0] == 'portal' ? { kind: 'portal', i: c[1] } : null
-    if (c)
+    // selection: a portal (⟲ / ⟳ then rotate it) or a line picked with the select tool; anything else clears it
+    editor.selected = c && (c[0] == 'portal' || c[0] == 'line') ? { kind: c[0], i: c[1] } : null
+    if (c && c[0] == 'line')
+    {
+        const l = editor.level.lines[c[1]]
+        editor.drag = { kind: 'line', i: c[1], mx: coords[0], my: coords[1], ends: [l.posX, l.posY, l.posX2, l.posY2] }
+    }
+    else if (c)
         editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1], x0: c[2], y0: c[3] }
 }
 
@@ -281,9 +297,29 @@ function editorClampToField(x, y)
     return [Math.min(Math.max(x, 0), EDITOR_FIELD.w), Math.min(Math.max(y, 0), EDITOR_FIELD.h)]
 }
 
+// Line drag: both endpoints move by the mouse delta, clamped so both stay inside the field
+function editorDragLine(d, coords)
+{
+    const l = editor.level.lines[d.i], e = d.ends
+    if (!l)
+        return
+    const F = EDITOR_FIELD
+    const dx = Math.min(Math.max(coords[0] - d.mx, -Math.min(e[0], e[2])), F.w - Math.max(e[0], e[2]))
+    const dy = Math.min(Math.max(coords[1] - d.my, -Math.min(e[1], e[3])), F.h - Math.max(e[1], e[3]))
+    l.posX = e[0] + dx; l.posY = e[1] + dy; l.posX2 = e[2] + dx; l.posY2 = e[3] + dy
+}
+function editorLineRevert(d)
+{
+    const l = editor.level.lines[d.i]
+    if (l)
+        [l.posX, l.posY, l.posX2, l.posY2] = d.ends
+}
+
 function editorDragTo(coords)
 {
     const d = editor.drag, W = editor.level
+    if (d.kind == 'line')
+        return editorDragLine(d, coords)
     const [x, y] = editorClampToField(coords[0] + d.dx, coords[1] + d.dy)
     if (d.kind == 'flag') { W.flagX = x; W.flagY = y }
     else if (d.kind == 'ball') { W.ballX = x; W.ballY = y }
@@ -307,6 +343,15 @@ function editorMouseUp(coords)
             editorShowError('portal too close to a line')
         }
     }
+    else if (d.kind == 'line')
+    {
+        const l = editor.level.lines[d.i]
+        if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals))
+        {
+            editorLineRevert(d) // refused drop: back to where it was picked up
+            editorShowError('line too close to a portal')
+        }
+    }
 }
 
 // touchcancel (OS gesture, palm rejection...): no drop happened, so the dragged object goes back
@@ -320,6 +365,7 @@ function editorCancelDrag()
     const W = editor.level
     if (d.kind == 'flag') { W.flagX = d.x0; W.flagY = d.y0 }
     else if (d.kind == 'ball') { W.ballX = d.x0; W.ballY = d.y0 }
+    else if (d.kind == 'line') editorLineRevert(d)
     else if (W.portals[d.i]) { W.portals[d.i].x = d.x0; W.portals[d.i].y = d.y0 }
 }
 
@@ -426,16 +472,32 @@ function editorDrawError()
     ctx.restore()
 }
 
-// Dashed ring around the selected portal (select tool)
+function editorSelectedLine()
+{
+    const s = editor.selected
+    return s && s.kind == 'line' ? editor.level.lines[s.i] || null : null
+}
+
+// Dashed ring around the selected portal, dashed capsule around the selected line (select tool)
 function editorDrawSelection()
 {
-    const P = editorSelectedPortal()
-    if (!P || editor.tool != 'select')
+    const P = editorSelectedPortal(), l = editorSelectedLine()
+    if ((!P && !l) || editor.tool != 'select')
         return
     ctx.save()
     ctx.strokeStyle = THEME.cyan; ctx.lineWidth = 1.4; ctx.setLineDash([5, 5])
     ctx.shadowColor = THEME.cyan; ctx.shadowBlur = 6
-    ctx.beginPath(); ctx.arc(P.x, P.y, P.h + 18, 0, Math.PI * 2); ctx.stroke()
+    ctx.beginPath()
+    if (P)
+        ctx.arc(P.x, P.y, P.h + 18, 0, Math.PI * 2)
+    else
+    {
+        const r = EDITOR_LINE_SEL_PAD, a = Math.atan2(l.posY2 - l.posY, l.posX2 - l.posX)
+        ctx.arc(l.posX2, l.posY2, r, a - Math.PI / 2, a + Math.PI / 2)
+        ctx.arc(l.posX, l.posY, r, a + Math.PI / 2, a + Math.PI * 1.5)
+        ctx.closePath()
+    }
+    ctx.stroke()
     ctx.restore()
 }
 
