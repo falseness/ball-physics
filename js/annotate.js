@@ -4,7 +4,7 @@
 //  - a 'target' leader next to the flag
 //  - an angle callout (dash-dot horizontal reference + arc + '<deg>°') on the first sloped level line
 // annotationLabels() returns the label strings drawn in the most recent frame.
-const DIM_OFFSET = 34
+const DIM_OFFSET = 20
 let lastAnnotationLabels = []
 
 // Acute angle to the horizontal, degrees
@@ -33,16 +33,21 @@ function drawDimension(l)
     const a = Math.atan2(y2 - y1, x2 - x1), nx = Math.sin(a) * DIM_OFFSET, ny = -Math.cos(a) * DIM_OFFSET
     const R = sketchRng(sketchSeed([x1, y1, x2, y2, 7]))
     const label = dimensionLabel(l.posX, l.posY, l.posX2, l.posY2)
+    // quiet, soft-ink dimension (coral stays reserved for the player's line itself)
     ctx.save()
-    ctx.globalAlpha = .85
+    ctx.globalAlpha = .26
+    ctx.lineWidth = .8
     // extension lines (start just off the ring ends) and the dimension line itself
-    handLine(ctx, R, x1 + nx * .2, y1 + ny * .2, x1 + nx * 1.2, y1 + ny * 1.2, THEME.coral, 1, 1, 0.5, 2)
-    handLine(ctx, R, x2 + nx * .2, y2 + ny * .2, x2 + nx * 1.2, y2 + ny * 1.2, THEME.coral, 1, 1, 0.5, 2)
-    handLine(ctx, R, x1 + nx, y1 + ny, x2 + nx, y2 + ny, THEME.coral, 1.1, 1, 0.5, 0)
-    arrowHead(ctx, x1 + nx, y1 + ny, a + Math.PI, 10, THEME.coral)
-    arrowHead(ctx, x2 + nx, y2 + ny, a, 10, THEME.coral)
+    handLine(ctx, R, x1 + nx * .3, y1 + ny * .3, x1 + nx * 1.15, y1 + ny * 1.15, THEME.soft, .8, 1, 0.4, 1)
+    handLine(ctx, R, x2 + nx * .3, y2 + ny * .3, x2 + nx * 1.15, y2 + ny * 1.15, THEME.soft, .8, 1, 0.4, 1)
+    handLine(ctx, R, x1 + nx, y1 + ny, x2 + nx, y2 + ny, THEME.soft, .8, 1, 0.4, 0)
+    arrowHead(ctx, x1 + nx, y1 + ny, a + Math.PI, 5, THEME.soft)
+    arrowHead(ctx, x2 + nx, y2 + ny, a, 5, THEME.soft)
     ctx.restore()
-    annotText(label, (x1 + x2) / 2 + nx * 1.5, (y1 + y2) / 2 + ny * 1.5, 24, THEME.coral, a)
+    ctx.save()
+    ctx.globalAlpha = .45
+    annotText(label, (x1 + x2) / 2 + nx * 1.45, (y1 + y2) / 2 + ny * 1.45, 17, THEME.soft, a)
+    ctx.restore()
     return label
 }
 function drawTargetLeader(x, y)
