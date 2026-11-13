@@ -39,6 +39,7 @@
     <script src = "js/gamebreak.js"></script>
     <script src = "js/menu.js"></script>
     <script src = "js/bounce.js"></script>
+    <script src = "js/portal.js"></script>
     <script src = "js/draw.js"></script>
     <script>
         'use strict'
@@ -148,6 +149,7 @@
             }
             
             bounce.setDrawEnable(true)
+            portalReset()
         }
         
         levelChoosed(thisLevel)
@@ -358,6 +360,7 @@
         {
             ball.physics()
             ball.move()
+            portalStep()
         }
         function restart()
         {
