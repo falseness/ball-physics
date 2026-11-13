@@ -227,6 +227,31 @@ levels.push(
         { line: 4, u: 0.5, side: 1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 14, 'horizontal acceleration' (the user's editor export, squared): the same ceiling and
+    // short wall as level 12, and two big portals (h 90, twice the default) each cut into its own
+    // vertical wall facing the other one: B on the left facing right, A on the right facing left.
+    // The flag hangs upside down on the right.
+    ballX: 197,
+    ballY: 436,
+    flagX: 1081,
+    flagY: 192,
+    flagRotate: -Math.PI,
+    lineK: 1,
+    lines: [
+        new Line(43, 112, 453, 112, dotRadius, levelLineColor, 'line'),
+        new Line(43, 112, 43, 209, dotRadius, levelLineColor, 'line'),
+        new Line(121, 270, 121, 510, dotRadius, levelLineColor, 'line'),
+        new Line(845, 422, 845, 662, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (845, 542) facing left (-1, 0),
+    // B at (121, 390) facing right (1, 0)
+    portals: [
+        { line: 3, u: 0.5, side: 1, h: 90, name: 'A' },
+        { line: 2, u: 0.5, side: -1, h: 90, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
