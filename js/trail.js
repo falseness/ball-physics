@@ -50,7 +50,10 @@ function trailSegments()
 function trailStrands(H)
 {
     const n = H.length, k = Math.min(n, TRAIL_MAX), s0 = n - k
-    const vmax = Math.hypot(H[n - 1].x - H[n - 2].x, H[n - 1].y - H[n - 2].y)
+    // width scale: the fastest step of the segment, so A = 2 + 12 * L / vmax stays in [2, 14]
+    let vmax = 0
+    for (let i = 1; i < n; ++i)
+        vmax = Math.max(vmax, Math.hypot(H[i].x - H[i - 1].x, H[i].y - H[i - 1].y))
     const pts = []
     let nx = 0, ny = 0
     for (let i = 1; i < n; ++i)
@@ -72,6 +75,13 @@ function trailStrands(H)
         })
     }
     return pts
+}
+
+// test hook: per segment (>= 3 samples, as drawn), the max distance between a strand point and its sample H[i]
+function trailWidths()
+{
+    return trailSegments().filter(H => H.length >= 3).map(H => trailStrands(H).reduce((m, q) =>
+        Math.max(m, Math.hypot(q.p[0][0] - H[q.i].x, q.p[0][1] - H[q.i].y), Math.hypot(q.p[1][0] - H[q.i].x, q.p[1][1] - H[q.i].y)), 0))
 }
 
 function trailDraw()
