@@ -127,7 +127,9 @@ function draw()
     
     if (!levelStarted)
         drawStartMarker(levels[thisLevel].ballX, levels[thisLevel].ballY)
-    ball.draw()
+    drawPortals()
+    if (!drawPortalBall())
+        ball.draw()
     drawNewLine()
     levelCompleted()
 }

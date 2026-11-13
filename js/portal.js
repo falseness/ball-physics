@@ -177,6 +177,125 @@ function portalStep()
     }
 }
 
+// ---- Portal rendering (concept artifacts/concepts/72-portals-rings-orangepurple.png, 'rings') ----
+// Purely visual; no state is changed. Levels without portals draw nothing here and the ball
+// is drawn by the unchanged ball.draw() path.
+const PORTAL_STYLE = [
+    { label: 'portal A', color: '#ff9a2e', glow: 'rgba(255,154,46,.9)' },
+    { label: 'portal B', color: '#b46cff', glow: 'rgba(180,108,255,.95)' }
+]
+const PORTAL_RING = { rx: 4, ry: 7, outerRx: 11, outerRy: 11, arrowFrom: 8, arrowLen: 16, arrowHead: 6 }
+
+// Screen bounding box of a portal drawing (outer ring + front arrow): [x0, y0, x1, y1]
+function portalBounds(P)
+{
+    const f = portalFrame(P), a = P.angle + Math.PI / 2, c = Math.cos(a), s = Math.sin(a)
+    const rx = P.h + PORTAL_RING.outerRx, ry = PORTAL_RING.outerRy
+    const wx = Math.hypot(rx * c, ry * s), wy = Math.hypot(rx * s, ry * c)
+    let x0 = P.x - wx, x1 = P.x + wx, y0 = P.y - wy, y1 = P.y + wy
+    const tip = PORTAL_RING.arrowFrom + PORTAL_RING.arrowLen
+    const ax = P.x + f.nx * tip, ay = P.y + f.ny * tip, hs = PORTAL_RING.arrowHead / 2
+    x0 = Math.min(x0, ax - hs); x1 = Math.max(x1, ax + hs)
+    y0 = Math.min(y0, ay - hs); y1 = Math.max(y1, ay + hs)
+    return [x0, y0, x1, y1]
+}
+
+// Label anchor: centred above the bounding box, alphabetic baseline 18 px above its top
+function portalLabelPos(P)
+{
+    const b = portalBounds(P)
+    return { x: (b[0] + b[2]) / 2, y: b[1] - 18 }
+}
+
+function drawPortal(P, st)
+{
+    const f = portalFrame(P), rot = P.angle + Math.PI / 2
+    const rx = P.h + PORTAL_RING.rx, ry = PORTAL_RING.ry
+    ctx.save()
+    // hatched half-ellipse on the back side (-n)
+    hatch(ctx, () => {
+        ctx.beginPath(); ctx.ellipse(P.x, P.y, rx, ry, rot, 0, Math.PI); ctx.closePath()
+    }, P.x - rx, P.y - rx, rx * 2, rx * 2, P.angle + Math.PI / 4, 3, st.color, 1, .7)
+    // fainter outer ring
+    ctx.globalAlpha = .45; ctx.strokeStyle = st.color; ctx.lineWidth = 1.2
+    ctx.beginPath(); ctx.ellipse(P.x, P.y, P.h + PORTAL_RING.outerRx, PORTAL_RING.outerRy, rot, 0, Math.PI * 2); ctx.stroke()
+    // glowing main ring
+    ctx.globalAlpha = 1; ctx.lineWidth = 2.4; ctx.shadowColor = st.glow; ctx.shadowBlur = 12
+    ctx.beginPath(); ctx.ellipse(P.x, P.y, rx, ry, rot, 0, Math.PI * 2); ctx.stroke()
+    // small arrow on the front normal
+    const a0 = PORTAL_RING.arrowFrom, a1 = a0 + PORTAL_RING.arrowLen
+    ctx.shadowBlur = 6; ctx.lineWidth = 1.6; ctx.lineCap = 'round'
+    ctx.beginPath(); ctx.moveTo(P.x + f.nx * a0, P.y + f.ny * a0)
+    ctx.lineTo(P.x + f.nx * (a1 - 2), P.y + f.ny * (a1 - 2)); ctx.stroke()
+    arrowHead(ctx, P.x + f.nx * a1, P.y + f.ny * a1, P.angle, PORTAL_RING.arrowHead, st.color)
+    // handwritten label above the bounding box
+    const lp = portalLabelPos(P)
+    ctx.shadowBlur = 8; ctx.fillStyle = st.color
+    ctx.font = '24px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+    ctx.fillText(st.label, lp.x, lp.y)
+    ctx.restore()
+}
+
+function drawPortals()
+{
+    const P = currentPortals()
+    if (!P)
+        return
+    if (P.length >= 2)
+    {
+        // faint dashed link curve between the pair, bowed to one side of the chord
+        const mx = (P[0].x + P[1].x) / 2, my = (P[0].y + P[1].y) / 2
+        const dx = P[1].x - P[0].x, dy = P[1].y - P[0].y, L = Math.hypot(dx, dy) || 1
+        const bow = Math.min(120, L * .25), sgn = dx >= 0 ? 1 : -1
+        ctx.save()
+        ctx.globalAlpha = .35; ctx.strokeStyle = THEME.soft; ctx.lineWidth = 1.2; ctx.setLineDash([4, 6])
+        ctx.beginPath(); ctx.moveTo(P[0].x, P[0].y)
+        ctx.quadraticCurveTo(mx + sgn * dy / L * bow, my - sgn * dx / L * bow, P[1].x, P[1].y)
+        ctx.stroke()
+        ctx.restore()
+    }
+    for (let i = 0; i < P.length; ++i)
+        drawPortal(P[i], PORTAL_STYLE[i % 2])
+}
+
+// Clip to the half-plane on side `side` (+1 front, -1 back) of portal P's plane
+function clipPortalSide(P, side)
+{
+    const f = portalFrame(P), B = 4000
+    ctx.beginPath()
+    ctx.moveTo(P.x + f.tx * B, P.y + f.ty * B)
+    ctx.lineTo(P.x - f.tx * B, P.y - f.ty * B)
+    ctx.lineTo(P.x - f.tx * B + side * f.nx * B, P.y - f.ty * B + side * f.ny * B)
+    ctx.lineTo(P.x + f.tx * B + side * f.nx * B, P.y + f.ty * B + side * f.ny * B)
+    ctx.closePath()
+    ctx.clip()
+}
+
+// Split ball: while the centre is within ball.radius of a portal plane (|d| < r, |s| <= h)
+// the part on the centre's side is drawn at that portal and the part past the plane is drawn
+// at the partner (teleport map (s, d) -> (-s, -d)), clipped to the partner's same-sign side,
+// which is exactly the image of the far side. At the teleport step the two halves swap
+// roles, so the picture is continuous. Returns false (ball not drawn) when no portal is near.
+function drawPortalBall()
+{
+    const P = currentPortals()
+    if (!P || P.length < 2)
+        return false
+    const r = ball.radius
+    for (let i = 0; i < P.length; ++i)
+    {
+        const L = portalLocal(P[i], ball.posX, ball.posY)
+        if (!(Math.abs(L.d) < r && Math.abs(L.s) <= P[i].h))
+            continue
+        const Q = P[i ^ 1], fq = portalFrame(Q), side = L.d >= 0 ? 1 : -1
+        ctx.save(); clipPortalSide(P[i], side); ball.draw(); ctx.restore()
+        const mapped = { posX: Q.x - L.s * fq.tx - L.d * fq.nx, posY: Q.y - L.s * fq.ty - L.d * fq.ny, radius: r }
+        ctx.save(); clipPortalSide(Q, side); Ball.prototype.draw.call(mapped); ctx.restore()
+        return true
+    }
+    return false
+}
+
 // Test API (tests/portal/sim.py)
 window.__portalTest = {
     setup(cfg)
