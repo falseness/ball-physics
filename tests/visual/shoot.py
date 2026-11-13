@@ -255,6 +255,13 @@ def sc_touch_line(page, info):
 LEVEL11_LINE = ((100, 180), (580, 450))
 LEVEL11_MAX_FRAMES = 3000
 
+# Level 12 'accelerator' reference solution (TASK-071): two player lines (lineK 4). The ramp under the
+# ball rolls it right onto floor portal A; it loops A -> B (shelf underside) five times, gaining speed
+# on every pass, then flies up-left into the flag (completed on physics frame 612). Searched headlessly
+# with in-page stepped frames; the motion is chaotic, so keep these exact integer coordinates.
+LEVEL12_LINES = (((394, 678), (710, 752)), ((663, 202), (594, 249)))
+LEVEL12_MAX_FRAMES = 3000
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -264,48 +271,58 @@ LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
         return r } }"""
 
 
-def sc_level11(page, info):
-    # Pause menu -> level square 11 (the portal level), real clicks; then play the reference
-    # solution with real mouse input: draw the line (click, move, click), press start, and wait
-    # until the level is completed (at most LEVEL11_MAX_FRAMES physics frames).
+def play_solution(page, info, index, segments, max_frames, key):
+    # Pause menu -> level square index + 1, real clicks; then play the solution with real mouse
+    # input: draw each line (click, move, click), press start, and wait until the level is completed
+    # (at most max_frames physics frames) with at least one A -> B teleport.
     frames(page)
     open_menu(page)
-    x, y = page.evaluate("(() => { const r = levelRectXY(10); return [r[0] + rectSize / 2, r[1] + rectSize / 2] })()")
+    x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", index)
     click(page, x, y)
     st = page.evaluate("({thisLevel, drawMenu, portals: (curLevel().portals || []).length})")
-    info['level11'] = st
-    if st != {'thisLevel': 10, 'drawMenu': False, 'portals': 2}:
-        raise RuntimeError('level 11 not loaded: %s' % st)
+    info[key] = st
+    if st != {'thisLevel': index, 'drawMenu': False, 'portals': 2}:
+        raise RuntimeError('%s not loaded: %s' % (key, st))
     n0 = page.evaluate("lines.length")
-    (x1, y1), (x2, y2) = LEVEL11_LINE
-    click(page, x1, y1)
-    move(page, x2, y2)
-    frames(page)
-    click(page, x2, y2)
-    drawn = page.evaluate("""() => { const l = lines[lines.length - 1];
-        return {added: lines.length, linesK, lineK: curLevel().lineK, pending: !!line, physics,
-            line: [l.posX, l.posY, l.posX2, l.posY2]} }""")
-    drawn['added'] -= n0
+    for (x1, y1), (x2, y2) in segments:
+        click(page, x1, y1)
+        move(page, x2, y2)
+        frames(page)
+        click(page, x2, y2)
+    drawn = page.evaluate("""n0 => ({added: lines.length - n0, linesK, lineK: curLevel().lineK, pending: !!line,
+        physics, lines: lines.slice(n0).map(l => [l.posX, l.posY, l.posX2, l.posY2])})""", n0)
+    if len(segments) == 1:  # level 11 record shape (TASK-068)
+        drawn['line'] = drawn['lines'][0]
     info['drawn'] = drawn
-    if drawn['added'] != 1 or drawn['pending'] or drawn['physics']:
-        raise RuntimeError('solution line not placed: %s' % drawn)
+    want = [[x1, y1, x2, y2] for (x1, y1), (x2, y2) in segments]
+    off = drawn['added'] != len(segments) or any(abs(a - b) > 1 for l, w in zip(drawn['lines'], want) for a, b in zip(l, w))
+    if off or drawn['pending'] or drawn['physics']:
+        raise RuntimeError('solution lines not placed: %s' % drawn)
     page.evaluate(LEVEL11_COUNTER_JS)
     x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
     click(page, x, y)
     info['startPressed'] = page.evaluate("({physics, levelStarted})")
-    page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % LEVEL11_MAX_FRAMES,
+    page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % max_frames,
                            timeout=180000, polling=100)
-    r = page.evaluate("""() => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
-        frames: window.__l11Frames, unlock: levels[10].unlock, ball: [ball.posX, ball.posY],
+    r = page.evaluate("""i => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
+        frames: window.__l11Frames, unlock: levels[i].unlock, ball: [ball.posX, ball.posY],
         teleports: portalState.teleports.map(t => ({step: t.step, from: t.from, to: t.to,
-            before: t.before, after: t.after}))})""")
+            before: t.before, after: t.after}))})""", index)
     info['play'] = r
     ab = [t for t in r['teleports'] if t['from'] == 'A' and t['to'] == 'B']
-    if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= LEVEL11_MAX_FRAMES and ab):
-        raise RuntimeError('level 11 not won with an A->B teleport: %s' % {k: r[k] for k in (
-            'levelCompleted', 'winFrame', 'frames', 'ball')})
+    if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= max_frames and ab):
+        raise RuntimeError('%s not won with an A->B teleport: %s' % (key, {k: r[k] for k in (
+            'levelCompleted', 'winFrame', 'frames', 'ball')}))
     # a fresh draw after the win so the screenshot shows the completed-level panel
     frames(page)
+
+
+def sc_level11(page, info):
+    play_solution(page, info, 10, [LEVEL11_LINE], LEVEL11_MAX_FRAMES, 'level11')
+
+
+def sc_level12(page, info):
+    play_solution(page, info, 11, LEVEL12_LINES, LEVEL12_MAX_FRAMES, 'level12')
 
 
 SCENARIOS = {
@@ -325,6 +342,7 @@ SCENARIOS = {
     'trail': sc_trail,
     'touch_line': sc_touch_line,
     'level11': sc_level11,
+    'level12': sc_level12,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
