@@ -255,6 +255,14 @@ def sc_touch_line(page, info):
 LEVEL11_LINE = ((100, 180), (580, 450))
 LEVEL11_MAX_FRAMES = 3000
 
+# Level 12 'understanding portals' reference solution (TASK-073): one player line (lineK 1) under the
+# ball, sloping slightly down to the right. The ball bounces off it to the right past pad B, falls
+# into floor portal A, leaves portal B moving up and flies into the flag (completed on physics frame
+# 140). Searched headlessly with in-page stepped frames; 34 of 81 lines with each coordinate moved by
+# -3/0/+3 px also win, so keep these exact integer coordinates.
+LEVEL12_LINE = ((199, 381), (273, 385))
+LEVEL12_MAX_FRAMES = 3000
+
 # Level 13 'accelerator' reference solution (TASK-071; level 12 until TASK-072): two player lines (lineK 4). The ramp under the
 # ball rolls it right onto floor portal A; it loops A -> B (shelf underside) five times, gaining speed
 # on every pass, then flies up-left into the flag (completed on physics frame 612). Searched headlessly
@@ -273,7 +281,8 @@ LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
 
 def play_solution(page, info, index, segments, max_frames, key):
     # Pause menu -> level square index + 1, real clicks; then play the solution with real mouse
-    # input: draw each line (click, move, click), press start, and wait until the level is completed
+    # input: draw each line (click, move, click), press start (unless the last allowed line already
+    # started physics), and wait until the level is completed
     # (at most max_frames physics frames) with at least one A -> B teleport.
     frames(page)
     open_menu(page)
@@ -284,6 +293,9 @@ def play_solution(page, info, index, segments, max_frames, key):
     if st != {'thisLevel': index, 'drawMenu': False, 'portals': 2}:
         raise RuntimeError('%s not loaded: %s' % (key, st))
     n0 = page.evaluate("lines.length")
+    # installed before drawing: physics is off until the start (or the last allowed line), so the
+    # counter starts with the first physics frame either way
+    page.evaluate(LEVEL11_COUNTER_JS)
     for (x1, y1), (x2, y2) in segments:
         click(page, x1, y1)
         move(page, x2, y2)
@@ -296,12 +308,16 @@ def play_solution(page, info, index, segments, max_frames, key):
     info['drawn'] = drawn
     want = [[x1, y1, x2, y2] for (x1, y1), (x2, y2) in segments]
     off = drawn['added'] != len(segments) or any(abs(a - b) > 1 for l, w in zip(drawn['lines'], want) for a, b in zip(l, w))
-    if off or drawn['pending'] or drawn['physics']:
+    # placing the last allowed line starts physics by itself (index.html click handler)
+    auto = drawn['linesK'] >= drawn['lineK']
+    if off or drawn['pending'] or drawn['physics'] != auto:
         raise RuntimeError('solution lines not placed: %s' % drawn)
-    page.evaluate(LEVEL11_COUNTER_JS)
-    x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
-    click(page, x, y)
-    info['startPressed'] = page.evaluate("({physics, levelStarted})")
+    if auto:  # already running; the start button would pause it
+        info['autoStarted'] = page.evaluate("({physics, levelStarted})")
+    else:
+        x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
+        click(page, x, y)
+        info['startPressed'] = page.evaluate("({physics, levelStarted})")
     page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % max_frames,
                            timeout=180000, polling=100)
     r = page.evaluate("""i => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
@@ -319,6 +335,10 @@ def play_solution(page, info, index, segments, max_frames, key):
 
 def sc_level11(page, info):
     play_solution(page, info, 10, [LEVEL11_LINE], LEVEL11_MAX_FRAMES, 'level11')
+
+
+def sc_level12(page, info):
+    play_solution(page, info, 11, [LEVEL12_LINE], LEVEL12_MAX_FRAMES, 'level12')
 
 
 def sc_level13(page, info):
@@ -342,6 +362,7 @@ SCENARIOS = {
     'trail': sc_trail,
     'touch_line': sc_touch_line,
     'level11': sc_level11,
+    'level12': sc_level12,
     'level13': sc_level13,
 }
 
