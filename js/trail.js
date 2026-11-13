@@ -136,8 +136,10 @@ const TRAIL_ARROW_STEP = 7      // frames between speed arrows
 const TRAIL_ARROW_MAX = 7
 const TRAIL_ARROW_SCALE = 3.2   // arrow length = |H[i] - H[i-1]| * scale
 const TRAIL_VEL_LEN = 70        // coral velocity arrow length beyond the ball rim
+const TRAIL_ARROW_GAP = 24       // min px between speed-arrow anchors
 
-// test hook + draw data: speed arrows of the newest segment (newest first, every 7 frames, needs H[i-1]),
+// test hook + draw data: speed arrows of the newest segment (newest first, every 7 frames, needs H[i-1],
+// overlapping anchors dropped),
 // the live readout and the velocity direction; null when the trail is not shown
 function trailLabels()
 {
@@ -149,6 +151,10 @@ function trailLabels()
     const arrows = []
     for (let c = 0, i = H.length - 1; c < TRAIL_ARROW_MAX && i >= 1; ++c, i -= TRAIL_ARROW_STEP)
     {
+        // a retraced path (vertical bounce) puts candidates on top of each other: keep a candidate only
+        // when its anchor is >= TRAIL_ARROW_GAP px from every arrow already kept (the newest always is)
+        if (arrows.some(a => Math.hypot(a.x - H[i].x, a.y - H[i].y) < TRAIL_ARROW_GAP))
+            continue
         const dx = H[i].x - H[i - 1].x, dy = H[i].y - H[i - 1].y
         arrows.push({ x: H[i].x, y: H[i].y, dx: dx, dy: dy, label: Math.round(Math.hypot(dx, dy) * 60), i: i, c: c })
     }
