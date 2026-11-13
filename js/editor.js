@@ -61,8 +61,12 @@ function editorBarRect()
 // levelRectXY(10) is the only square in that row), clear of resume/restart, the grid and the logo.
 function editorButtonRect()
 {
-    const w = menuTextRect[0], h = menuTextRect[1]
-    return [menuCoords[0] + menuSize[0] - rectMarginLeft - w, menuCoords[1] + rectMarginTop + 2 * 60, w, h]
+    // Right-aligned in the level grid's last row, starting no further left than just after the
+    // last level square (11 levels: 250 px wide as before; 12 levels: 200 px, clear of square 12)
+    const n = levels.length, row = Math.floor((n - 1) / 5), col = (n - 1) % 5 + 1
+    const right = menuSize[0] - rectMarginLeft, free = right - (rectMarginLeft + rectSize) * col - rectMarginLeft
+    const w = Math.min(menuTextRect[0], free), h = menuTextRect[1]
+    return [menuCoords[0] + right - w, menuCoords[1] + rectMarginTop + row * 60, w, h]
 }
 function inEditorButton(coords)
 {

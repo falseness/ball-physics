@@ -176,6 +176,31 @@ levels.push(
         { line: 0, u: 250 / 450, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 12, 'accelerator': a closed box with a shelf in the middle. Portal A is cut into the
+    // floor (front facing up), portal B into the shelf's underside (front facing down), so a ball
+    // falling into A drops out of B above it and gains speed on every loop.
+    ballX: 430,
+    ballY: 655,
+    flagX: 362,
+    flagY: 112,
+    flagRotate: -Math.PI / 2,
+    lineK: 4,
+    lines: [
+        new Line(360, 755, 1240, 755, dotRadius, levelLineColor, 'line'),
+        new Line(1240, 755, 1240, 70, dotRadius, levelLineColor, 'line'),
+        new Line(360, 755, 360, 70, dotRadius, levelLineColor, 'line'),
+        new Line(360, 70, 1240, 70, dotRadius, levelLineColor, 'line'),
+        new Line(694, 377, 894, 377, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (790, 755) facing up (0, -1),
+    // B at (794, 377) on the shelf's underside facing down (0, 1)
+    portals: [
+        { line: 0, u: (790 - 360) / 880, side: -1, h: 45, name: 'A' },
+        { line: 4, u: 0.5, side: 1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
