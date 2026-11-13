@@ -416,26 +416,43 @@ function editorMouseUp(coords)
             editorShowError(err)
         }
     }
-    else if (d.kind == 'lineEnd')
+    else if (d.kind == 'lineEnd' || d.kind == 'line')
     {
-        const l = editor.level.lines[d.i]
-        if (editorDropLineEnd(d))
-            editorLineRevert(d) // degenerate (< 1 px) line: back to where it was picked up
-        else if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals, d.i))
+        if (d.kind == 'lineEnd' && editorDropLineEnd(d))
         {
-            editorLineRevert(d)
-            editorShowError('line too close to a portal')
+            editorLineRevert(d) // degenerate (< 1 px) line: back to where it was picked up
+            return
         }
-    }
-    else if (d.kind == 'line')
-    {
-        const l = editor.level.lines[d.i]
-        if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals, d.i))
+        const err = editorLineEditError(d.i)
+        if (err)
         {
             editorLineRevert(d) // refused drop: back to where it was picked up
-            editorShowError('line too close to a portal')
+            editorShowError(err)
         }
     }
+}
+
+// Check after line i was moved / rotated / had an endpoint dragged (the edit already applied).
+// Wall portals hosted on line i follow it (they store {line, u, side}), so the edit is refused when
+// the line gets shorter than an opening needs (2*h + 2*ball.radius), the line comes within the
+// clearance of another portal's opening, a carried opening comes within the clearance of another
+// line, or the carried pair overlaps on the line. null = the edit is allowed.
+function editorLineEditError(i)
+{
+    const W = editor.level, l = W.lines[i]
+    if (!l)
+        return null
+    const hosted = W.portals.filter(P => editorIsWallPortal(P) && P.line === i)
+    const len = Math.hypot(l.posX2 - l.posX, l.posY2 - l.posY)
+    if (hosted.some(P => len < 2 * P.h + 2 * ball.radius))
+        return 'line too short for its portal'
+    if (editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, W.portals, i))
+        return 'line too close to a portal'
+    if (hosted.some(editorPortalBlocked))
+        return 'portal too close to a line'
+    if (hosted.length && editorPortalsOverlap(W.portals))
+        return 'portals overlap'
+    return null
 }
 
 // touchcancel (OS gesture, palm rejection...): no drop happened, so the dragged object goes back
@@ -577,8 +594,8 @@ function editorRotatePortal(P, da)
     }
 }
 
-// ⟲ / ⟳ with a selected line: rotate it by ∓PI/12 around its midpoint (length kept); refused
-// (line unchanged) when the rotated segment comes within the portal clearance or leaves EDITOR_FIELD
+// ⟲ / ⟳ with a selected line: rotate it by ∓PI/12 around its midpoint (length kept, its wall portals
+// turn with it); refused (line unchanged) when it leaves EDITOR_FIELD or editorLineEditError objects
 function editorRotateLine(l, da)
 {
     const mx = (l.posX + l.posX2) / 2, my = (l.posY + l.posY2) / 2
@@ -593,12 +610,15 @@ function editorRotateLine(l, da)
         editorShowError('line would leave the field')
         return false
     }
-    if (editorSegNearPortal(x1, y1, x2, y2, editor.level.portals, editor.level.lines.indexOf(l)))
+    const old = [l.posX, l.posY, l.posX2, l.posY2]
+    l.posX = x1; l.posY = y1; l.posX2 = x2; l.posY2 = y2
+    const err = editorLineEditError(editor.level.lines.indexOf(l))
+    if (err)
     {
-        editorShowError('line too close to a portal')
+        [l.posX, l.posY, l.posX2, l.posY2] = old
+        editorShowError(err)
         return false
     }
-    l.posX = x1; l.posY = y1; l.posX2 = x2; l.posY2 = y2
     return true
 }
 
