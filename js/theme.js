@@ -1,4 +1,7 @@
 'use strict'
+// Fixed logical game resolution; the canvas backing store is always GAME_W x GAME_H and
+// fitCanvas() (index.html) letterbox-scales it to the window with CSS.
+const GAME_W = 1280, GAME_H = 800
 // Visual theme tokens for the "61 Noir" style (engineering pad glowing on navy).
 // Loaded before every other game script; purely visual, no gameplay values here.
 const THEME = Object.freeze({
@@ -17,7 +20,6 @@ const THEME = Object.freeze({
     fontStack: '"Caveat", cursive'
 })
 window.THEME = THEME
-// Page background behind the canvas (the canvas is not resized when the window grows,
-// so the area around it must match the darkest background stop instead of white).
+// Page background behind the canvas (fills the letterbox bars around the scaled canvas).
 document.documentElement.style.background = THEME.bg[2]
 if (document.body) document.body.style.background = THEME.bg[2]

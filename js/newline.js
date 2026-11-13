@@ -1,7 +1,8 @@
 function mouseCoords(event)
 {
     let rect = canvas.getBoundingClientRect()
-    return [event.clientX - rect.left, event.clientY - rect.top]
+    // client (CSS) pixels -> logical GAME_W x GAME_H coordinates of the letterboxed canvas
+    return [(event.clientX - rect.left) * GAME_W / rect.width, (event.clientY - rect.top) * GAME_H / rect.height]
 }
 
 function collisionTwoCircles(x1, y1, r1, x2, y2, r2)

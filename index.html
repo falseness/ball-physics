@@ -9,20 +9,22 @@
         #canvas
         {
             display:block;
+            position:fixed;
             margin:0;
             padding:0;
         }
         @font-face { font-family: 'Caveat'; src: url('fonts/caveat-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
         @font-face { font-family: 'Caveat'; src: url('fonts/caveat-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
-        body
+        html, body
         {
             padding:0;
             margin:0;
+            overflow:hidden;
         }
     </style>
 </head>
 <body>
-    <canvas id = "canvas" width = "1024" height = "750"></canvas>
+    <canvas id = "canvas" width = "1280" height = "800"></canvas>
     <script src = "js/theme.js"></script>
     <script src = "js/sketch.js"></script>
     <script src = "js/sprite.js"></script>
@@ -41,8 +43,20 @@
         'use strict'
         let canvas = document.getElementById('canvas')
         let ctx = canvas.getContext('2d')
-        canvas.width = window.innerWidth
-        canvas.height = window.innerHeight
+        canvas.width = GAME_W
+        canvas.height = GAME_H
+        // Letterbox: scale the fixed GAME_W x GAME_H canvas uniformly to fit the window, centred
+        function fitCanvas()
+        {
+            let s = Math.min(window.innerWidth / GAME_W, window.innerHeight / GAME_H)
+            let w = GAME_W * s, h = GAME_H * s
+            canvas.style.width = w + 'px'
+            canvas.style.height = h + 'px'
+            canvas.style.left = (window.innerWidth - w) / 2 + 'px'
+            canvas.style.top = (window.innerHeight - h) / 2 + 'px'
+        }
+        fitCanvas()
+        window.addEventListener('resize', fitCanvas)
         let cyclesPerTact = 500
         let gravitationalAcceleration = 0.001 / cyclesPerTact //0.000001
             
@@ -54,7 +68,7 @@
         
         
         let menuIconRect = [
-            [canvas.width - 63 - 20, 20],
+            [GAME_W - 63 - 20, 20],
             [63, 63]
         ]
         let menuIconLine = [

@@ -1,5 +1,5 @@
 let menuTextRect = [250, 50]
-let menuCoords = [canvas.width / 2, 50]
+let menuCoords = [GAME_W / 2, 50]
 let menuSize = [400, 650]
 let menuButtons = ['resume', 'restart', 'Levels']
 
@@ -8,7 +8,7 @@ let menuButtons = ['resume', 'restart', 'Levels']
 function eclipse()
 {
     ctx.fillStyle = 'rgba(4,15,30,0.62)'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.fillRect(0, 0, GAME_W, GAME_H)
     ctx.font = "30px " + THEME.fontStack
     ctx.textAlign = "center"
     ctx.textBaseline = "alphabetic"
@@ -116,7 +116,7 @@ function drawStartIcon()
 // Line counter option A: one mini line glyph per allowed line; used = coral, free = dashed cyan
 function drawLinesK()
 {
-    const n = levels[thisLevel].lineK, x0 = canvas.width - 120, cy = 63 + 20 + 30
+    const n = levels[thisLevel].lineK, x0 = GAME_W - 120, cy = 63 + 20 + 30
     const w = 26, h = 10, step = 36, r = 3
     ctx.save()
     ctx.lineCap = 'round'

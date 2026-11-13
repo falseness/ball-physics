@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Visual test harness for Ball physics.
 
-Opens index.html via file:// in a 1280x800 Chromium viewport and runs named
-scenarios. Each scenario starts from a fresh page load.
+Opens index.html via file:// in a Chromium viewport (default 1280x800, see
+--viewport) and runs named scenarios. Each scenario starts from a fresh page load.
+Scenario coordinates are logical game coordinates (GAME_W x GAME_H = 1280x800);
+click()/move() convert them to client coordinates through the letterboxed
+canvas' getBoundingClientRect(), so every scenario runs unchanged at any
+viewport (identity at 1280x800).
 
 Usage:
-  python3 tests/visual/shoot.py --task TASK-NNN --scenarios a,b,... [--eval JS]
+  python3 tests/visual/shoot.py --task TASK-NNN --scenarios a,b,... [--eval JS] [--viewport WxH]
 
 Writes artifacts/TASK-NNN/<scenario>.png and artifacts/TASK-NNN/run.json.
 --eval JS is evaluated after the scenario actions (before the state snapshot
@@ -40,9 +44,25 @@ def frames(page, n=2):
     page.evaluate("n => new Promise(r => { const f = k => k <= 0 ? r() : requestAnimationFrame(() => f(k - 1)); f(n) })", n)
 
 
+TO_CLIENT_JS = """([x, y]) => { const r = canvas.getBoundingClientRect();
+    return [Math.round(r.left + x * r.width / GAME_W), Math.round(r.top + y * r.height / GAME_H)] }"""
+
+
+def to_client(page, x, y):
+    """Logical game coordinates -> client (CSS) coordinates of the scaled canvas, rounded to whole
+    pixels (MouseEvent.clientX/Y are integers; rounding keeps the error <= 0.5 client px)."""
+    return page.evaluate(TO_CLIENT_JS, [x, y])
+
+
 def click(page, x, y):
-    page.mouse.click(x, y)
+    cx, cy = to_client(page, x, y)
+    page.mouse.click(cx, cy)
     frames(page)
+
+
+def move(page, x, y):
+    cx, cy = to_client(page, x, y)
+    page.mouse.move(cx, cy)
 
 
 def sc_start(page, info):
@@ -58,7 +78,7 @@ def sc_drawing(page, info):
     sc_level3(page, info)
     (x1, y1), (x2, y2) = SEGMENTS[0]
     click(page, x1, y1)
-    page.mouse.move(x2, y2)
+    move(page, x2, y2)
     frames(page)
     info['segment'] = [x1, y1, x2, y2]
 
@@ -68,7 +88,7 @@ def sc_placed(page, info):
     before = page.evaluate("lines.length")
     for (x1, y1), (x2, y2) in SEGMENTS:
         click(page, x1, y1)
-        page.mouse.move(x2, y2)
+        move(page, x2, y2)
         frames(page)
         click(page, x2, y2)
         if page.evaluate("lines.length") == before + 1 and not page.evaluate("!!line"):
@@ -150,11 +170,13 @@ def sc_complete_last(page, info):
 
 
 def sc_resized(page, info):
-    # Start screen, then grow the window; the canvas keeps its start size (original behaviour).
+    # Start screen, then grow the window; fitCanvas() re-fits the letterboxed canvas.
     frames(page)
     page.set_viewport_size({'width': 1600, 'height': 1000})
     frames(page, 3)
     info['viewport'] = [1600, 1000]
+    info['canvasRect'] = page.evaluate(
+        "() => { const r = canvas.getBoundingClientRect(); return [r.left, r.top, r.width, r.height] }")
 
 
 SCENARIOS = {
@@ -173,10 +195,10 @@ SCENARIOS = {
 }
 
 
-def run_scenario(browser, name, out_dir, eval_js):
+def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT):
     errors = []
     info = {}
-    page = browser.new_page(viewport=VIEWPORT)
+    page = browser.new_page(viewport=viewport)
     page.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' else None)
     page.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
     entry = {'errors': errors}
@@ -204,7 +226,11 @@ def main():
     ap.add_argument('--task', required=True)
     ap.add_argument('--scenarios', required=True)
     ap.add_argument('--eval', dest='eval_js')
+    ap.add_argument('--viewport', default='%dx%d' % (VIEWPORT['width'], VIEWPORT['height']),
+                    help='browser viewport WxH (default 1280x800)')
     args = ap.parse_args()
+    vw, vh = (int(v) for v in args.viewport.lower().split('x'))
+    viewport = {'width': vw, 'height': vh}
 
     names = [s.strip() for s in args.scenarios.split(',') if s.strip()]
     unknown = [n for n in names if n not in SCENARIOS]
@@ -219,7 +245,7 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         for name in names:
-            entry = run_scenario(browser, name, out_dir, args.eval_js)
+            entry = run_scenario(browser, name, out_dir, args.eval_js, viewport)
             result[name] = entry
             print('%-9s errors=%d state=%s%s' % (
                 name, len(entry['errors']), json.dumps(entry.get('state'), separators=(',', ':')),

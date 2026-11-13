@@ -58,8 +58,8 @@ function drawTargetLeader(x, y)
     const tx = x + (flag[2][0] + flag[3][0] + flag[4][0]) / 3, ty = y + (flag[2][1] + flag[3][1] + flag[4][1]) / 3
     const px = x + flag[2][0] / 2, py = y + flag[2][1] / 2
     let sx = tx >= px ? 1 : -1, sy = ty > py ? 1 : -1
-    if (tx + sx * 140 > canvas.width - 40 || tx + sx * 140 < 40) sx = -sx
-    if (ty + sy * 70 < 40 || ty + sy * 70 > canvas.height - 40) sy = -sy
+    if (tx + sx * 140 > GAME_W - 40 || tx + sx * 140 < 40) sx = -sx
+    if (ty + sy * 70 < 40 || ty + sy * 70 > GAME_H - 40) sy = -sy
     const ex = tx + sx * 70, ey = ty + sy * 60
     const R = sketchRng(sketchSeed([x, y, tx, ty, 11]))
     ctx.save()

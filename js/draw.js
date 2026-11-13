@@ -10,7 +10,7 @@ function bgRng(seed)
 }
 function buildBackground()
 {
-    let W = canvas.width, H = canvas.height
+    let W = GAME_W, H = GAME_H
     if (!bgCanvas)
         bgCanvas = document.createElement('canvas')
     bgCanvas.width = W

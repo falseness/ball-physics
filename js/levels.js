@@ -2,8 +2,10 @@ let levels = []
 
 levels.push(
 {
-    ballX: canvas.width / 2,
-    ballY: canvas.height / 2 - 250,
+    // Same start as before (512, 125): levels.js used to run while the canvas still had its
+    // 1024x750 HTML size, so half the width and half the height minus 250 gave these values.
+    ballX: GAME_W * 0.4,
+    ballY: GAME_H / 2 - 275,
     flagX: 200,
     flagY: 450,
     flagRotate: 0,

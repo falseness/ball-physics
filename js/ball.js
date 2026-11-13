@@ -128,6 +128,6 @@ class Ball extends Sprite
     }
     onMap()
     {
-        return !(this.posX > canvas.width || this.posX < 0 || this.posY > canvas.height || this.posY < 0)
+        return !(this.posX > GAME_W || this.posX < 0 || this.posY > GAME_H || this.posY < 0)
     }
 }
