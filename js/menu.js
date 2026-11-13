@@ -57,6 +57,7 @@ function menu()
 {
     if (drawMenu)
     {
+        applyViewTransform()
         eclipse()
         glassPanel(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
         for (let i = 0; i < menuButtons.length; ++i)

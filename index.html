@@ -45,7 +45,12 @@
         let ctx = canvas.getContext('2d')
         canvas.width = GAME_W
         canvas.height = GAME_H
-        // Letterbox: scale the fixed GAME_W x GAME_H canvas uniformly to fit the window, centred
+        // Largest backing-store width; bigger CSS-size x DPR products are scaled down proportionally
+        const MAX_BACKING_W = 4096
+        // Letterbox: scale the fixed GAME_W x GAME_H canvas uniformly to fit the window, centred.
+        // The backing store follows the on-screen size x devicePixelRatio (sharp on HiDPI and
+        // when scaled up); drawing code stays in logical GAME_W x GAME_H coordinates via
+        // applyViewTransform().
         function fitCanvas()
         {
             let s = Math.min(window.innerWidth / GAME_W, window.innerHeight / GAME_H)
@@ -54,9 +59,30 @@
             canvas.style.height = h + 'px'
             canvas.style.left = (window.innerWidth - w) / 2 + 'px'
             canvas.style.top = (window.innerHeight - h) / 2 + 'px'
+            let k = Math.min(s * (window.devicePixelRatio || 1), MAX_BACKING_W / GAME_W)
+            let bw = Math.round(GAME_W * k), bh = Math.round(GAME_H * k)
+            if (canvas.width != bw || canvas.height != bh)
+            {
+                canvas.width = bw
+                canvas.height = bh
+            }
+        }
+        // logical GAME_W x GAME_H -> backing-store pixels
+        function applyViewTransform()
+        {
+            let k = canvas.width / GAME_W
+            ctx.setTransform(k, 0, 0, k, 0, 0)
+        }
+        // Re-fit when the device pixel ratio changes (zoom, moving to another monitor)
+        function watchDevicePixelRatio()
+        {
+            let mq = window.matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)')
+            mq.addEventListener('change', function() { fitCanvas(); watchDevicePixelRatio() }, {once: true})
         }
         fitCanvas()
         window.addEventListener('resize', fitCanvas)
+        if (window.matchMedia)
+            watchDevicePixelRatio()
         let cyclesPerTact = 500
         let gravitationalAcceleration = 0.001 / cyclesPerTact //0.000001
             

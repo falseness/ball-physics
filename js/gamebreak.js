@@ -10,6 +10,7 @@ function levelCompleted()
 {
     if (levelCompletedWindow)
     {
+        applyViewTransform()
         // Same look as the pause menu: navy overlay, dark glass panel, cyan outlined buttons.
         // Button rects are exactly the ones the click handler in index.html tests (blocks[1], blocks[2]).
         const bx = menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2

@@ -1,6 +1,7 @@
 'use strict'
-// Fixed logical game resolution; the canvas backing store is always GAME_W x GAME_H and
-// fitCanvas() (index.html) letterbox-scales it to the window with CSS.
+// Fixed logical game resolution: all game/drawing coordinates are GAME_W x GAME_H.
+// fitCanvas() (index.html) letterbox-scales the canvas to the window with CSS and sizes
+// its backing store to the on-screen size x devicePixelRatio (drawing uses a k transform).
 const GAME_W = 1280, GAME_H = 800
 // Visual theme tokens for the "61 Noir" style (engineering pad glowing on navy).
 // Loaded before every other game script; purely visual, no gameplay values here.

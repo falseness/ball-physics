@@ -9,7 +9,7 @@ canvas' getBoundingClientRect(), so every scenario runs unchanged at any
 viewport (identity at 1280x800).
 
 Usage:
-  python3 tests/visual/shoot.py --task TASK-NNN --scenarios a,b,... [--eval JS] [--viewport WxH]
+  python3 tests/visual/shoot.py --task TASK-NNN --scenarios a,b,... [--eval JS] [--viewport WxH] [--dpr N]
 
 Writes artifacts/TASK-NNN/<scenario>.png and artifacts/TASK-NNN/run.json.
 --eval JS is evaluated after the scenario actions (before the state snapshot
@@ -195,10 +195,10 @@ SCENARIOS = {
 }
 
 
-def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT):
+def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
     errors = []
     info = {}
-    page = browser.new_page(viewport=viewport)
+    page = browser.new_page(viewport=viewport, device_scale_factor=dpr)
     page.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' else None)
     page.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
     entry = {'errors': errors}
@@ -228,6 +228,7 @@ def main():
     ap.add_argument('--eval', dest='eval_js')
     ap.add_argument('--viewport', default='%dx%d' % (VIEWPORT['width'], VIEWPORT['height']),
                     help='browser viewport WxH (default 1280x800)')
+    ap.add_argument('--dpr', type=float, default=1, help='device_scale_factor (default 1)')
     args = ap.parse_args()
     vw, vh = (int(v) for v in args.viewport.lower().split('x'))
     viewport = {'width': vw, 'height': vh}
@@ -245,7 +246,7 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         for name in names:
-            entry = run_scenario(browser, name, out_dir, args.eval_js, viewport)
+            entry = run_scenario(browser, name, out_dir, args.eval_js, viewport, args.dpr)
             result[name] = entry
             print('%-9s errors=%d state=%s%s' % (
                 name, len(entry['errors']), json.dumps(entry.get('state'), separators=(',', ':')),

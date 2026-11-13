@@ -1,7 +1,8 @@
 // Cached page background for the "61 Noir" style: navy gradient, soft exposure
 // blotches, engineering grid, vignette and static film grain. Built once into an
-// offscreen canvas by buildBackground() (and again only on window resize), then
-// blitted every frame by draw(). Purely visual: no gameplay values.
+// offscreen canvas at the main canvas' backing resolution by buildBackground() (again
+// only when that backing size changes), then blitted 1:1 every frame by draw().
+// Purely visual: no gameplay values.
 let bgCanvas = null
 window.bgBuildCount = 0
 function bgRng(seed)
@@ -13,9 +14,12 @@ function buildBackground()
     let W = GAME_W, H = GAME_H
     if (!bgCanvas)
         bgCanvas = document.createElement('canvas')
-    bgCanvas.width = W
-    bgCanvas.height = H
+    bgCanvas.width = canvas.width
+    bgCanvas.height = canvas.height
     let g = bgCanvas.getContext('2d')
+    // paint in logical GAME_W x GAME_H units at backing resolution
+    let k = canvas.width / GAME_W
+    g.setTransform(k, 0, 0, k, 0, 0)
     let R = bgRng(6161)
 
     // diagonal navy gradient + ~40 soft radial exposure blotches (seeded)
@@ -83,7 +87,6 @@ function buildBackground()
 
     window.bgBuildCount++
 }
-window.addEventListener('resize', function() { if (bgCanvas) buildBackground() })
 
 function drawIcons()
 {
@@ -106,9 +109,11 @@ function drawStartMarker(x, y)
 }
 function draw()
 {
-    if (!bgCanvas)
+    if (!bgCanvas || bgCanvas.width != canvas.width || bgCanvas.height != canvas.height)
         buildBackground()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.drawImage(bgCanvas, 0, 0)
+    applyViewTransform()
     
     guide()
     drawIcons()
