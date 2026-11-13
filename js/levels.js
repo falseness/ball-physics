@@ -155,6 +155,8 @@ levels.push(
     // ball can only enter through portal B. Steer the ball into portal A, cut into the floor
     // segment at y = 600 (front facing up); B is cut into the pocket's left wall x = 1040
     // (front facing into the pocket, +x).
+    // Reference solution (tests/visual/shoot.py level11): one line (100, 180) -> (580, 450), then start;
+    // the ball rolls off its end into A, leaves B into the pocket and hits the flag.
     ballX: 200,
     ballY: 100,
     flagX: 1200,

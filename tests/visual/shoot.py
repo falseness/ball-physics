@@ -9,7 +9,7 @@ canvas' getBoundingClientRect(), so every scenario runs unchanged at any
 viewport (identity at 1280x800).
 
 Usage:
-  python3 tests/visual/shoot.py --task TASK-NNN --scenarios a,b,... [--eval JS] [--viewport WxH] [--dpr N]
+  python3 tests/visual/shoot.py --task TASK-NNN [--scenarios a,b,...] [--eval JS] [--viewport WxH] [--dpr N]
 
 Writes artifacts/TASK-NNN/<scenario>.png and artifacts/TASK-NNN/run.json.
 --eval JS is evaluated after the scenario actions (before the state snapshot
@@ -249,8 +249,25 @@ def sc_touch_line(page, info):
         raise RuntimeError('tap-tap did not place one line: %s' % info['touch'])
 
 
+# Level 11 reference solution (TASK-068): one player line from LEVEL11_LINE[0] to [1]. The ball
+# rolls off its lower end onto portal A (floor y = 600, front up), leaves B (wall x = 1040, front +x)
+# into the flag pocket. Searched headlessly; 80 of 81 lines with each end moved by -4/0/+4 px also win.
+LEVEL11_LINE = ((100, 180), (580, 450))
+LEVEL11_MAX_FRAMES = 3000
+
+# Counts game frames that run physics and remembers the frame on which the level was completed.
+LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
+    const g = gameMechanics;
+    gameMechanics = function() { const on = physics && !editorMode; const r = g();
+        if (on) { ++window.__l11Frames;
+            if (levelCompletedWindow && window.__l11Win === null) window.__l11Win = window.__l11Frames }
+        return r } }"""
+
+
 def sc_level11(page, info):
-    # Pause menu -> level square 11 (the portal level), real clicks.
+    # Pause menu -> level square 11 (the portal level), real clicks; then play the reference
+    # solution with real mouse input: draw the line (click, move, click), press start, and wait
+    # until the level is completed (at most LEVEL11_MAX_FRAMES physics frames).
     frames(page)
     open_menu(page)
     x, y = page.evaluate("(() => { const r = levelRectXY(10); return [r[0] + rectSize / 2, r[1] + rectSize / 2] })()")
@@ -259,6 +276,36 @@ def sc_level11(page, info):
     info['level11'] = st
     if st != {'thisLevel': 10, 'drawMenu': False, 'portals': 2}:
         raise RuntimeError('level 11 not loaded: %s' % st)
+    n0 = page.evaluate("lines.length")
+    (x1, y1), (x2, y2) = LEVEL11_LINE
+    click(page, x1, y1)
+    move(page, x2, y2)
+    frames(page)
+    click(page, x2, y2)
+    drawn = page.evaluate("""() => { const l = lines[lines.length - 1];
+        return {added: lines.length, linesK, lineK: curLevel().lineK, pending: !!line, physics,
+            line: [l.posX, l.posY, l.posX2, l.posY2]} }""")
+    drawn['added'] -= n0
+    info['drawn'] = drawn
+    if drawn['added'] != 1 or drawn['pending'] or drawn['physics']:
+        raise RuntimeError('solution line not placed: %s' % drawn)
+    page.evaluate(LEVEL11_COUNTER_JS)
+    x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
+    click(page, x, y)
+    info['startPressed'] = page.evaluate("({physics, levelStarted})")
+    page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % LEVEL11_MAX_FRAMES,
+                           timeout=180000, polling=100)
+    r = page.evaluate("""() => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
+        frames: window.__l11Frames, unlock: levels[10].unlock, ball: [ball.posX, ball.posY],
+        teleports: portalState.teleports.map(t => ({step: t.step, from: t.from, to: t.to,
+            before: t.before, after: t.after}))})""")
+    info['play'] = r
+    ab = [t for t in r['teleports'] if t['from'] == 'A' and t['to'] == 'B']
+    if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= LEVEL11_MAX_FRAMES and ab):
+        raise RuntimeError('level 11 not won with an A->B teleport: %s' % {k: r[k] for k in (
+            'levelCompleted', 'winFrame', 'frames', 'ball')})
+    # a fresh draw after the win so the screenshot shows the completed-level panel
+    frames(page)
 
 
 SCENARIOS = {
@@ -315,7 +362,7 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--task', required=True)
-    ap.add_argument('--scenarios', required=True)
+    ap.add_argument('--scenarios', default=','.join(SCENARIOS), help='default: every scenario')
     ap.add_argument('--eval', dest='eval_js')
     ap.add_argument('--viewport', default='%dx%d' % (VIEWPORT['width'], VIEWPORT['height']),
                     help='browser viewport WxH (default 1280x800)')
