@@ -62,7 +62,7 @@ function editorBarRect()
 function editorButtonRect()
 {
     // Right-aligned in the level grid's last row, starting no further left than just after the
-    // last level square (11 levels: 250 px wide as before; 12 levels: 200 px, clear of square 12)
+    // last level square (11 levels: 250 px wide as before; 12 levels: 200 px; 13 levels: 125 px, clear of square 13)
     const n = levels.length, row = Math.floor((n - 1) / 5), col = (n - 1) % 5 + 1
     const right = menuSize[0] - rectMarginLeft, free = right - (rectMarginLeft + rectSize) * col - rectMarginLeft
     const w = Math.min(menuTextRect[0], free), h = menuTextRect[1]

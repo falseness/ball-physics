@@ -178,7 +178,31 @@ levels.push(
     unlock: 0
 },
 {
-    // Level 12, 'accelerator': a closed box with a shelf in the middle. Portal A is cut into the
+    // Level 12, 'understanding portals' (the user's editor export, squared): the ball drops onto
+    // portal B (pad y = 510, front facing up) right under it and comes out of portal A (pad
+    // y = 695, front facing up) moving up. The flag hangs under the ceiling in the top-left corner.
+    ballX: 195,
+    ballY: 355,
+    flagX: 47,
+    flagY: 161,
+    flagRotate: -Math.PI / 2,
+    lineK: 1,
+    lines: [
+        new Line(43, 112, 453, 112, dotRadius, levelLineColor, 'line'),
+        new Line(43, 112, 43, 209, dotRadius, levelLineColor, 'line'),
+        new Line(289, 695, 449, 695, dotRadius, levelLineColor, 'line'),
+        new Line(86, 510, 246, 510, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (369, 695) facing up (0, -1),
+    // B at (166, 510) facing up (0, -1)
+    portals: [
+        { line: 2, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
+},
+{
+    // Level 13, 'accelerator': a closed box with a shelf in the middle. Portal A is cut into the
     // floor (front facing up), portal B into the shelf's underside (front facing down), so a ball
     // falling into A drops out of B above it and gains speed on every loop.
     ballX: 430,

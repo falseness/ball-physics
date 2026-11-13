@@ -255,12 +255,12 @@ def sc_touch_line(page, info):
 LEVEL11_LINE = ((100, 180), (580, 450))
 LEVEL11_MAX_FRAMES = 3000
 
-# Level 12 'accelerator' reference solution (TASK-071): two player lines (lineK 4). The ramp under the
+# Level 13 'accelerator' reference solution (TASK-071; level 12 until TASK-072): two player lines (lineK 4). The ramp under the
 # ball rolls it right onto floor portal A; it loops A -> B (shelf underside) five times, gaining speed
 # on every pass, then flies up-left into the flag (completed on physics frame 612). Searched headlessly
 # with in-page stepped frames; the motion is chaotic, so keep these exact integer coordinates.
-LEVEL12_LINES = (((394, 678), (710, 752)), ((663, 202), (594, 249)))
-LEVEL12_MAX_FRAMES = 3000
+LEVEL13_LINES = (((394, 678), (710, 752)), ((663, 202), (594, 249)))
+LEVEL13_MAX_FRAMES = 3000
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -321,8 +321,8 @@ def sc_level11(page, info):
     play_solution(page, info, 10, [LEVEL11_LINE], LEVEL11_MAX_FRAMES, 'level11')
 
 
-def sc_level12(page, info):
-    play_solution(page, info, 11, LEVEL12_LINES, LEVEL12_MAX_FRAMES, 'level12')
+def sc_level13(page, info):
+    play_solution(page, info, 12, LEVEL13_LINES, LEVEL13_MAX_FRAMES, 'level13')
 
 
 SCENARIOS = {
@@ -342,7 +342,7 @@ SCENARIOS = {
     'trail': sc_trail,
     'touch_line': sc_touch_line,
     'level11': sc_level11,
-    'level12': sc_level12,
+    'level13': sc_level13,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
