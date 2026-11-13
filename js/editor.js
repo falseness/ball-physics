@@ -257,7 +257,7 @@ function editorPickAt(coords)
 {
     const W = editor.level, x = coords[0], y = coords[1]
     const cand = [['flag', 0, W.flagX, W.flagY], ['ball', 0, W.ballX, W.ballY]]
-    W.portals.forEach((P, i) => cand.push(['portal', i, P.x, P.y]))
+    editorPortals().forEach((P, i) => cand.push(['portal', i, P.x, P.y]))
     let best = null, bestD = Infinity
     for (const c of cand)
     {
@@ -370,7 +370,7 @@ function editorDragTo(coords)
     const [x, y] = editorClampToField(coords[0] + d.dx, coords[1] + d.dy)
     if (d.kind == 'flag') { W.flagX = x; W.flagY = y }
     else if (d.kind == 'ball') { W.ballX = x; W.ballY = y }
-    else { W.portals[d.i].x = x; W.portals[d.i].y = y }
+    else if (!editorIsWallPortal(W.portals[d.i])) { W.portals[d.i].x = x; W.portals[d.i].y = y }
 }
 
 // mouseup / touchend: drop the dragged object at the release point
@@ -384,7 +384,7 @@ function editorMouseUp(coords)
     if (d.kind == 'portal')
     {
         const P = editor.level.portals[d.i]
-        if (editorPortalBlocked(P))
+        if (!editorIsWallPortal(P) && editorPortalBlocked(P))
         {
             P.x = d.x0; P.y = d.y0 // refused drop: back to where it was picked up
             editorShowError('portal too close to a line')
@@ -395,7 +395,7 @@ function editorMouseUp(coords)
         const l = editor.level.lines[d.i]
         if (editorDropLineEnd(d))
             editorLineRevert(d) // degenerate (< 1 px) line: back to where it was picked up
-        else if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals))
+        else if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals, d.i))
         {
             editorLineRevert(d)
             editorShowError('line too close to a portal')
@@ -404,7 +404,7 @@ function editorMouseUp(coords)
     else if (d.kind == 'line')
     {
         const l = editor.level.lines[d.i]
-        if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals))
+        if (l && editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, editor.level.portals, d.i))
         {
             editorLineRevert(d) // refused drop: back to where it was picked up
             editorShowError('line too close to a portal')
@@ -424,7 +424,7 @@ function editorCancelDrag()
     if (d.kind == 'flag') { W.flagX = d.x0; W.flagY = d.y0 }
     else if (d.kind == 'ball') { W.ballX = d.x0; W.ballY = d.y0 }
     else if (d.kind == 'line' || d.kind == 'lineEnd') editorLineRevert(d)
-    else if (W.portals[d.i]) { W.portals[d.i].x = d.x0; W.portals[d.i].y = d.y0 }
+    else if (W.portals[d.i] && !editorIsWallPortal(W.portals[d.i])) { W.portals[d.i].x = d.x0; W.portals[d.i].y = d.y0 }
 }
 
 function editorSelectedPortal()
@@ -433,14 +433,29 @@ function editorSelectedPortal()
     return s && s.kind == 'portal' ? editor.level.portals[s.i] || null : null
 }
 
+// Wall portal ({line, u, side}) vs a legacy free-standing one ({x, y, angle})
+function editorIsWallPortal(P)
+{
+    return !!P && typeof P.line == 'number'
+}
+// The working copy's portals resolved against its own lines ({x, y, angle, h, ...})
+function editorPortals()
+{
+    return portalResolveAll(editor.level.portals, editor.level.lines)
+}
+
 // Distance rule (same as TASK-027's design check): every level line must stay farther than
-// ball.radius + EDITOR_PORTAL_CLEAR from the portal opening c ± h·t (rims included)
+// ball.radius + EDITOR_PORTAL_CLEAR from the portal opening c ± h·t (rims included).
+// A wall portal's own host line is skipped (the opening is cut into it).
 function editorPortalLineDist(P)
 {
-    const r = portalRims(P)
+    const R = portalResolve(P, editor.level.lines), r = portalRims(R)
     let m = Infinity
-    for (const l of editor.level.lines)
-        m = Math.min(m, segSegDist(l.posX, l.posY, l.posX2, l.posY2, r[0][0], r[0][1], r[1][0], r[1][1]))
+    editor.level.lines.forEach(function(l, i)
+    {
+        if (i !== R.line)
+            m = Math.min(m, segSegDist(l.posX, l.posY, l.posX2, l.posY2, r[0][0], r[0][1], r[1][0], r[1][1]))
+    })
     return m
 }
 function editorPortalBlocked(P)
@@ -448,12 +463,15 @@ function editorPortalBlocked(P)
     return editorPortalLineDist(P) <= ball.radius + EDITOR_PORTAL_CLEAR
 }
 // Same rule seen from the line side: segment (x1,y1)-(x2,y2) is within ball.radius +
-// EDITOR_PORTAL_CLEAR of any portal opening in the list (line tool and import)
-function editorSegNearPortal(x1, y1, x2, y2, portals)
+// EDITOR_PORTAL_CLEAR of any portal opening in the list (line tool and import).
+// lineIndex: the segment's index in `lines` (-1 = a new line); portals hosted on that line are skipped.
+function editorSegNearPortal(x1, y1, x2, y2, portals, lineIndex = -1, lines = editor.level ? editor.level.lines : [])
 {
-    for (const P of portals)
+    for (const P0 of portals)
     {
-        const r = portalRims(P)
+        if (editorIsWallPortal(P0) && P0.line === lineIndex)
+            continue
+        const P = portalResolve(P0, lines), r = portalRims(P)
         if (segSegDist(x1, y1, x2, y2, r[0][0], r[0][1], r[1][0], r[1][1]) <= ball.radius + EDITOR_PORTAL_CLEAR)
             return true
     }
@@ -490,6 +508,8 @@ function editorPortalClick(coords)
 // ⟲ / ⟳ with a selected portal: rotate it by ∓PI/12; refused (angle kept) when it would hit a line
 function editorRotatePortal(P, da)
 {
+    if (editorIsWallPortal(P))
+        return // a wall portal follows its line (flipping its side is TASK-066)
     const a = P.angle
     P.angle += da
     if (editorPortalBlocked(P))
@@ -515,7 +535,7 @@ function editorRotateLine(l, da)
         editorShowError('line would leave the field')
         return false
     }
-    if (editorSegNearPortal(x1, y1, x2, y2, editor.level.portals))
+    if (editorSegNearPortal(x1, y1, x2, y2, editor.level.portals, editor.level.lines.indexOf(l)))
     {
         editorShowError('line too close to a portal')
         return false
@@ -535,7 +555,7 @@ function editorKeyDown(event)
     event.preventDefault()
     if (editor.drag)
         editorCancelDrag()
-    editor.level.lines.splice(s.i, 1)
+    editorRemoveLine(s.i)
     editor.selected = null
 }
 document.addEventListener('keydown', editorKeyDown)
@@ -577,10 +597,30 @@ function editorSelectedLine()
     return s && s.kind == 'line' ? editor.level.lines[s.i] || null : null
 }
 
+// Removes working-copy line i. Wall portals keep their host: a pair hosted (partly) on line i is
+// removed with it, the remaining portals' line indices are shifted down past i.
+function editorRemoveLine(i)
+{
+    const W = editor.level
+    W.lines.splice(i, 1)
+    if (W.portals.some(P => editorIsWallPortal(P) && P.line === i))
+    {
+        W.portals = []
+        if (editor.selected && editor.selected.kind == 'portal')
+            editor.selected = null
+    }
+    else
+        for (const P of W.portals)
+            if (editorIsWallPortal(P) && P.line > i)
+                P.line--
+}
+
 // Dashed ring around the selected portal, dashed capsule around the selected line (select tool)
 function editorDrawSelection()
 {
-    const P = editorSelectedPortal(), l = editorSelectedLine()
+    const s = editor.selected
+    const P = s && s.kind == 'portal' && editor.level.portals[s.i] ? editorPortals()[s.i] : null
+    const l = editorSelectedLine()
     if ((!P && !l) || editor.tool != 'select')
         return
     ctx.save()
@@ -640,7 +680,7 @@ function editorDeleteAt(coords)
         const d = pointSegDist(x, y, l.posX, l.posY, l.posX2, l.posY2)
         if (d <= EDITOR_DELETE_LINE_DIST && d < bestD) { best = ['line', i]; bestD = d }
     })
-    for (const P of W.portals)
+    for (const P of editorPortals())
     {
         const r = portalRims(P)
         const d = pointSegDist(x, y, r[0][0], r[0][1], r[1][0], r[1][1])
@@ -649,7 +689,7 @@ function editorDeleteAt(coords)
     if (!best)
         return false
     if (best[0] == 'line')
-        W.lines.splice(best[1], 1)
+        editorRemoveLine(best[1])
     else
     {
         W.portals = []
@@ -674,13 +714,13 @@ function editorFlagPolygon(rot)
 function editorDraw()
 {
     const W = editor.level
-    for (const l of W.lines)
-        l.draw()
+    const portals = editorPortals()
+    drawLines(W.lines, W.lines, portals)
     const saved = flag
     flag = editor.flagPoly
     drawFlag(W.flagX, W.flagY, THEME.ink, THEME.coral)
     flag = saved
-    drawPortals(W.portals)
+    drawPortals(portals)
     if (editor.portalPending)
     {
         // placed A waiting for its partner (the existing pair stays until B is placed)
@@ -759,7 +799,7 @@ function editorLevelToJSON(W)
         ballX: W.ballX, ballY: W.ballY, flagX: W.flagX, flagY: W.flagY,
         flagRotate: W.flagRotate, lineK: W.lineK,
         lines: W.lines.map(l => [l.posX, l.posY, l.posX2, l.posY2]),
-        portals: W.portals.map(P => ({ x: P.x, y: P.y, angle: P.angle, h: P.h }))
+        portals: portalResolveAll(W.portals, W.lines).map(P => ({ x: P.x, y: P.y, angle: P.angle, h: P.h }))
     })
 }
 
@@ -800,7 +840,7 @@ function editorLevelFromData(d)
         if (!P || typeof P != 'object' || !inField(P.x, P.y) || !num(P.angle) || !num(P.h) || P.h <= 0)
             return null
     for (const l of d.lines)
-        if (editorSegNearPortal(l[0], l[1], l[2], l[3], d.portals))
+        if (editorSegNearPortal(l[0], l[1], l[2], l[3], d.portals, -1, []))
             return null
     return {
         ballX: d.ballX, ballY: d.ballY, flagX: d.flagX, flagY: d.flagY,

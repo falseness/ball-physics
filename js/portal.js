@@ -1,6 +1,7 @@
 // Portal physics core.
 //
-// levels[i].portals = [A, B] (optional): each {x, y, angle, h, name, color}.
+// levels[i].portals = [A, B] (optional): wall portals {line, u, side, h, name} on the level's own
+// lines (see portalResolve); currentPortals() returns them resolved to {x, y, angle, h, ...}.
 // Front normal n = (cos angle, sin angle), tangent t = (-n.y, n.x); the opening is the
 // segment c ± h·t. For the ball centre p: d = (p - c)·n (signed distance), s = (p - c)·t.
 // A crossing = d changed sign since the previous step (either side) while |s| <= h.
@@ -35,10 +36,75 @@ function portalRestore(saved)
     portalState = saved
 }
 
-function currentPortals()
+// ---- Wall portals ----
+// A level portal sits on one of the level's own lines: {line: i, u: 0..1, side: +1|-1, h, name}.
+// portalResolve(P, lines) derives the free-standing frame the physics and drawing work on:
+// t = the host line's unit direction (posX,posY) -> (posX2,posY2), front normal n = side * (-ty, tx),
+// centre c = lerp(line ends, u) and angle = atan2(n). u is clamped so the opening c ± h·t plus
+// ball.radius stays inside the line (u = 0.5 when the line is too short for that).
+// A portal without a numeric `line` (legacy {x, y, angle, h}, e.g. the portal tests' setup) is
+// returned as a plain copy.
+function portalClampU(u, len, h)
+{
+    const m = h + ball.radius
+    if (!(len > 0) || len < 2 * m)
+        return 0.5
+    return Math.min(Math.max(u, m / len), 1 - m / len)
+}
+
+function portalResolve(P, lines)
+{
+    if (typeof P.line != 'number')
+        return Object.assign({}, P)
+    const l = lines[P.line]
+    const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY, len = Math.hypot(dx, dy)
+    const tx = len > 0 ? dx / len : 1, ty = len > 0 ? dy / len : 0
+    const side = P.side < 0 ? -1 : 1, u = portalClampU(P.u, len, P.h)
+    return {
+        x: l.posX + u * dx, y: l.posY + u * dy, angle: Math.atan2(side * tx, side * -ty),
+        h: P.h, name: P.name, line: P.line, u: u, side: side
+    }
+}
+
+function portalResolveAll(list, lines)
+{
+    return (list || []).map(P => portalResolve(P, lines))
+}
+
+// Resolved portals of the current level, cached per level object, portal list and host line
+// coordinates: levelChoosed() refreshes it and any change to a host line re-resolves it.
+let portalCache = { level: null, src: null, key: '', list: null }
+
+function portalHostKey(src, lines)
+{
+    let key = ''
+    for (const P of src)
+    {
+        const l = typeof P.line == 'number' ? lines[P.line] : null
+        key += l ? l.posX + ',' + l.posY + ',' + l.posX2 + ',' + l.posY2 + ',' + P.u + ',' + P.side + ',' + P.h + ';'
+                 : P.x + ',' + P.y + ',' + P.angle + ',' + P.h + ';'
+    }
+    return key
+}
+
+function portalRefresh()
 {
     const level = curLevel()
-    return level && level.portals && level.portals.length ? level.portals : null
+    const src = level && level.portals && level.portals.length ? level.portals : null
+    if (!src)
+    {
+        portalCache = { level: level, src: null, key: '', list: null }
+        return null
+    }
+    const key = portalHostKey(src, level.lines)
+    if (portalCache.level !== level || portalCache.src !== src || portalCache.key !== key)
+        portalCache = { level: level, src: src, key: key, list: portalResolveAll(src, level.lines) }
+    return portalCache.list
+}
+
+function currentPortals()
+{
+    return portalRefresh()
 }
 
 function portalFrame(P)

@@ -152,7 +152,9 @@ levels.push(
 },
 {
     // Level 11, the first portal level: the flag sits in a walled pocket on the right that the
-    // ball can only enter through portal B. Steer the ball into portal A (opening facing up).
+    // ball can only enter through portal B. Steer the ball into portal A, cut into the floor
+    // segment at y = 600 (front facing up); B is cut into the pocket's left wall x = 1040
+    // (front facing into the pocket, +x).
     ballX: 200,
     ballY: 100,
     flagX: 1200,
@@ -162,11 +164,14 @@ levels.push(
     lines: [
         new Line(1040, 0, 1040, 450, dotRadius, levelLineColor, 'line'),
         new Line(1040, 450, 1270, 450, dotRadius, levelLineColor, 'line'),
-        new Line(1270, 450, 1270, 0, dotRadius, levelLineColor, 'line')
+        new Line(1270, 450, 1270, 0, dotRadius, levelLineColor, 'line'),
+        new Line(450, 600, 750, 600, dotRadius, levelLineColor, 'line')
     ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 600) facing up,
+    // B at (1040, 250) facing +x
     portals: [
-        { x: 600, y: 600, angle: -Math.PI / 2, h: 45, name: 'A' },
-        { x: 1100, y: 250, angle: 0, h: 45, name: 'B' }
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 0, u: 250 / 450, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
 }
