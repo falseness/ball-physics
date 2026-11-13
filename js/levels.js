@@ -171,4 +171,7 @@ levels.push(
     unlock: 0
 }
 )
+// Every level is open from the start (no need to win the previous one); a win still
+// marks it completed (unlock 2, coral in the level grid).
+for (const l of levels) l.unlock = Math.max(l.unlock || 0, 1)
 let thisLevel = 0

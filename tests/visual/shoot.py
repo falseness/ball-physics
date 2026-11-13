@@ -133,9 +133,7 @@ def sc_menu_restart(page, info):
 
 def sc_menu_level(page, info):
     frames(page)
-    # Level 2 starts locked; unlock it exactly as completing level 1 does
-    # (levels[0].unlock = 2, levels[1].unlock = 1) so its square is clickable.
-    page.evaluate("() => { levels[0].unlock = 2; levels[1].unlock = Math.max(levels[1].unlock, 1) }")
+    # Every level is open from the start (js/levels.js), so level 2's square is clickable as is.
     open_menu(page)
     info['before'] = page.evaluate("({thisLevel, drawMenu})")
     # Centre of level square 2 (i = 1), same expressions as levelsRectCollision().
