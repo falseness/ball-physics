@@ -23,7 +23,7 @@ const EDITOR_PICK_END_DIST = 12       // select tool: max distance to a line end
 const EDITOR_LINE_SEL_PAD = 10        // select tool: dashed capsule distance around a selected line
 const EDITOR_FLAG_STEP = Math.PI / 12 // 'flag ⟲' / 'flag ⟳' rotation step
 const EDITOR_MAX_LINEK = 5
-const EDITOR_PORTAL_ANGLE = -Math.PI / 2 // default angle of a placed portal (opening horizontal, front up)
+const EDITOR_PORTAL_LINE_DIST = 20       // portal tool: max distance from the click to a level line
 const EDITOR_PORTAL_H = 45
 const EDITOR_PORTAL_CLEAR = 2            // level lines must stay > ball.radius + 2 px from an opening
 const EDITOR_ERROR_MS = 2000             // how long the handwritten error text stays
@@ -307,7 +307,11 @@ function editorMouseDown(coords)
         editor.drag = { kind: 'line', i: c[1], mx: coords[0], my: coords[1], ends: [l.posX, l.posY, l.posX2, l.posY2] }
     }
     else if (c)
-        editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1], x0: c[2], y0: c[3] }
+    {
+        const P = c[0] == 'portal' ? editor.level.portals[c[1]] : null
+        editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1], x0: c[2], y0: c[3],
+                        u0: P ? P.u : undefined }
+    }
 }
 
 // Pointer input in the letterbox bars maps to logical coords outside the field; every point the
@@ -370,7 +374,25 @@ function editorDragTo(coords)
     const [x, y] = editorClampToField(coords[0] + d.dx, coords[1] + d.dy)
     if (d.kind == 'flag') { W.flagX = x; W.flagY = y }
     else if (d.kind == 'ball') { W.ballX = x; W.ballY = y }
-    else if (!editorIsWallPortal(W.portals[d.i])) { W.portals[d.i].x = x; W.portals[d.i].y = y }
+    else if (editorIsWallPortal(W.portals[d.i])) editorSlidePortal(W.portals[d.i], coords[0] + d.dx, coords[1] + d.dy)
+    else { W.portals[d.i].x = x; W.portals[d.i].y = y }
+}
+
+// Wall-portal drag: u follows the projection of (x, y) onto the host line, clamped like portalResolve
+function editorSlidePortal(P, x, y)
+{
+    const l = editor.level.lines[P.line]
+    if (!l)
+        return
+    P.u = editorProjectU(l, x, y, P.h)
+}
+
+// Clamped line parameter u of the projection of (x, y) onto line l (portalClampU for an opening of half-width h)
+function editorProjectU(l, x, y, h)
+{
+    const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY, L2 = dx * dx + dy * dy
+    const u = L2 > 0 ? ((x - l.posX) * dx + (y - l.posY) * dy) / L2 : 0.5
+    return portalClampU(Math.min(Math.max(u, 0), 1), Math.sqrt(L2), h)
 }
 
 // mouseup / touchend: drop the dragged object at the release point
@@ -384,10 +406,14 @@ function editorMouseUp(coords)
     if (d.kind == 'portal')
     {
         const P = editor.level.portals[d.i]
-        if (!editorIsWallPortal(P) && editorPortalBlocked(P))
+        const err = !P ? null : editorPortalBlocked(P) ? 'portal too close to a line' :
+                    editorPortalsOverlap(editor.level.portals) ? 'portals overlap' : null
+        if (err)
         {
-            P.x = d.x0; P.y = d.y0 // refused drop: back to where it was picked up
-            editorShowError('portal too close to a line')
+            // refused drop: back to where it was picked up
+            if (editorIsWallPortal(P)) P.u = d.u0
+            else { P.x = d.x0; P.y = d.y0 }
+            editorShowError(err)
         }
     }
     else if (d.kind == 'lineEnd')
@@ -424,7 +450,8 @@ function editorCancelDrag()
     if (d.kind == 'flag') { W.flagX = d.x0; W.flagY = d.y0 }
     else if (d.kind == 'ball') { W.ballX = d.x0; W.ballY = d.y0 }
     else if (d.kind == 'line' || d.kind == 'lineEnd') editorLineRevert(d)
-    else if (W.portals[d.i] && !editorIsWallPortal(W.portals[d.i])) { W.portals[d.i].x = d.x0; W.portals[d.i].y = d.y0 }
+    else if (editorIsWallPortal(W.portals[d.i])) W.portals[d.i].u = d.u0
+    else if (W.portals[d.i]) { W.portals[d.i].x = d.x0; W.portals[d.i].y = d.y0 }
 }
 
 function editorSelectedPortal()
@@ -478,20 +505,47 @@ function editorSegNearPortal(x1, y1, x2, y2, portals, lineIndex = -1, lines = ed
     return false
 }
 
+// Portal tool: a wall portal {line, u, side, h, name} on the level line nearest to the click
+// (within EDITOR_PORTAL_LINE_DIST): u = the clamped projection of the click, side = the side of
+// the line the click is on (the front normal points towards the click). null = no line in reach.
 function editorNewPortal(coords, name)
 {
-    const c = editorClampToField(coords[0], coords[1])
-    return { x: c[0], y: c[1], angle: EDITOR_PORTAL_ANGLE, h: EDITOR_PORTAL_H, name: name }
+    const W = editor.level, x = coords[0], y = coords[1]
+    let best = -1, bestD = Infinity
+    W.lines.forEach(function(l, i)
+    {
+        const d = pointSegDist(x, y, l.posX, l.posY, l.posX2, l.posY2)
+        if (d <= EDITOR_PORTAL_LINE_DIST && d < bestD) { best = i; bestD = d }
+    })
+    if (best < 0)
+        return null
+    const l = W.lines[best], dx = l.posX2 - l.posX, dy = l.posY2 - l.posY
+    // n(side = +1) = (-ty, tx); the click's offset along it picks the side (0 = on the line: +1)
+    const side = (x - l.posX) * -dy + (y - l.posY) * dx < 0 ? -1 : 1
+    return { line: best, u: editorProjectU(l, x, y, EDITOR_PORTAL_H), side: side, h: EDITOR_PORTAL_H, name: name }
+}
+
+// Two wall portals on the same line whose openings u ± h/len overlap (touching counts)
+function editorPortalsOverlap(list, lines = editor.level.lines)
+{
+    if (!list || list.length != 2 || !editorIsWallPortal(list[0]) || list[0].line !== list[1].line)
+        return false
+    const R = portalResolveAll(list, lines), l = lines[list[0].line]
+    const len = Math.hypot(l.posX2 - l.posX, l.posY2 - l.posY)
+    return Math.abs(R[0].u - R[1].u) * len <= R[0].h + R[1].h
 }
 
 // Portal tool: 1st click places A (pending), 2nd places B; the pair then replaces the existing pair
-// (at most one pair per level). A placement too close to a level line is refused (state kept).
+// (at most one pair per level). Refused (state kept): a click farther than EDITOR_PORTAL_LINE_DIST
+// from every line, an opening too close to another level line, B overlapping A on the same line.
 function editorPortalClick(coords)
 {
     const P = editorNewPortal(coords, editor.portalPending ? 'B' : 'A')
-    if (editorPortalBlocked(P))
+    const err = !P ? 'portals go on lines' : editorPortalBlocked(P) ? 'portal too close to a line' :
+                editor.portalPending && editorPortalsOverlap([editor.portalPending, P]) ? 'portals overlap' : null
+    if (err)
     {
-        editorShowError('portal too close to a line')
+        editorShowError(err)
         return false
     }
     if (!editor.portalPending)
@@ -505,11 +559,15 @@ function editorPortalClick(coords)
     return true
 }
 
-// ⟲ / ⟳ with a selected portal: rotate it by ∓PI/12; refused (angle kept) when it would hit a line
+// ⟲ / ⟳ with a selected portal: a wall portal flips its side (front normal reversed, opening kept);
+// a legacy free-standing one rotates by ∓PI/12, refused (angle kept) when it would hit a line
 function editorRotatePortal(P, da)
 {
     if (editorIsWallPortal(P))
-        return // a wall portal follows its line (flipping its side is TASK-066)
+    {
+        P.side = P.side < 0 ? 1 : -1
+        return
+    }
     const a = P.angle
     P.angle += da
     if (editorPortalBlocked(P))
@@ -724,7 +782,7 @@ function editorDraw()
     if (editor.portalPending)
     {
         // placed A waiting for its partner (the existing pair stays until B is placed)
-        drawPortal(editor.portalPending, PORTAL_STYLE[0])
+        drawPortal(portalResolve(editor.portalPending, W.lines), PORTAL_STYLE[0])
     }
     editorDrawSelection()
     drawStartMarker(W.ballX, W.ballY)
@@ -787,8 +845,11 @@ function editorDrawToolbar()
 
 // ---- Export / import (level.json) ----
 // File format (stable key order, numbers as-is):
-// {version: 1, ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [[x1,y1,x2,y2], ...], portals: [{x, y, angle, h}, ...]}
-const EDITOR_FILE_VERSION = 1
+// {version: 2, ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [[x1,y1,x2,y2], ...],
+//  portals: [{line, u, side, h, name}, ...]}   (wall portals, `line` indexes `lines`)
+// Import also accepts a version 1 file ({..., portals: [{x, y, angle, h}]}) when it has no portals;
+// a version 1 file with portals is refused with 'old portal format'.
+const EDITOR_FILE_VERSION = 2
 const EDITOR_FIELD = { w: 1280, h: 800 }   // every point must lie inside 0..w x 0..h
 const EDITOR_IMPORT_ERROR_MS = 3000
 
@@ -799,7 +860,7 @@ function editorLevelToJSON(W)
         ballX: W.ballX, ballY: W.ballY, flagX: W.flagX, flagY: W.flagY,
         flagRotate: W.flagRotate, lineK: W.lineK,
         lines: W.lines.map(l => [l.posX, l.posY, l.posX2, l.posY2]),
-        portals: portalResolveAll(W.portals, W.lines).map(P => ({ x: P.x, y: P.y, angle: P.angle, h: P.h }))
+        portals: W.portals.map(P => ({ line: P.line, u: P.u, side: P.side, h: P.h, name: P.name }))
     })
 }
 
@@ -820,12 +881,13 @@ function editorExport()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-// Parsed file -> working-copy level, or null when the file is not a valid version-1 level
+// Parsed file -> working-copy level, or null when the file is not a valid level
+// (version 2, or version 1 without portals)
 function editorLevelFromData(d)
 {
     const num = v => typeof v == 'number' && Number.isFinite(v)
     const inField = (x, y) => num(x) && num(y) && x >= 0 && x <= EDITOR_FIELD.w && y >= 0 && y <= EDITOR_FIELD.h
-    if (!d || typeof d != 'object' || Array.isArray(d) || d.version !== EDITOR_FILE_VERSION)
+    if (!d || typeof d != 'object' || Array.isArray(d) || (d.version !== 1 && d.version !== EDITOR_FILE_VERSION))
         return null
     if (!inField(d.ballX, d.ballY) || !inField(d.flagX, d.flagY) || !num(d.flagRotate))
         return null
@@ -833,31 +895,40 @@ function editorLevelFromData(d)
         return null
     if (!Array.isArray(d.lines) || !Array.isArray(d.portals) || (d.portals.length != 0 && d.portals.length != 2))
         return null
+    if (d.version === 1 && d.portals.length)
+        return null // old free-standing portal format (editorImportText reports it)
     for (const l of d.lines)
         if (!Array.isArray(l) || l.length != 4 || !inField(l[0], l[1]) || !inField(l[2], l[3]))
             return null
+    const lines = d.lines.map(l => new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line'))
     for (const P of d.portals)
-        if (!P || typeof P != 'object' || !inField(P.x, P.y) || !num(P.angle) || !num(P.h) || P.h <= 0)
+        if (!P || typeof P != 'object' || !Number.isInteger(P.line) || P.line < 0 || P.line >= lines.length ||
+            !num(P.u) || P.u < 0 || P.u > 1 || (P.side !== 1 && P.side !== -1) || !num(P.h) || P.h <= 0)
             return null
-    for (const l of d.lines)
-        if (editorSegNearPortal(l[0], l[1], l[2], l[3], d.portals, -1, []))
+    const portals = d.portals.map((P, i) => ({ line: P.line, u: P.u, side: P.side, h: P.h,
+                                              name: typeof P.name == 'string' && P.name ? P.name : (i ? 'B' : 'A') }))
+    if (editorPortalsOverlap(portals, lines))
+        return null
+    for (let i = 0; i < lines.length; i++)
+        if (editorSegNearPortal(lines[i].posX, lines[i].posY, lines[i].posX2, lines[i].posY2, portals, i, lines))
             return null
     return {
         ballX: d.ballX, ballY: d.ballY, flagX: d.flagX, flagY: d.flagY,
-        flagRotate: d.flagRotate, lineK: d.lineK,
-        lines: d.lines.map(l => new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line')),
-        portals: d.portals.map((P, i) => ({ x: P.x, y: P.y, angle: P.angle, h: P.h, name: i ? 'B' : 'A' }))
+        flagRotate: d.flagRotate, lineK: d.lineK, lines: lines, portals: portals
     }
 }
 
-// File text -> replaces the working copy (true), or leaves it unchanged and shows an error (false).
-// Never throws.
+// File text -> replaces the working copy (true), or leaves it unchanged and shows an error (false):
+// 'old portal format' for a version 1 file with portals, 'invalid level file' otherwise. Never throws.
 function editorImportText(text)
 {
-    let L = null
+    let L = null, err = 'invalid level file'
     try
     {
-        L = editorLevelFromData(JSON.parse(text))
+        const d = JSON.parse(text)
+        L = editorLevelFromData(d)
+        if (!L && d && d.version === 1 && Array.isArray(d.portals) && d.portals.length)
+            err = 'old portal format'
     }
     catch (e)
     {
@@ -865,7 +936,7 @@ function editorImportText(text)
     }
     if (!L || !editorMode || !editor.level)
     {
-        editorShowError('invalid level file', EDITOR_IMPORT_ERROR_MS)
+        editorShowError(err, EDITOR_IMPORT_ERROR_MS)
         return false
     }
     editor.level = L
