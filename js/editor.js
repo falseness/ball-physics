@@ -5,12 +5,18 @@
 // Working copy shape: {ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [Line], portals: [] | [A, B]}.
 // 'exit' writes the copy back to levels[thisLevel] (this session only) and reloads the level.
 let editorMode = false
-let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null }
+let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null,
+               portalPending: null, selected: null, error: null }
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
 const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
 const EDITOR_PICK_DIST = 20           // select tool: max distance to flag anchor / ball start / portal centre
 const EDITOR_FLAG_STEP = Math.PI / 12 // 'flag ⟲' / 'flag ⟳' rotation step
 const EDITOR_MAX_LINEK = 5
+const EDITOR_PORTAL_ANGLE = -Math.PI / 2 // default angle of a placed portal (opening horizontal, front up)
+const EDITOR_PORTAL_H = 45
+const EDITOR_PORTAL_CLEAR = 2            // level lines must stay > ball.radius + 2 px from an opening
+const EDITOR_ERROR_MS = 2000             // how long the handwritten error text stays
+const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseline of the error text
 
 // Toolbar: glass panel at the top-left, clear of the top-right HUD.
 // kind 'tool' = selectable tool (editor.tool), 'action' = one-shot action (editor.lastAction),
@@ -74,6 +80,9 @@ function editorOpen()
     editor.lastAction = null
     editor.pending = null
     editor.drag = null
+    editor.portalPending = null
+    editor.selected = null
+    editor.error = null
     editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
     editorMode = true
 }
@@ -94,6 +103,9 @@ function editorExit()
     editor.level = null
     editor.pending = null
     editor.drag = null
+    editor.portalPending = null
+    editor.selected = null
+    editor.error = null
     editor.flagPoly = null
     levelChoosed(thisLevel)
 }
@@ -117,6 +129,8 @@ function editorClick(coords)
             return // toolbar panel background
         if (editor.tool == 'line')
             editorLineClick(coords)
+        else if (editor.tool == 'portal')
+            editorPortalClick(coords)
         else if (editor.tool == 'delete')
             editorDeleteAt(coords)
         return
@@ -125,12 +139,17 @@ function editorClick(coords)
     {
         editor.tool = b.id
         editor.pending = null
+        editor.portalPending = null
+        if (b.id != 'select')
+            editor.selected = null
         return
     }
     editor.lastAction = b.id
     editor.actions++
     const W = editor.level
-    if (b.id == 'flagCCW' || b.id == 'flagCW')
+    if ((b.id == 'flagCCW' || b.id == 'flagCW') && editorSelectedPortal())
+        editorRotatePortal(editorSelectedPortal(), b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP)
+    else if (b.id == 'flagCCW' || b.id == 'flagCW')
     {
         W.flagRotate += b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP
         editor.flagPoly = editorFlagPolygon(W.flagRotate)
@@ -170,8 +189,10 @@ function editorMouseDown(coords)
     if (editor.tool != 'select' || editorInBar(coords))
         return
     const c = editorPickAt(coords)
+    // selection: a portal picked with the select tool (⟲ / ⟳ then rotate it); anything else clears it
+    editor.selected = c && c[0] == 'portal' ? { kind: 'portal', i: c[1] } : null
     if (c)
-        editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1] }
+        editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1], x0: c[2], y0: c[3] }
 }
 
 function editorDragTo(coords)
@@ -188,8 +209,121 @@ function editorMouseUp(coords)
 {
     if (!editor.drag)
         return
+    const d = editor.drag
     editorDragTo(coords)
     editor.drag = null
+    if (d.kind == 'portal')
+    {
+        const P = editor.level.portals[d.i]
+        if (editorPortalBlocked(P))
+        {
+            P.x = d.x0; P.y = d.y0 // refused drop: back to where it was picked up
+            editorShowError('portal too close to a line')
+        }
+    }
+}
+
+function editorSelectedPortal()
+{
+    const s = editor.selected
+    return s && s.kind == 'portal' ? editor.level.portals[s.i] || null : null
+}
+
+// Distance rule (same as TASK-027's design check): every level line must stay farther than
+// ball.radius + EDITOR_PORTAL_CLEAR from the portal opening c ± h·t (rims included)
+function editorPortalLineDist(P)
+{
+    const r = portalRims(P)
+    let m = Infinity
+    for (const l of editor.level.lines)
+        m = Math.min(m, segSegDist(l.posX, l.posY, l.posX2, l.posY2, r[0][0], r[0][1], r[1][0], r[1][1]))
+    return m
+}
+function editorPortalBlocked(P)
+{
+    return editorPortalLineDist(P) <= ball.radius + EDITOR_PORTAL_CLEAR
+}
+
+function editorNewPortal(coords, name)
+{
+    return { x: coords[0], y: coords[1], angle: EDITOR_PORTAL_ANGLE, h: EDITOR_PORTAL_H, name: name }
+}
+
+// Portal tool: 1st click places A (pending), 2nd places B; the pair then replaces the existing pair
+// (at most one pair per level). A placement too close to a level line is refused (state kept).
+function editorPortalClick(coords)
+{
+    const P = editorNewPortal(coords, editor.portalPending ? 'B' : 'A')
+    if (editorPortalBlocked(P))
+    {
+        editorShowError('portal too close to a line')
+        return false
+    }
+    if (!editor.portalPending)
+    {
+        editor.portalPending = P
+        return true
+    }
+    editor.level.portals = [editor.portalPending, P]
+    editor.portalPending = null
+    editor.selected = null
+    return true
+}
+
+// ⟲ / ⟳ with a selected portal: rotate it by ∓PI/12; refused (angle kept) when it would hit a line
+function editorRotatePortal(P, da)
+{
+    const a = P.angle
+    P.angle += da
+    if (editorPortalBlocked(P))
+    {
+        P.angle = a
+        editorShowError('portal too close to a line')
+    }
+}
+
+function editorShowError(text)
+{
+    editor.error = { text: text, until: performance.now() + EDITOR_ERROR_MS }
+}
+
+// [x, y, w, h] box that holds the error text (for tests; the text is left-aligned at EDITOR_ERROR_POS)
+function editorErrorRect()
+{
+    const e = EDITOR_ERROR_POS
+    return [e.x, e.y - e.size, 360, e.size + 10]
+}
+
+function editorDrawError()
+{
+    const e = editor.error
+    if (!e)
+        return
+    if (performance.now() > e.until)
+    {
+        editor.error = null
+        return
+    }
+    const p = EDITOR_ERROR_POS
+    ctx.save()
+    ctx.font = '700 ' + p.size + 'px ' + THEME.fontStack
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+    ctx.fillStyle = THEME.coral; ctx.shadowColor = 'rgba(255,106,85,.9)'; ctx.shadowBlur = 10
+    ctx.fillText(e.text, p.x, p.y)
+    ctx.restore()
+}
+
+// Dashed ring around the selected portal (select tool)
+function editorDrawSelection()
+{
+    const P = editorSelectedPortal()
+    if (!P || editor.tool != 'select')
+        return
+    ctx.save()
+    ctx.strokeStyle = THEME.cyan; ctx.lineWidth = 1.4; ctx.setLineDash([5, 5])
+    ctx.shadowColor = THEME.cyan; ctx.shadowBlur = 6
+    ctx.beginPath(); ctx.arc(P.x, P.y, P.h + 18, 0, Math.PI * 2); ctx.stroke()
+    ctx.restore()
 }
 
 // Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
@@ -232,7 +366,10 @@ function editorDeleteAt(coords)
     if (best[0] == 'line')
         W.lines.splice(best[1], 1)
     else
+    {
         W.portals = []
+        editor.selected = null
+    }
     return true
 }
 
@@ -259,11 +396,18 @@ function editorDraw()
     drawFlag(W.flagX, W.flagY, THEME.ink, THEME.coral)
     flag = saved
     drawPortals(W.portals)
+    if (editor.portalPending)
+    {
+        // placed A waiting for its partner (the existing pair stays until B is placed)
+        drawPortal(editor.portalPending, PORTAL_STYLE[0])
+    }
+    editorDrawSelection()
     drawStartMarker(W.ballX, W.ballY)
     Ball.prototype.draw.call({ posX: W.ballX, posY: W.ballY, radius: ball.radius })
     if (editor.pending && editor.mouse)
         drawNewLine({ posX: editor.pending[0], posY: editor.pending[1], posX2: editor.mouse[0], posY2: editor.mouse[1] })
     editorDrawToolbar()
+    editorDrawError()
 }
 
 // Small hand-drawn rotation arrow (dir -1 counter-clockwise, +1 clockwise)
