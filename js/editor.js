@@ -587,6 +587,8 @@ function editorExport()
     a.href = url
     a.download = 'level.json'
     a.style.display = 'none'
+    // the synthetic click must not bubble to the game's document click handler (editorClick at (0,0))
+    a.addEventListener('click', e => e.stopPropagation())
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -662,6 +664,8 @@ function editorImportInput()
     input.accept = '.json'
     input.id = 'editorImportFile'
     input.style.display = 'none'
+    // input.click() from editorImportOpen must not bubble to the document click handler (editorClick at (0,0))
+    input.addEventListener('click', e => e.stopPropagation())
     input.addEventListener('change', function()
     {
         const f = input.files && input.files[0]
