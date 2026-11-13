@@ -24,6 +24,7 @@
 // hostHits: host-line collisions so far; hostHit: the latest {step, line, v: [vx, vy] before}
 const RIM_LOG_MAX = 64
 const PORTAL_EXIT_MIN_D = 1e-6   // touch teleport: minimum exit distance in front of the exit plane
+const PORTAL_DEFAULT_H = 45      // half-width h of a newly placed portal (physics/drawing always read P.h)
 let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }
 
 function portalReset()
@@ -503,7 +504,7 @@ window.__portalTest = {
         // the scratch level starts the ball where the test puts it, so restart() / levelChoosed() work on it
         const level = cfg.wall ? { lines: (cfg.lines || []).map(mk), lineK: cfg.lineK || 0, flagX: -1e6, flagY: -1e6, flagRotate: 0,
                                    ballX: b.x, ballY: b.y } : levels[thisLevel]
-        level.portals = (cfg.portals || []).map(p => Object.assign({ h: 45 }, p))
+        level.portals = (cfg.portals || []).map(p => Object.assign({ h: PORTAL_DEFAULT_H }, p))
         if (!level.portals.length)
             delete level.portals
         if (cfg.wall)

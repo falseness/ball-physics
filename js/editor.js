@@ -24,7 +24,10 @@ const EDITOR_LINE_SEL_PAD = 10        // select tool: dashed capsule distance ar
 const EDITOR_FLAG_STEP = Math.PI / 12 // 'flag ⟲' / 'flag ⟳' rotation step
 const EDITOR_MAX_LINEK = 5
 const EDITOR_PORTAL_LINE_DIST = 20       // portal tool: max distance from the click to a level line
-const EDITOR_PORTAL_H = 45
+const EDITOR_PORTAL_H = PORTAL_DEFAULT_H   // h of a newly placed portal; 'size −' / 'size +' change it afterwards
+const EDITOR_PORTAL_H_STEP = 15           // 'size −' / 'size +' step of h (both portals of the pair)
+const EDITOR_PORTAL_H_MIN = 30
+const EDITOR_PORTAL_H_MAX = 135
 const EDITOR_PORTAL_CLEAR = 2            // level lines must stay > ball.radius + 2 px from an opening
 const EDITOR_ERROR_MS = 2000             // how long the handwritten error text stays
 const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseline of the error text
@@ -38,6 +41,7 @@ const EDITOR_BUTTONS = (function()
     const spec = [
         ['select', 'tool', 'select', 70], ['line', 'tool', 'line', 56], ['portal', 'tool', 'portal', 70],
         ['delete', 'tool', 'delete', 70], ['flagCCW', 'action', 'flag', 70], ['flagCW', 'action', 'flag', 70],
+        ['portalSmaller', 'action', 'size −', 62], ['portalBigger', 'action', 'size +', 62],
         ['linesDec', 'action', 'lines −', 66], ['lineK', 'value', '', 36], ['linesInc', 'action', 'lines +', 66],
         ['play', 'action', 'play', 56], ['export', 'action', 'export', 70], ['import', 'action', 'import', 70],
         ['new', 'action', 'new', 50], ['exit', 'action', 'exit', 50]
@@ -171,6 +175,8 @@ function editorClick(coords)
         W.flagRotate += b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP
         editor.flagPoly = editorFlagPolygon(W.flagRotate)
     }
+    else if (b.id == 'portalSmaller' || b.id == 'portalBigger')
+        editorResizePortals(b.id == 'portalBigger' ? EDITOR_PORTAL_H_STEP : -EDITOR_PORTAL_H_STEP)
     else if (b.id == 'linesDec' || b.id == 'linesInc')
         W.lineK = Math.max(0, Math.min(EDITOR_MAX_LINEK, W.lineK + (b.id == 'linesInc' ? 1 : -1)))
     else if (b.id == 'new')
@@ -598,6 +604,43 @@ function editorRotatePortal(P, da)
     }
 }
 
+// 'size −' / 'size +' with a selected portal: h of BOTH portals of the pair (one shared size) changes
+// by dh, limited to EDITOR_PORTAL_H_MIN..EDITOR_PORTAL_H_MAX (at a limit nothing changes, no error).
+// A wall portal's u is re-clamped to the new h first; the change is refused (h and u of both kept,
+// 'portal does not fit') when an opening plus ball.radius no longer fits on its host line, an opening
+// comes within the clearance of another line, or the pair overlaps. No portal selected: no-op.
+function editorResizePortals(dh)
+{
+    const W = editor.level, S = editorSelectedPortal()
+    if (!S)
+        return false
+    const h = Math.min(EDITOR_PORTAL_H_MAX, Math.max(EDITOR_PORTAL_H_MIN, S.h + dh))
+    if (W.portals.every(P => P.h === h))
+        return false
+    const old = W.portals.map(P => ({ h: P.h, u: P.u }))
+    let fits = true
+    for (const P of W.portals)
+    {
+        P.h = h
+        if (!editorIsWallPortal(P))
+            continue
+        const l = W.lines[P.line], len = Math.hypot(l.posX2 - l.posX, l.posY2 - l.posY)
+        if (len < 2 * (h + ball.radius))
+            fits = false
+        else
+            P.u = portalClampU(P.u, len, h)
+    }
+    if (fits && (W.portals.some(editorPortalBlocked) || editorPortalsOverlap(W.portals)))
+        fits = false
+    if (!fits)
+    {
+        W.portals.forEach((P, i) => { P.h = old[i].h; P.u = old[i].u })
+        editorShowError('portal does not fit')
+        return false
+    }
+    return true
+}
+
 // ⟲ / ⟳ with a selected line: rotate it by ∓PI/12 around its midpoint (length kept, its wall portals
 // turn with it); refused (line unchanged) when it leaves EDITOR_FIELD or editorLineEditError objects
 function editorRotateLine(l, da)
@@ -720,6 +763,17 @@ function editorDrawSelection()
     }
     ctx.stroke()
     ctx.restore()
+    if (P)
+        editorDrawPortalSize(P)
+}
+
+// 'h = NN' next to the selected portal: in front of it (along its normal), just outside the dashed ring
+function editorDrawPortalSize(P)
+{
+    const d = P.h + 18 + 22, F = EDITOR_FIELD
+    const x = Math.min(Math.max(P.x + Math.cos(P.angle) * d, 50), F.w - 50)
+    const y = Math.min(Math.max(P.y + Math.sin(P.angle) * d, 90), F.h - 20)
+    menuLabel('h = ' + Math.round(P.h), x, y, 24, THEME.cyan)
 }
 
 // Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
