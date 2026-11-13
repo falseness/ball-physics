@@ -114,6 +114,11 @@ function draw()
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.drawImage(bgCanvas, 0, 0)
     applyViewTransform()
+    if (editorMode)
+    {
+        editorDraw()
+        return
+    }
     
     guide()
     drawIcons()

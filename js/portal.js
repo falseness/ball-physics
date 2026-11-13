@@ -236,9 +236,10 @@ function drawPortal(P, st)
     ctx.restore()
 }
 
-function drawPortals()
+// list: portals to draw (the editor's working copy); default = the current level's
+function drawPortals(list)
 {
-    const P = currentPortals()
+    const P = list === undefined ? currentPortals() : (list.length ? list : null)
     if (!P)
         return
     if (P.length >= 2)

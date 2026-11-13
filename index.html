@@ -40,6 +40,7 @@
     <script src = "js/menu.js"></script>
     <script src = "js/bounce.js"></script>
     <script src = "js/portal.js"></script>
+    <script src = "js/editor.js"></script>
     <script src = "js/draw.js"></script>
     <script>
         'use strict'
@@ -173,6 +174,11 @@
         // One click (mouse) or tap (touch) at logical coords
         function handleClick(coords)
         {
+            if (editorMode)
+            {
+                editorClick(coords)
+                return
+            }
             if ((levelCompletedWindow || drawMenu) && levelsRectCollision(coords[0], coords[1]))
             {
                 return    
@@ -202,6 +208,11 @@
             }
             else if (drawMenu)
             {
+                if (inEditorButton(coords))
+                {
+                    editorOpen()
+                    return
+                }
                 for (let i = 0; i < menuButtons.length - 1; ++i)
                 {
                     if (collisionWithRect(
@@ -266,6 +277,8 @@
         
         document.addEventListener('mousemove', function(event)
         {
+            if (editorMode)
+                return editorMouseMove(mouseCoords(event))
             bounce.calc(mouseCoords(event))
         })
 
@@ -278,7 +291,7 @@
         // Would a click at coords start a new line? (same conditions as handleClick)
         function lineStartAccepted(coords)
         {
-            if (levelCompletedWindow || drawMenu || line || levelStarted)
+            if (editorMode || levelCompletedWindow || drawMenu || line || levelStarted)
                 return false
             if (inMenuIcon(coords) || inPlayIcon(coords))
                 return false
@@ -296,6 +309,8 @@
         }
         function touchMoveTo(coords)
         {
+            if (editorMode)
+                return editorMouseMove(coords)
             if (line)
             {
                 line.posX2 = coords[0]
@@ -372,7 +387,7 @@
         }
         function gameMechanics()
         {
-            if (physics)
+            if (physics && !editorMode)
             {
                 for (let i = 0; i < cyclesPerTact; ++i)
                 {

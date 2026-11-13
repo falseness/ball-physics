@@ -70,6 +70,8 @@ function menu()
             }
             menuButton(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + 300 + i * 85, menuTextRect[0], menuTextRect[1], menuButtons[i])
         }
+        const er = editorButtonRect()
+        menuButton(er[0], er[1], er[2], er[3], 'editor')
         drawLevels()
         drawLogo()
     }
