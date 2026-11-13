@@ -171,27 +171,43 @@ function drawLogo()
 }
 function guide()
 {
-    // Level-1 tutorial hints: handwritten THEME text at the original positions, each with a
-    // small hand-drawn arrow toward the point to click. Seeded rng -> identical every frame.
+    // Level-1 tutorial hints: bright coral handwritten text with a glow pass, hand-drawn
+    // arrows and target rings at the points to click. Seeded rng -> identical every frame.
     if (thisLevel == 0)
     {
-        const R = sketchRng(1161), col = THEME.soft
+        const R = sketchRng(1161), col = THEME.coral
         ctx.save()
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
-        ctx.font = '26px ' + THEME.fontStack
-        ctx.fillStyle = col; ctx.globalAlpha = .95
-        ctx.fillText('Click here', 800, 160)
-        ctx.fillText('and here', 260, 480)
-        ctx.fillText('to draw line', 260, 504)
-        guideArrow(R, 806, 170, 788, 202, col)
-        guideArrow(R, 330, 481, 306, 457, col)
+        ctx.fillStyle = col; ctx.shadowColor = 'rgba(255,106,85,0.9)'
+        for (const blur of [16, 0])
+        {
+            ctx.shadowBlur = blur
+            ctx.font = '700 34px ' + THEME.fontStack
+            ctx.fillText('Click here', 800, 156)
+            ctx.fillText('and here', 262, 482)
+            ctx.font = '700 30px ' + THEME.fontStack
+            ctx.fillText('to draw a line', 262, 514)
+        }
+        guideArrow(R, 808, 168, 794, 192, col, 2.6, 10)
+        guideArrow(R, 340, 478, 316, 462, col, 2.6, 10)
+        guideRing(790, 206, col)
+        guideRing(300, 450, col)
         ctx.restore()
     }
 }
-function guideArrow(R, x1, y1, x2, y2, color)
+function guideArrow(R, x1, y1, x2, y2, color, width, head)
 {
-    ctx.save(); ctx.globalAlpha = .9
-    handLine(ctx, R, x1, y1, x2, y2, color, 1.4, 2, 1.2, 0)
-    arrowHead(ctx, x2, y2, Math.atan2(y2 - y1, x2 - x1), 7, color)
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 10
+    handLine(ctx, R, x1, y1, x2, y2, color, width, 2, 1.2, 0)
+    arrowHead(ctx, x2, y2, Math.atan2(y2 - y1, x2 - x1), head, color)
+    ctx.restore()
+}
+function guideRing(x, y, color)
+{
+    ctx.save(); ctx.strokeStyle = color; ctx.shadowColor = color
+    ctx.lineWidth = 2.2; ctx.shadowBlur = 14
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, 2 * Math.PI); ctx.stroke()
+    ctx.globalAlpha = .45; ctx.lineWidth = 1.4
+    ctx.beginPath(); ctx.arc(x, y, 18, 0, 2 * Math.PI); ctx.stroke()
     ctx.restore()
 }
