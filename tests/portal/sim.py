@@ -499,7 +499,7 @@ S14_JS = """(frames) => {
     return {out, teleports: portalState.teleports.length, steps: portalState.steps} }
   const res = []
   for (let i = 0; i < levels.length; ++i) {
-    const lv = levels[i], had = 'portals' in lv
+    const lv = levels[i], had = 'portals' in lv, saved = lv.portals
     delete lv.portals
     const absent = runLevel(i)
     lv.portals = []
@@ -509,6 +509,7 @@ S14_JS = """(frames) => {
     portalStep = function () {}                // the no-portal code path: no portal hook at all
     const none = runLevel(i)
     portalStep = realStep
+    if (had) lv.portals = saved                // portal levels (11+) keep their pair
     let diffAbsent = 0, diffEmpty = 0
     for (let f = 0; f < frames; ++f) {
       if (absent.out[f][0] !== none.out[f][0] || absent.out[f][1] !== none.out[f][1]) ++diffAbsent
@@ -523,13 +524,14 @@ S14_JS = """(frames) => {
 def s14(page):
     """A level without `portals` (or with []) has no portal behaviour: 0 teleports, trace identical to no hook."""
     res = page.evaluate(S14_JS, 300)
-    out = {'levels': res}
+    out = {'levels': res, 'levelCount': page.evaluate('levels.length')}
     out['teleports'] = sum(r['teleports'] for r in res)
     out['mismatchingFrames'] = sum(r['diffAbsent'] + r['diffEmpty'] for r in res)
     out['ok_no_teleports'] = out['teleports'] == 0
     out['ok_no_portal_steps'] = all(r['portalSteps'] == 0 for r in res)
     out['ok_identical'] = out['mismatchingFrames'] == 0
-    out['ok_levels'] = len(res) == 10
+    # every level is covered: the 10 original ones plus any portal levels added later (11+)
+    out['ok_levels'] = len(res) == out['levelCount'] and len(res) >= 10
     return out
 
 
@@ -570,8 +572,11 @@ def main():
             total += mism
             levels.append({'level': b['level'], 'frames': len(b['x']), 'nLines': [b['nLines'], c['nLines']],
                            'mismatchingFrames': mism, 'last': [c['x'][-1], c['y'][-1]]})
+        # the 10 original levels must match bit for bit; levels appended later (11+, portal
+        # levels) have no baseline and are only counted
         res = {'levels': levels, 'levelCount': len(levels), 'sameLevelCount': len(base) == len(cur) == 10,
-               'totalMismatchingFrames': total, 'pass': total == 0 and len(base) == len(cur) == 10}
+               'baseLevels': len(base), 'curLevels': len(cur), 'addedLevels': len(cur) - len(base),
+               'totalMismatchingFrames': total, 'pass': total == 0 and len(base) == 10 and len(cur) >= len(base)}
         with open(a.out, 'w') as f:
             json.dump(res, f, separators=(',', ':'))
         print('noportal: levels=%d mismatching=%d pass=%s' % (len(levels), total, res['pass']))

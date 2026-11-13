@@ -1,6 +1,12 @@
 let rectMarginTop = 525
 let rectMarginLeft = 25
 let rectSize = 50 
+// rows of 5 squares, 60 px apart (levels 1-5, 6-10, 11-...)
+function levelRectXY(i)
+{
+    return [menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * (i % 5),
+            menuCoords[1] + rectMarginTop + Math.floor(i / 5) * 60]
+}
 // Level grid: locked = dim navy outline, unlocked = cyan outline, completed = coral fill.
 // Square positions are the same expressions levelsRectCollision() uses.
 function drawLevels()
@@ -17,8 +23,7 @@ function drawLevels()
     for (let i = 0; i < levels.length; ++i)
     {
         const u = levels[i].unlock
-        const x = menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * (i - 5 * (i > 4))
-        const y = menuCoords[1] + rectMarginTop + (i > 4) * 60
+        const [x, y] = levelRectXY(i)
         ctx.fillStyle = fill[u]
         ctx.fillRect(x, y, rectSize, rectSize)
         ctx.strokeStyle = stroke[u]; ctx.lineWidth = 1.5
@@ -34,10 +39,8 @@ function levelsRectCollision(x, y)
 {
     for (let i = 0; i < levels.length; ++i)
     {
-        if (levels[i].unlock && collisionWithRect(x, y, menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * (i - 5 * (i > 4)),
-                          menuCoords[1] + rectMarginTop + (i > 4) * 60, 
-                          menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * (i - 5 * (i > 4)) + rectSize,
-                          menuCoords[1] + rectMarginTop + rectSize + (i > 4) * 60))
+        const r = levelRectXY(i)
+        if (levels[i].unlock && collisionWithRect(x, y, r[0], r[1], r[0] + rectSize, r[1] + rectSize))
         {
             thisLevel = i
             levelChoosed(thisLevel)

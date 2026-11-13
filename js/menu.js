@@ -1,6 +1,6 @@
 let menuTextRect = [250, 50]
 let menuCoords = [GAME_W / 2, 50]
-let menuSize = [400, 650]
+let menuSize = [400, 710]  // tall enough for 3 rows of level squares (11 levels)
 let menuButtons = ['resume', 'restart', 'Levels']
 
 // Translucent navy overlay behind the pause menu / level-complete window.

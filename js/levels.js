@@ -149,6 +149,26 @@ levels.push(
         new Line(300, 200, 300, 10, dotRadius, levelLineColor, 'line')
     ],
     unlock: 0
+},
+{
+    // Level 11, the first portal level: the flag sits in a walled pocket on the right that the
+    // ball can only enter through portal B. Steer the ball into portal A (opening facing up).
+    ballX: 200,
+    ballY: 100,
+    flagX: 1200,
+    flagY: 450,
+    flagRotate: 0,
+    lineK: 2,
+    lines: [
+        new Line(1040, 0, 1040, 450, dotRadius, levelLineColor, 'line'),
+        new Line(1040, 450, 1270, 450, dotRadius, levelLineColor, 'line'),
+        new Line(1270, 450, 1270, 0, dotRadius, levelLineColor, 'line')
+    ],
+    portals: [
+        { x: 600, y: 600, angle: -Math.PI / 2, h: 45, name: 'A' },
+        { x: 1100, y: 250, angle: 0, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 let thisLevel = 0
