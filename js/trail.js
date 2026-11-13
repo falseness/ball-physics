@@ -4,6 +4,7 @@
 // {x, y, frame, seg} per frame. `frame` is a global counter (the helix phase is taken from it,
 // so the twist stays fixed to the path instead of sliding). `seg` changes after a portal
 // teleport so no stroke joins the two sides. trailReset() is called by levelChoosed().
+// trailAnnotate() adds speed arrows/labels, the live 'v = ... mm/s' readout and a coral velocity arrow.
 // Drawing only, physics is never touched.
 
 const TRAIL_MAX = 60
@@ -116,5 +117,96 @@ function trailDraw()
             ctx.stroke()
         }
     }
+    ctx.restore()
+    trailAnnotate()
+}
+
+// ---- annotations (drawn only while the strands of the current segment are shown) ----
+const TRAIL_ARROW_STEP = 7      // frames between speed arrows
+const TRAIL_ARROW_MAX = 7
+const TRAIL_ARROW_SCALE = 3.2   // arrow length = |H[i] - H[i-1]| * scale
+const TRAIL_VEL_LEN = 70        // coral velocity arrow length beyond the ball rim
+
+// test hook + draw data: speed arrows of the newest segment (newest first, every 7 frames, needs H[i-1]),
+// the live readout and the velocity direction; null when the trail is not shown
+function trailLabels()
+{
+    if (!trail.length)
+        return null
+    const segs = trailSegments(), H = segs[segs.length - 1]
+    if (H.length < 3)
+        return null
+    const arrows = []
+    for (let c = 0, i = H.length - 1; c < TRAIL_ARROW_MAX && i >= 1; ++c, i -= TRAIL_ARROW_STEP)
+    {
+        const dx = H[i].x - H[i - 1].x, dy = H[i].y - H[i - 1].y
+        arrows.push({ x: H[i].x, y: H[i].y, dx: dx, dy: dy, label: Math.round(Math.hypot(dx, dy) * 60), i: i, c: c })
+    }
+    const v = Math.round(Math.hypot(ball.speedX, ball.speedY) * cyclesPerTact * 60)
+    return {
+        arrows: arrows, live: 'v = ' + v + ' mm/s', liveValue: v,
+        velocityAngle: Math.atan2(ball.speedY, ball.speedX)
+    }
+}
+
+function trailArrow(x, y, dx, dy, color, w, head)
+{
+    if (!(Math.hypot(dx, dy) > 0))
+        return
+    const ex = x + dx * TRAIL_ARROW_SCALE, ey = y + dy * TRAIL_ARROW_SCALE
+    ctx.strokeStyle = color
+    ctx.lineWidth = w
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(ex, ey)
+    ctx.stroke()
+    arrowHead(ctx, ex, ey, Math.atan2(dy, dx), head, color)
+}
+
+function trailAnnotate()
+{
+    const L = trailLabels()
+    if (!L)
+        return
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.setLineDash([])
+    ctx.font = '15px ' + THEME.fontStack
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'alphabetic'
+    // older arrows + their labels first, the newest (coral, glowing) on top
+    for (let j = L.arrows.length - 1; j >= 1; --j)
+    {
+        const a = L.arrows[j], f = 1 - a.c / TRAIL_ARROW_MAX
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = 0.3 + 0.7 * f
+        trailArrow(a.x, a.y, a.dx, a.dy, THEME.soft, 1.2, 6)
+        ctx.globalAlpha = 0.15 + 0.55 * f
+        ctx.fillStyle = THEME.soft
+        ctx.fillText(String(a.label), a.x - 12, a.y - 6)
+    }
+    const a0 = L.arrows[0]
+    ctx.globalAlpha = 1
+    ctx.shadowColor = THEME.coral
+    ctx.shadowBlur = 8
+    trailArrow(a0.x, a0.y, a0.dx, a0.dy, THEME.coral, 1.8, 9)
+    // coral velocity arrow from the ball rim
+    const sp = Math.hypot(ball.speedX, ball.speedY)
+    if (sp > 0)
+    {
+        const ux = ball.speedX / sp, uy = ball.speedY / sp, r = ball.radius
+        const x1 = ball.posX + ux * r, y1 = ball.posY + uy * r
+        const x2 = ball.posX + ux * (r + TRAIL_VEL_LEN), y2 = ball.posY + uy * (r + TRAIL_VEL_LEN)
+        const R = sketchRng(sketchSeed([trailFrame]))
+        handLine(ctx, R, x1, y1, x2, y2, THEME.coral, 1.8, 2, 0.6, 0)
+        arrowHead(ctx, x2, y2, L.velocityAngle, 9, THEME.coral)
+    }
+    // live readout
+    ctx.shadowBlur = 0
+    ctx.globalAlpha = 1
+    ctx.fillStyle = THEME.ink
+    ctx.font = '20px ' + THEME.fontStack
+    ctx.textAlign = 'left'
+    ctx.fillText(L.live, ball.posX + 24, ball.posY - 22)
     ctx.restore()
 }
