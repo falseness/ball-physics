@@ -32,6 +32,7 @@
     <script src = "js/line.js"></script>
     <script src = "js/levels.js"></script>
     <script src = "js/ball.js"></script>
+    <script src = "js/trail.js"></script>
     <script src = "js/newline.js"></script>
     <script src = "js/flag.js"></script>
     <script src = "js/annotate.js"></script>
@@ -154,6 +155,7 @@
             
             bounce.setDrawEnable(true)
             portalReset()
+            trailReset()
         }
         
         levelChoosed(thisLevel)
@@ -418,6 +420,7 @@
         {
             if (physics && !editorMode)
             {
+                const teleports0 = portalState.teleports.length
                 for (let i = 0; i < cyclesPerTact; ++i)
                 {
                     gamePhysics()
@@ -436,6 +439,9 @@
                     if (!ball.onMap())
                         restart()
                 }
+                // trail: one sample per frame (drawing only; a teleport starts a new segment)
+                if (physics)
+                    trailRecord(portalState.teleports.length !== teleports0)
             }
         }
         function gameLoop()
