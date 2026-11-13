@@ -8,6 +8,9 @@
 3. Press **Export**. This stops the recording and downloads
    `visuals-performance.json`.
 4. `python3 tools/freeze_report.py visuals-performance.json` labels each freeze.
+   Each row shows the level (`thisLevel`), whether the ball was moving
+   (`physics`) and the slowest timed layer (e.g. `lines`). Add `--json out.json`
+   to also write the summary and rows as JSON.
 
 Without the flag nothing is wrapped or recorded and no panel is shown. Nothing
 is sent anywhere. The report format (schemaVersion 4) and every field are

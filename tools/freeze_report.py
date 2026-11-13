@@ -10,6 +10,11 @@ sha256 of the fetched scripts; 'globals': the file:// fallback, see
 js/visualsperf.js; unknown in exports without it). Hidden periods (visibility events and samples with
 hidden true) are left out of the freeze count and the rate.
 
+Per-freeze game columns: level (context.thisLevel), physics (context.physics,
+whether the ball was moving) and slowest (the freeze's slowestLayer, a
+PERF_LAYERS key such as 'lines'); --json rows carry them as level, physics,
+slowestLayer.
+
 sinceVisibleMs is the time from the last hidden-to-visible change to the
 freeze: the recorder's own field from schema 4, else the end of the latest
 hidden period (visibility events or hidden samples) before the freeze.
@@ -232,6 +237,8 @@ def analyse(report):
             't': t, 'gapMs': gap,
             'unaccountedMs': number(f.get('unaccountedMs')),
             'level': context.get('thisLevel'),
+            'physics': context.get('physics'),
+            'slowestLayer': f.get('slowestLayer'),
             'mainThreadSilenceMs': number(f.get('mainThreadSilenceMs')),
             'heapDropMB': number(f.get('heapDropMB')),
             'liveCanvasMB': number(context.get('liveCanvasMB')),
@@ -287,12 +294,12 @@ def render(path, prefix, summary, rows):
                  f'rate {fmt(summary["freezesPerMinute"], 2, "/min")}')
     lines.append('labels: ' + (', '.join(f'{k} {v}' for k, v in summary['labels'].items()) or 'none'))
     lines.append('')
-    lines.append(f'{"t s":>9} {"gapMs":>8} {"unaccMs":>8} {"level":<20} {"silenceMs":>9} '
+    lines.append(f'{"t s":>9} {"gapMs":>8} {"unaccMs":>8} {"level":<7} {"physics":<8} {"slowest":<14} {"silenceMs":>9} '
                  f'{"heapDropMB":>10} {"liveCanvMB":>10} {"sinceVis s":>10}  {"top LoAF script":<28} label')
     for r in rows:
         since = r['sinceVisibleMs']
         lines.append(f'{fmt(r["t"] and r["t"] / 1000, 2):>9} {fmt(r["gapMs"]):>8} {fmt(r["unaccountedMs"]):>8} '
-                     f'{fmt(r["level"], 0):<20} {fmt(r["mainThreadSilenceMs"]):>9} {fmt(r["heapDropMB"]):>10} '
+                     f'{fmt(r["level"], 0):<7} {fmt(r["physics"] if r["physics"] is None else str(r["physics"]).lower()):<8} {fmt(r["slowestLayer"]):<14} {fmt(r["mainThreadSilenceMs"]):>9} {fmt(r["heapDropMB"]):>10} '
                      f'{fmt(r["liveCanvasMB"]):>10} {fmt(since and since / 1000, 2):>10}  '
                      f'{fmt(r["topLoafScript"]):<28} {r["label"]}')
     lines.append('')
