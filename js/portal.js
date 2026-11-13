@@ -9,11 +9,30 @@
 // front leaves through the other portal's front, a back leaves through its back.
 // The rims (c ± h·t) are solid points; the portal body is not a collider.
 
-let portalState = { prevD: [], teleports: [], rimHits: 0, steps: 0 }
+// rims: the first RIM_LOG_MAX rim bounces {step, rim, n, before:[vx,vy], after:[vx,vy]}
+const RIM_LOG_MAX = 64
+let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0 }
 
 function portalReset()
 {
-    portalState = { prevD: [], teleports: [], rimHits: 0, steps: 0 }
+    portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0 }
+}
+
+// The path preview (Bounce.calc) runs gamePhysics() too: it must start from the same portal
+// state as the real run and must not leave its own state (stored sides, teleport log) behind.
+function portalSave()
+{
+    const saved = portalState
+    portalState = {
+        prevD: saved.prevD.slice(), teleports: saved.teleports.slice(),
+        rimHits: saved.rimHits, rims: saved.rims.slice(), steps: saved.steps
+    }
+    return saved
+}
+
+function portalRestore(saved)
+{
+    portalState = saved
 }
 
 function currentPortals()
@@ -96,9 +115,13 @@ function portalStep()
             const vn = ball.speedX * nx + ball.speedY * ny
             if (vn >= 0)
                 continue
+            const before = [ball.speedX, ball.speedY]
             ball.speedX -= 2 * vn * nx
             ball.speedY -= 2 * vn * ny
             ++portalState.rimHits
+            if (portalState.rims.length < RIM_LOG_MAX)
+                portalState.rims.push({ step: portalState.steps, rim: rims[k], n: [nx, ny],
+                    before: before, after: [ball.speedX, ball.speedY] })
         }
     }
 }
@@ -109,6 +132,9 @@ window.__portalTest = {
     {
         physics = false
         levelStarted = false
+        levelCompletedWindow = false
+        line = false
+        linesK = 0
         const level = levels[thisLevel]
         level.portals = (cfg.portals || []).map(p => Object.assign({ h: 45 }, p))
         if (!level.portals.length)
@@ -117,8 +143,7 @@ window.__portalTest = {
         const b = cfg.ball || {}
         ball.posX = b.x; ball.posY = b.y
         ball.speedX = b.vx || 0; ball.speedY = b.vy || 0
-        if (b.r !== undefined)
-            ball.radius = b.r
+        ball.radius = b.r !== undefined ? b.r : 10
         portalReset()
         return this.state()
     },
@@ -133,7 +158,7 @@ window.__portalTest = {
         return {
             x: ball.posX, y: ball.posY, vx: ball.speedX, vy: ball.speedY, r: ball.radius,
             steps: portalState.steps, rimHits: portalState.rimHits,
-            teleports: portalState.teleports
+            teleports: portalState.teleports, rims: portalState.rims
         }
     }
 }

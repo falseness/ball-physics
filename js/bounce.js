@@ -24,6 +24,8 @@ class Bounce
             let ballStartX = ball.getX()
             let ballStartY = ball.getY()
 
+            const portalSaved = portalSave()
+
             for (let i = 0; i < this.pointsCount; ++i)
             {
                 for (let j = 0; j < cyclesPerTact; ++j)
@@ -41,6 +43,7 @@ class Bounce
             ball.setSpeedY(0)
 
             unfastenLastLine()
+            portalRestore(portalSaved)
         }
     }
     setDrawEnable(input)
