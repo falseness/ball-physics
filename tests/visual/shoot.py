@@ -177,6 +177,60 @@ def sc_resized(page, info):
         "() => { const r = canvas.getBoundingClientRect(); return [r.left, r.top, r.width, r.height] }")
 
 
+def sc_editor(page, info):
+    # Pause menu -> 'editor' button -> toolbar 'exit', all real clicks.
+    frames(page)
+    open_menu(page)
+    x, y = page.evaluate("(() => { const r = editorButtonRect(); return [r[0] + r[2] / 2, r[1] + r[3] / 2] })()")
+    click(page, x, y)
+    info['opened'] = page.evaluate("({editorMode, drawMenu})")
+    if info['opened']['editorMode'] is not True:
+        raise RuntimeError('editor button did not open the editor: %s' % info['opened'])
+    x, y = page.evaluate("(() => { const b = EDITOR_BUTTONS.find(b => b.id == 'exit'); return [b.x + b.w / 2, b.y + b.h / 2] })()")
+    click(page, x, y)
+    info['exited'] = page.evaluate("({editorMode, drawMenu})")
+    if info['exited'] != {'editorMode': False, 'drawMenu': False}:
+        raise RuntimeError('toolbar exit did not close the editor: %s' % info['exited'])
+
+
+def sc_trail(page, info):
+    # A real run (placed line + play icon) must record a trail of finite samples.
+    sc_running(page, info)
+    t = page.evaluate("(() => { const s = trailSamples(); return {n: s.length, "
+                      "finite: s.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))} })()")
+    info['trailSamples'] = t['n']
+    info['trailFinite'] = t['finite']
+    if t['n'] < 10 or not t['finite']:
+        raise RuntimeError('trail not recorded: %s' % t)
+
+
+def sc_touch_line(page, info):
+    # Tap-tap line on a touch page (TASK-021 path): tap the segment start, then its end.
+    sc_level3(page, info)
+    before = page.evaluate("lines.length")
+    (x1, y1), (x2, y2) = SEGMENTS[0]
+    page.touchscreen.tap(*to_client(page, x1, y1))
+    frames(page)
+    page.touchscreen.tap(*to_client(page, x2, y2))
+    frames(page)
+    after = page.evaluate("({n: lines.length, linesK})")
+    info['touch'] = {'before': before, 'after': after['n'], 'linesK': after['linesK']}
+    if after['n'] != before + 1 or after['linesK'] != 1:
+        raise RuntimeError('tap-tap did not place one line: %s' % info['touch'])
+
+
+def sc_level11(page, info):
+    # Pause menu -> level square 11 (the portal level), real clicks.
+    frames(page)
+    open_menu(page)
+    x, y = page.evaluate("(() => { const r = levelRectXY(10); return [r[0] + rectSize / 2, r[1] + rectSize / 2] })()")
+    click(page, x, y)
+    st = page.evaluate("({thisLevel, drawMenu, portals: (curLevel().portals || []).length})")
+    info['level11'] = st
+    if st != {'thisLevel': 10, 'drawMenu': False, 'portals': 2}:
+        raise RuntimeError('level 11 not loaded: %s' % st)
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -190,13 +244,22 @@ SCENARIOS = {
     'complete_next': sc_complete_next,
     'complete_last': sc_complete_last,
     'resized': sc_resized,
+    'editor': sc_editor,
+    'trail': sc_trail,
+    'touch_line': sc_touch_line,
+    'level11': sc_level11,
+}
+
+# Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
+PAGE_OPTIONS = {
+    'touch_line': {'has_touch': True},
 }
 
 
 def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
     errors = []
     info = {}
-    page = browser.new_page(viewport=viewport, device_scale_factor=dpr)
+    page = browser.new_page(viewport=viewport, device_scale_factor=dpr, **PAGE_OPTIONS.get(name, {}))
     page.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' else None)
     page.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
     entry = {'errors': errors}
