@@ -160,6 +160,8 @@ function editorClick(coords)
     const W = editor.level
     if ((b.id == 'flagCCW' || b.id == 'flagCW') && editorSelectedPortal())
         editorRotatePortal(editorSelectedPortal(), b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP)
+    else if ((b.id == 'flagCCW' || b.id == 'flagCW') && editorSelectedLine())
+        editorRotateLine(editorSelectedLine(), b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP)
     else if (b.id == 'flagCCW' || b.id == 'flagCW')
     {
         W.flagRotate += b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP
@@ -496,6 +498,47 @@ function editorRotatePortal(P, da)
         editorShowError('portal too close to a line')
     }
 }
+
+// ⟲ / ⟳ with a selected line: rotate it by ∓PI/12 around its midpoint (length kept); refused
+// (line unchanged) when the rotated segment comes within the portal clearance or leaves EDITOR_FIELD
+function editorRotateLine(l, da)
+{
+    const mx = (l.posX + l.posX2) / 2, my = (l.posY + l.posY2) / 2
+    const hx = (l.posX2 - l.posX) / 2, hy = (l.posY2 - l.posY) / 2
+    const c = Math.cos(da), s = Math.sin(da)
+    const rx = hx * c - hy * s, ry = hx * s + hy * c
+    const x1 = mx - rx, y1 = my - ry, x2 = mx + rx, y2 = my + ry
+    const F = EDITOR_FIELD
+    const inField = (x, y) => x >= 0 && x <= F.w && y >= 0 && y <= F.h
+    if (!inField(x1, y1) || !inField(x2, y2))
+    {
+        editorShowError('line would leave the field')
+        return false
+    }
+    if (editorSegNearPortal(x1, y1, x2, y2, editor.level.portals))
+    {
+        editorShowError('line too close to a portal')
+        return false
+    }
+    l.posX = x1; l.posY = y1; l.posX2 = x2; l.posY2 = y2
+    return true
+}
+
+// Delete / Backspace in the editor (no play-test) removes the selected line; other selections ignore the key
+function editorKeyDown(event)
+{
+    if (!editorMode || playtestLevel || !editor.level || (event.key != 'Delete' && event.key != 'Backspace'))
+        return
+    const s = editor.selected
+    if (!s || s.kind != 'line' || !editor.level.lines[s.i])
+        return
+    event.preventDefault()
+    if (editor.drag)
+        editorCancelDrag()
+    editor.level.lines.splice(s.i, 1)
+    editor.selected = null
+}
+document.addEventListener('keydown', editorKeyDown)
 
 function editorShowError(text, ms = EDITOR_ERROR_MS)
 {
