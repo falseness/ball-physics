@@ -168,6 +168,10 @@ function editorClick(coords)
         editorNewLevel()
     else if (b.id == 'play')
         editorStartPlaytest()
+    else if (b.id == 'export')
+        editorExport()
+    else if (b.id == 'import')
+        editorImportOpen()
     else if (b.id == 'exit')
         editorExit()
 }
@@ -356,9 +360,9 @@ function editorRotatePortal(P, da)
     }
 }
 
-function editorShowError(text)
+function editorShowError(text, ms = EDITOR_ERROR_MS)
 {
-    editor.error = { text: text, until: performance.now() + EDITOR_ERROR_MS }
+    editor.error = { text: text, until: performance.now() + ms }
 }
 
 // [x, y, w, h] box that holds the error text (for tests; the text is left-aligned at EDITOR_ERROR_POS)
@@ -532,4 +536,121 @@ function editorDrawToolbar()
         else
             menuLabel(b.label, cx, cy, 24, col)
     }
+}
+
+// ---- Export / import (level.json) ----
+// File format (stable key order, numbers as-is):
+// {version: 1, ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [[x1,y1,x2,y2], ...], portals: [{x, y, angle, h}, ...]}
+const EDITOR_FILE_VERSION = 1
+const EDITOR_FIELD = { w: 1280, h: 800 }   // every point must lie inside 0..w x 0..h
+const EDITOR_IMPORT_ERROR_MS = 3000
+
+function editorLevelToJSON(W)
+{
+    return JSON.stringify({
+        version: EDITOR_FILE_VERSION,
+        ballX: W.ballX, ballY: W.ballY, flagX: W.flagX, flagY: W.flagY,
+        flagRotate: W.flagRotate, lineK: W.lineK,
+        lines: W.lines.map(l => [l.posX, l.posY, l.posX2, l.posY2]),
+        portals: W.portals.map(P => ({ x: P.x, y: P.y, angle: P.angle, h: P.h }))
+    })
+}
+
+// 'export': download the working copy as level.json (Blob + temporary <a download>)
+function editorExport()
+{
+    const blob = new Blob([editorLevelToJSON(editor.level)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'level.json'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// Parsed file -> working-copy level, or null when the file is not a valid version-1 level
+function editorLevelFromData(d)
+{
+    const num = v => typeof v == 'number' && Number.isFinite(v)
+    const inField = (x, y) => num(x) && num(y) && x >= 0 && x <= EDITOR_FIELD.w && y >= 0 && y <= EDITOR_FIELD.h
+    if (!d || typeof d != 'object' || Array.isArray(d) || d.version !== EDITOR_FILE_VERSION)
+        return null
+    if (!inField(d.ballX, d.ballY) || !inField(d.flagX, d.flagY) || !num(d.flagRotate))
+        return null
+    if (!Number.isInteger(d.lineK) || d.lineK < 0 || d.lineK > EDITOR_MAX_LINEK)
+        return null
+    if (!Array.isArray(d.lines) || !Array.isArray(d.portals) || (d.portals.length != 0 && d.portals.length != 2))
+        return null
+    for (const l of d.lines)
+        if (!Array.isArray(l) || l.length != 4 || !inField(l[0], l[1]) || !inField(l[2], l[3]))
+            return null
+    for (const P of d.portals)
+        if (!P || typeof P != 'object' || !inField(P.x, P.y) || !num(P.angle) || !num(P.h) || P.h <= 0)
+            return null
+    return {
+        ballX: d.ballX, ballY: d.ballY, flagX: d.flagX, flagY: d.flagY,
+        flagRotate: d.flagRotate, lineK: d.lineK,
+        lines: d.lines.map(l => new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line')),
+        portals: d.portals.map((P, i) => ({ x: P.x, y: P.y, angle: P.angle, h: P.h, name: i ? 'B' : 'A' }))
+    }
+}
+
+// File text -> replaces the working copy (true), or leaves it unchanged and shows an error (false).
+// Never throws.
+function editorImportText(text)
+{
+    let L = null
+    try
+    {
+        L = editorLevelFromData(JSON.parse(text))
+    }
+    catch (e)
+    {
+        L = null
+    }
+    if (!L || !editorMode || !editor.level)
+    {
+        editorShowError('invalid level file', EDITOR_IMPORT_ERROR_MS)
+        return false
+    }
+    editor.level = L
+    editor.pending = null
+    editor.drag = null
+    editor.portalPending = null
+    editor.selected = null
+    editor.error = null
+    editor.flagPoly = editorFlagPolygon(L.flagRotate)
+    return true
+}
+
+// Hidden <input type=file accept='.json'> (created once, id editorImportFile)
+function editorImportInput()
+{
+    let input = document.getElementById('editorImportFile')
+    if (input)
+        return input
+    input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.id = 'editorImportFile'
+    input.style.display = 'none'
+    input.addEventListener('change', function()
+    {
+        const f = input.files && input.files[0]
+        input.value = '' // the same file can be picked again
+        if (!f)
+            return
+        f.text().then(editorImportText, () => editorShowError('invalid level file', EDITOR_IMPORT_ERROR_MS))
+    })
+    document.body.appendChild(input)
+    return input
+}
+
+// 'import': open the file picker
+function editorImportOpen()
+{
+    editorImportInput().click()
 }
