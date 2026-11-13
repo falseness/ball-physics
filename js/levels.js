@@ -180,7 +180,9 @@ levels.push(
 {
     // Level 12, 'understanding portals' (the user's editor export, squared): the ball drops onto
     // portal B (pad y = 510, front facing up) right under it and comes out of portal A (pad
-    // y = 695, front facing up) moving up. The flag hangs under the ceiling in the top-left corner.
+    // y = 310, front facing up) moving up. The flag hangs under the ceiling in the top-left corner.
+    // Pad A was at y = 695 in the export; TASK-073 raised it to 310 so the B -> A exit can reach the
+    // flag (a teleport keeps the speed, so the ball rises only ~155 px above A; one deflector line wins).
     ballX: 195,
     ballY: 355,
     flagX: 47,
@@ -190,10 +192,10 @@ levels.push(
     lines: [
         new Line(43, 112, 453, 112, dotRadius, levelLineColor, 'line'),
         new Line(43, 112, 43, 209, dotRadius, levelLineColor, 'line'),
-        new Line(289, 695, 449, 695, dotRadius, levelLineColor, 'line'),
+        new Line(289, 310, 449, 310, dotRadius, levelLineColor, 'line'),
         new Line(86, 510, 246, 510, dotRadius, levelLineColor, 'line')
     ],
-    // wall portals {line, u, side, h, name} (see portalResolve): A at (369, 695) facing up (0, -1),
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (369, 310) facing up (0, -1),
     // B at (166, 510) facing up (0, -1)
     portals: [
         { line: 2, u: 0.5, side: -1, h: 45, name: 'A' },

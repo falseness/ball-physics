@@ -255,12 +255,12 @@ def sc_touch_line(page, info):
 LEVEL11_LINE = ((100, 180), (580, 450))
 LEVEL11_MAX_FRAMES = 3000
 
-# Level 12 'understanding portals' reference solution (TASK-073): one player line (lineK 1) under the
-# ball, sloping slightly down to the right. The ball bounces off it to the right past pad B, falls
-# into floor portal A, leaves portal B moving up and flies into the flag (completed on physics frame
-# 140). Searched headlessly with in-page stepped frames; 34 of 81 lines with each coordinate moved by
-# -3/0/+3 px also win, so keep these exact integer coordinates.
-LEVEL12_LINE = ((199, 381), (273, 385))
+# Level 12 'understanding portals' reference solution (TASK-073): one player line (lineK 1), a
+# deflector above pad A (raised to y = 310 by TASK-073). The ball drops into portal B (pad y = 510),
+# leaves portal A moving up, bounces off the line up-left and flies into the flag (1 B -> A teleport,
+# completed on physics frame ~70). Searched headlessly with in-page stepped frames; 14 of 81 lines with
+# each coordinate moved by -3/0/+3 px also win, so keep these exact integer coordinates.
+LEVEL12_LINE = ((312, 214), (388, 240))
 LEVEL12_MAX_FRAMES = 3000
 
 # Level 13 'accelerator' reference solution (TASK-071; level 12 until TASK-072): two player lines (lineK 4). The ramp under the
@@ -279,11 +279,11 @@ LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
         return r } }"""
 
 
-def play_solution(page, info, index, segments, max_frames, key):
+def play_solution(page, info, index, segments, max_frames, key, via=('A', 'B')):
     # Pause menu -> level square index + 1, real clicks; then play the solution with real mouse
     # input: draw each line (click, move, click), press start (unless the last allowed line already
     # started physics), and wait until the level is completed
-    # (at most max_frames physics frames) with at least one A -> B teleport.
+    # (at most max_frames physics frames) with at least one via[0] -> via[1] teleport.
     frames(page)
     open_menu(page)
     x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", index)
@@ -325,9 +325,9 @@ def play_solution(page, info, index, segments, max_frames, key):
         teleports: portalState.teleports.map(t => ({step: t.step, from: t.from, to: t.to,
             before: t.before, after: t.after}))})""", index)
     info['play'] = r
-    ab = [t for t in r['teleports'] if t['from'] == 'A' and t['to'] == 'B']
+    ab = [t for t in r['teleports'] if t['from'] == via[0] and t['to'] == via[1]]
     if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= max_frames and ab):
-        raise RuntimeError('%s not won with an A->B teleport: %s' % (key, {k: r[k] for k in (
+        raise RuntimeError('%s not won with a %s->%s teleport: %s' % (key, via[0], via[1], {k: r[k] for k in (
             'levelCompleted', 'winFrame', 'frames', 'ball')}))
     # a fresh draw after the win so the screenshot shows the completed-level panel
     frames(page)
@@ -338,7 +338,7 @@ def sc_level11(page, info):
 
 
 def sc_level12(page, info):
-    play_solution(page, info, 11, [LEVEL12_LINE], LEVEL12_MAX_FRAMES, 'level12')
+    play_solution(page, info, 11, [LEVEL12_LINE], LEVEL12_MAX_FRAMES, 'level12', via=('B', 'A'))
 
 
 def sc_level13(page, info):
