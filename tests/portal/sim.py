@@ -11,6 +11,11 @@
   python3 tests/portal/sim.py --trajectory OUT.json --levels 10
       -> only levels 1..10 (the pre-portal ones); each entry also carries a sha256 of its x/y list.
 
+S1-S4, S6-S14 (TASK-065) run with wall portals too: wcfg() cuts every scenario portal
+{x, y, angle} into its own host line (300 px along the portal's tangent, u = 0.5, side -1) and
+check_geometry() asserts the resolved portal is exactly the scenario's free-standing geometry.
+S5 (back-side entry) is retired: wall portals are one-sided. Legacy {x, y, angle} portals are
+no longer exercised by these scenarios.
 W1-W6 (--scenarios W1,...) run one-sided wall portals ({line, u, side} on the scenario's own
 lines, installed by __portalTest.setup({wall: true, ...}) as a scratch level).
 --out: a bare file name is written to artifacts/<task>/, a path with a directory as given.
@@ -63,8 +68,41 @@ def rel(a, b):
     return abs(a - b) / max(abs(b), 1e-300)
 
 
+def wall_line(P, L=300):
+    """Host line for portal P {x, y, angle}: length L, centred on P, running along P's tangent t."""
+    _, _, tx, ty = frame(P)
+    return [P['x'] - L / 2 * tx, P['y'] - L / 2 * ty, P['x'] + L / 2 * tx, P['y'] + L / 2 * ty]
+
+
+def wcfg(ball, portals, lines=(), L=300):
+    """TASK-065: S-scenario setup with wall portals. Every portal {x, y, angle, h, name} is cut into its
+    own host line (wall_line, u = 0.5). The line runs along t = (-ny, nx), so side -1 gives the front
+    normal n of the portal (portalResolve: n = side * (-ty, tx)); `lines` are extra plain level lines."""
+    Ls = list(L) if isinstance(L, (list, tuple)) else [L] * len(portals)
+    return {'wall': True, 'ball': ball,
+            'lines': [wall_line(P, l) for P, l in zip(portals, Ls)] + [list(l) for l in lines],
+            'portals': [{'line': i, 'u': 0.5, 'side': -1, 'h': P['h'], 'name': P['name']} for i, P in enumerate(portals)],
+            '_geom': [{'x': P['x'], 'y': P['y'], 'angle': P['angle'], 'name': P['name']} for P in portals]}
+
+
+GEOM_JS = """() => (currentPortals() || []).map(P => [P.x, P.y, Math.cos(P.angle), Math.sin(P.angle), P.line])"""
+
+
+def check_geometry(page, cfg):
+    """The resolved wall portals must sit exactly where the scenario's free-standing geometry says."""
+    if not cfg.get('wall'):
+        return
+    got = page.evaluate(GEOM_JS)
+    for i, q in enumerate(cfg.get('_geom', [])):
+        x, y, c, sn, line = got[i]
+        err = max(abs(x - q['x']), abs(y - q['y']), abs(c - math.cos(q['angle'])), abs(sn - math.sin(q['angle'])))
+        if err > 1e-9 or line != i:
+            raise AssertionError('wall portal %s resolved to %r, expected %r (err %g)' % (q['name'], got[i], q, err))
+
+
 def run(page, cfg, steps):
     page.evaluate('c => window.__portalTest.setup(c)', cfg)
+    check_geometry(page, cfg)
     return page.evaluate('n => window.__portalTest.step(n)', steps)
 
 
@@ -96,7 +134,7 @@ def teleport_checks(st, A, B, chk):
 
 def s1(page):
     B = {'x': 800, 'y': 200, 'angle': PI / 2, 'h': 45, 'name': 'B', 'color': '#a259ff'}
-    st = run(page, {'ball': {'x': 300, 'y': 250, 'vx': 0, 'vy': 0}, 'portals': [A_FLOOR, B]}, 20000)
+    st = run(page, wcfg({'x': 300, 'y': 250, 'vx': 0, 'vy': 0}, [A_FLOOR, B]), 20000)
     chk = {}
     t = teleport_checks(st, A_FLOOR, B, chk)
     chk['final'] = [st['x'], st['y'], st['vx'], st['vy']]
@@ -107,7 +145,7 @@ def s1(page):
 
 def s2(page):
     B = {'x': 900, 'y': 300, 'angle': PI, 'h': 45, 'name': 'B', 'color': '#a259ff'}
-    st = run(page, {'ball': {'x': 300, 'y': 250, 'vx': 0, 'vy': 0}, 'portals': [A_FLOOR, B]}, 20000)
+    st = run(page, wcfg({'x': 300, 'y': 250, 'vx': 0, 'vy': 0}, [A_FLOOR, B]), 20000)
     chk = {}
     t = teleport_checks(st, A_FLOOR, B, chk)
     chk['final'] = [st['x'], st['y'], st['vx'], st['vy']]
@@ -116,19 +154,28 @@ def s2(page):
 
 
 def s3(page):
+    """Ball dropped with its centre path 3 px outside A's opening lands on A's host line, 0 teleports.
+    (Free-standing portals: the r = 2 ball fell past the plane; on a wall the line piece next to the
+    opening catches it.)"""
     B = {'x': 800, 'y': 200, 'angle': PI / 2, 'h': 45, 'name': 'B', 'color': '#a259ff'}
     x = A_FLOOR['x'] + A_FLOOR['h'] + 3
     chk = {'x': x}
-    # ball radius 2: the centre path (3 px outside the opening) does not touch the rim
-    st = run(page, {'ball': {'x': x, 'y': 250, 'vx': 0, 'vy': 0, 'r': 2}, 'portals': [A_FLOOR, B]}, 20000)
-    chk['r2'] = {'teleports': len(st['teleports']), 'rimHits': st['rimHits'], 'final': [st['x'], st['y'], st['vx'], st['vy']]}
-    chk['ok_r2_no_teleport'] = len(st['teleports']) == 0
-    chk['ok_r2_rim_untouched_passed_plane'] = st['rimHits'] == 0 and st['vx'] == 0 and st['y'] > A_FLOOR['y']
-    # default radius 10 at the same x overlaps the rim: it bounces off, still no teleport
-    st = run(page, {'ball': {'x': x, 'y': 250, 'vx': 0, 'vy': 0, 'r': 10}, 'portals': [A_FLOOR, B]}, 20000)
-    chk['r10'] = {'teleports': len(st['teleports']), 'rimHits': st['rimHits'], 'final': [st['x'], st['y'], st['vx'], st['vy']]}
-    chk['ok_r10_no_teleport'] = len(st['teleports']) == 0
-    chk['ok_r10_finite'] = all(math.isfinite(v) for v in chk['r10']['final'])
+    for r in (2, 10):
+        c = wcfg({'x': x, 'y': 250, 'vx': 0, 'vy': 0, 'r': r}, [A_FLOOR, B])
+        page.evaluate('c => window.__portalTest.setup(c)', c)
+        check_geometry(page, c)
+        st = w_run(page, c['ball'], lines=c['lines'], portals=c['portals'], steps=20000)
+        chk['r%d' % r] = {'teleports': len(st['teleports']), 'rimHits': st['rimHits'], 'hostHits': st['hostHits'],
+                          'minD': st['minD'], 'final': st['final']}
+    r2, r10 = chk['r2'], chk['r10']
+    chk['teleports'] = [r2['teleports'], r10['teleports']]
+    chk['ok_r2_no_teleport'] = r2['teleports'] == 0
+    # r = 2 misses the rim (3 px away) and bounces off the piece: centre never closer than r to the line
+    chk['ok_r2_bounced_off_piece'] = r2['rimHits'] == 0 and r2['hostHits'] >= 1 and r2['minD'] > 1 \
+        and r2['final'][1] < A_FLOOR['y'] - 2
+    chk['ok_r10_no_teleport'] = r10['teleports'] == 0
+    chk['ok_r10_stayed_in_front'] = r10['minD'] > 0 and r10['final'][1] < A_FLOOR['y']
+    chk['ok_r10_finite'] = all(math.isfinite(v) for v in r10['final'])
     return chk
 
 
@@ -159,7 +206,7 @@ def s4(page):
         A, B = portal(400, 400, da, 'A'), portal(900, 300, db, 'B')
         nx, ny, _, _ = frame(A)
         x, y = at_local(A, 0, 30)
-        st = run(page, {'ball': {'x': x, 'y': y, 'vx': -0.05 * nx, 'vy': -0.05 * ny}, 'portals': [A, B]}, 2000)
+        st = run(page, wcfg({'x': x, 'y': y, 'vx': -0.05 * nx, 'vy': -0.05 * ny}, [A, B]), 2000)
         chk = {}
         t = teleport_checks(st, A, B, chk)
         if t:
@@ -178,28 +225,8 @@ def s4(page):
     return out
 
 
-def s5(page):
-    """Back-side entry into A exits on B's back side, moving away from B."""
-    A, B = portal(400, 400, 30, 'A'), portal(900, 300, 180, 'B')
-    nx, ny, _, _ = frame(A)
-    x, y = at_local(A, 0, -30)
-    st = run(page, {'ball': {'x': x, 'y': y, 'vx': 0.05 * nx, 'vy': 0.05 * ny}, 'portals': [A, B]}, 2000)
-    chk = {}
-    t = teleport_checks(st, A, B, chk)
-    if t:
-        chk['start_d'] = -30
-        sB, dB = local(B, t['after'][0], t['after'][1])
-        bnx, bny, _, _ = frame(B)
-        chk['exit_d'] = dB
-        chk['exit_vn'] = t['after'][2] * bnx + t['after'][3] * bny
-        _, dEnd = local(B, st['x'], st['y'])
-        chk['final_d'] = dEnd
-        chk['ok_entered_from_back'] = t['d'] >= 0       # crossed from d < 0 (behind A) to d >= 0
-        chk['ok_exit_back_strict'] = dB <= 0 and dEnd < -10
-        chk['ok_moving_away'] = chk['exit_vn'] < 0
-    else:
-        chk['ok_entered_from_back'] = False
-    return chk
+# S5 (back-side entry exits on the partner's back) is retired in TASK-065: wall portals teleport
+# front -> back only and the host line blocks a ball behind it (see W2).
 
 
 def s6(page):
@@ -210,7 +237,7 @@ def s6(page):
     errs = []
     for sv in (44.0, -44.0):
         x, y = at_local(A, sv, 30)
-        st = run(page, {'ball': {'x': x, 'y': y, 'vx': 0, 'vy': 0.05, 'r': 0.5}, 'portals': [A, B]}, 2000)
+        st = run(page, wcfg({'x': x, 'y': y, 'vx': 0, 'vy': 0.05, 'r': 0.5}, [A, B]), 2000)
         c = {'teleports': len(st['teleports']), 'rimHits': st['rimHits']}
         if st['teleports']:
             t = st['teleports'][0]
@@ -228,8 +255,9 @@ def s6(page):
 
 
 def rim_case(page, A, B, ball, steps):
-    st = run(page, {'ball': ball, 'portals': [A, B]}, steps)
-    c = {'teleports': len(st['teleports']), 'rimHits': st['rimHits'], 'final': [st['x'], st['y'], st['vx'], st['vy']]}
+    st = run(page, wcfg(ball, [A, B]), steps)
+    c = {'teleports': len(st['teleports']), 'rimHits': st['rimHits'], 'hostHits': st['hostHits'],
+         'final': [st['x'], st['y'], st['vx'], st['vy']]}
     c['finite'] = all(math.isfinite(v) for v in c['final'])
     if st['rims']:
         h = st['rims'][0]
@@ -239,30 +267,38 @@ def rim_case(page, A, B, ball, steps):
         c['vnAfter'] = h['after'][0] * h['n'][0] + h['after'][1] * h['n'][1]
         rx, ry = h['rim']
         c['distFinal'] = math.hypot(st['x'] - rx, st['y'] - ry)
+    _, c['finalD'] = local(A, st['x'], st['y'])
     return c
 
 
 def s7(page):
-    """Rim hit with the centre path outside the opening: 0 teleports, |v| preserved, ball moves away."""
+    """Edge of the opening. Rim hit with the centre path inside the opening, 4 px from the rim
+    (vertical and angled A): 0 teleports, |v| preserved, ball moves away from the rim.
+    Centre path 4 px outside the opening (the old free-standing rim case): on a wall that is the
+    host line piece, so the ball bounces off the line instead, 0 teleports, back up in front."""
     A, B = portal(300, 400, -90, 'A'), portal(900, 300, 180, 'B')
     out = {}
-    # (a) falling straight down 4 px right of the right rim (345, 400)
-    out['vertical'] = rim_case(page, A, B, {'x': 349, 'y': 300, 'vx': 0, 'vy': 0.05}, 4000)
-    # (b) angled 30 deg A, ball aimed at the rim point c + h t from 20 px out along the outward tangent direction
+    # (a) falling straight down 4 px left of the right rim (345, 400), inside the opening
+    out['vertical'] = rim_case(page, A, B, {'x': 341, 'y': 300, 'vx': 0, 'vy': 0.05}, 4000)
+    # (b) angled 30 deg A, ball aimed along -n at a point 4 px inside the rim c + h t, from 30 px out
     A2 = portal(500, 400, -60, 'A')
-    _, _, tx, ty = frame(A2)
-    nx, ny, _, _ = frame(A2)
+    nx, ny, tx, ty = frame(A2)
     rx, ry = A2['x'] + 45 * tx, A2['y'] + 45 * ty
-    sx, sy = rx + 30 * nx + 6 * tx, ry + 30 * ny + 6 * ty      # centre path stays 6 px outside the opening
+    sx, sy = rx + 30 * nx - 4 * tx, ry + 30 * ny - 4 * ty
     out['angled'] = rim_case(page, A2, B, {'x': sx, 'y': sy, 'vx': -0.05 * nx, 'vy': -0.05 * ny}, 4000)
-    cases = (out['vertical'], out['angled'])
-    out['teleports'] = [c['teleports'] for c in cases]
-    out['speedRelErr'] = max(c.get('speedRelErr', 1) for c in cases)
-    out['ok_no_teleport'] = all(c['teleports'] == 0 for c in cases)
-    out['ok_rim_hit'] = all(c['rimHits'] >= 1 for c in cases)
+    # (c) falling straight down 4 px right of the right rim: lands on the host line piece
+    out['piece'] = rim_case(page, A, B, {'x': 349, 'y': 300, 'vx': 0, 'vy': 0.05}, 4000)
+    rims = (out['vertical'], out['angled'])
+    out['teleports'] = [c['teleports'] for c in (out['vertical'], out['angled'], out['piece'])]
+    out['speedRelErr'] = max(c.get('speedRelErr', 1) for c in rims)
+    out['ok_no_teleport'] = out['teleports'] == [0, 0, 0]
+    out['ok_rim_hit'] = all(c['rimHits'] >= 1 for c in rims)
     out['ok_speed'] = out['speedRelErr'] <= 1e-9
-    out['ok_no_nan'] = all(c['finite'] for c in cases)
-    out['ok_moves_away'] = all(c.get('vnBefore', 0) < 0 < c.get('vnAfter', 0) and c['distFinal'] > 20 for c in cases)
+    out['ok_no_nan'] = all(c['finite'] for c in (out['vertical'], out['angled'], out['piece']))
+    out['ok_moves_away'] = all(c.get('vnBefore', 0) < 0 < c.get('vnAfter', 0) and c['distFinal'] > 20
+                               and c['finalD'] > 10 for c in rims)
+    p = out['piece']
+    out['ok_piece_bounce'] = p['hostHits'] >= 1 and p['final'][3] < 0 and p['finalD'] > 10
     return out
 
 
@@ -286,6 +322,7 @@ TRACE_JS = """([frames, per]) => { const f = []
 
 def trace(page, cfg, frames=300, per=500):
     page.evaluate('c => window.__portalTest.setup(c)', cfg)
+    check_geometry(page, cfg)
     return page.evaluate(TRACE_JS, [frames, per])
 
 
@@ -309,13 +346,13 @@ def s8(page):
     A, B = portal(300, 400, -90, 'A'), portal(900, 300, 180, 'B')
     x, y = at_local(A, -30, 5)
     _, _, tx, ty = frame(A)
-    tr = trace(page, {'ball': {'x': x, 'y': y, 'vx': 0.05 * tx, 'vy': 0.05 * ty}, 'portals': [A, B]})
-    out['floor'] = {'teleports': tr['frames'][-1][4], 'rimHits': tr['rimHits'], 'finite': tr['finite']}
+    tr = trace(page, wcfg({'x': x, 'y': y, 'vx': 0.05 * tx, 'vy': 0.05 * ty}, [A, B]))
+    out['floor'] = {'teleports': tr['frames'][-1][4], 'rimHits': tr['rimHits'], 'finite': tr['finite'], 'final': tr['frames'][-1][:4]}
     # (b) vertical wall portal, ball sliding down parallel to it 5 px in front (gravity along the plane)
     A2 = portal(600, 400, 180, 'A')
     x, y = at_local(A2, 30, 5)                     # t = (0,-1): s = +30 is 30 px above the centre
-    tr2 = trace(page, {'ball': {'x': x, 'y': y, 'vx': 0, 'vy': 0.05}, 'portals': [A2, B]})
-    out['wall'] = {'teleports': tr2['frames'][-1][4], 'rimHits': tr2['rimHits'], 'finite': tr2['finite']}
+    tr2 = trace(page, wcfg({'x': x, 'y': y, 'vx': 0, 'vy': 0.05}, [A2, B]))
+    out['wall'] = {'teleports': tr2['frames'][-1][4], 'rimHits': tr2['rimHits'], 'finite': tr2['finite'], 'final': tr2['frames'][-1][:4]}
     out['teleports'] = [out['floor']['teleports'], out['wall']['teleports']]
     out['ok_at_most_one'] = max(out['teleports']) <= 1
     out['ok_no_two_in_step'] = tr['twoInStep'] == 0 and tr2['twoInStep'] == 0
@@ -326,7 +363,7 @@ def s8(page):
 def s9(page):
     """Loop: two floor portals at the same y, ball dropped into A keeps cycling."""
     A, B = portal(300, 400, -90, 'A'), portal(700, 400, -90, 'B')
-    cfg = {'ball': {'x': 300, 'y': 250, 'vx': 0, 'vy': 0}, 'portals': [A, B]}
+    cfg = wcfg({'x': 300, 'y': 250, 'vx': 0, 'vy': 0}, [A, B])
     g = page.evaluate('gravitationalAcceleration')
     E0 = -g * 250
     tr = trace(page, cfg)
@@ -358,7 +395,7 @@ def s10(page):
     out = {}
     for key, x0 in (('aligned', 300.0), ('offgrid', 300.0)):
         y0 = 300.0 if key == 'aligned' else 300.07
-        st = run(page, {'ball': {'x': x0, 'y': y0, 'vx': 0, 'vy': 0.2}, 'portals': [A, B]}, 20000)
+        st = run(page, wcfg({'x': x0, 'y': y0, 'vx': 0, 'vy': 0.2}, [A, B]), 20000)
         chk = {}
         teleport_checks(st, A, B, chk)
         out[key] = chk
@@ -374,7 +411,7 @@ def s11(page):
     A = portal(300, 400, 0, 'A')                 # wall facing right; ball comes in from the right
     B = portal(900, 500, -90, 'B')               # floor facing up; line 12 px above it
     line = [850, 488, 950, 488]
-    tr = trace(page, {'ball': {'x': 400, 'y': 400, 'vx': -0.05, 'vy': 0}, 'portals': [A, B], 'lines': [line]})
+    tr = trace(page, wcfg({'x': 400, 'y': 400, 'vx': -0.05, 'vy': 0}, [A, B], lines=[line]))
     fr = tr['frames']
     disp = math.hypot(fr[-1][0] - 400, fr[-1][1] - 400)
     out = {'teleports': fr[-1][4], 'displacement': disp, 'flips': flips(fr), 'rimHits': tr['rimHits'],
@@ -386,8 +423,8 @@ def s11(page):
     return out
 
 
-S12_JS = """([A, B, start, l1, l2]) => {
-  window.__portalTest.setup({ball: {x: start[0], y: start[1], vx: 0, vy: 0}, portals: [A, B]})
+S12_JS = """([cfg, l1, l2]) => {
+  window.__portalTest.setup(cfg)                // wall portals on a scratch level (restart() -> its ball start)
   handleClick(l1)                               // starts the player line (real click path)
   if (!line) return {error: 'line not started'}
   bounce.calc(l2)                               // mousemove preview
@@ -416,13 +453,19 @@ S12_JS = """([A, B, start, l1, l2]) => {
   physics = false
   const teleports = tpSteps || portalState.teleports.map(t => t.step)   // teleports before the first restart
   const completed = levelCompletedWindow; levelCompletedWindow = false
+  playtestLevel = null
   return {preview, real, onMap, placed, minDist, stateAfterPreview, teleports, completed, nLines: lines.length} }"""
+
+
+S12_HOST_A = 120     # short floor under A: the ball leaving B (moving left, falling) clears its right end
 
 
 def s12(page):
     """Path preview (bounce.calc) with portals + a player line equals the real run frame by frame."""
     A, B = portal(600, 400, -90, 'A'), portal(1000, 300, 180, 'B')
-    r = page.evaluate(S12_JS, [A, B, [600, 150], [450, 560], [850, 440]])
+    cfg = wcfg({'x': 600, 'y': 150, 'vx': 0, 'vy': 0}, [A, B], L=[S12_HOST_A, 300])
+    cfg['lineK'] = 1                              # one player line allowed on the scratch level
+    r = page.evaluate(S12_JS, [cfg, [450, 560], [850, 440]])
     out = {'placed': r.get('placed'), 'nLinesAtEnd': r.get('nLines'), 'teleportStepsReal': r.get('teleports'),
            'stateAfterPreview': r.get('stateAfterPreview'), 'completed': r.get('completed')}
     if 'error' in r:
@@ -449,10 +492,13 @@ def s12(page):
     return out
 
 
-S13_JS = """([A, B, frames, cutAt]) => {
+S13_JS = """([A, B, hosts, frames, cutAt]) => {
+  playtestLevel = null
   thisLevel = 0
-  const lv = levels[0], keep = lv.portals
-  lv.portals = [A, B]
+  const lv = levels[0], keep = lv.portals, n0 = lv.lines.length
+  // wall portals cut into two host lines appended to level 1 (removed again at the end)
+  for (const l of hosts) lv.lines.push(new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line'))
+  lv.portals = [{line: n0, u: 0.5, side: -1, h: 45, name: 'A'}, {line: n0 + 1, u: 0.5, side: -1, h: 45, name: 'B'}]
   const traceRun = (n) => { const out = []
     for (let f = 0; f < n; ++f) { for (let k = 0; k < cyclesPerTact; ++k) gamePhysics(); out.push([ball.posX, ball.posY, ball.speedX, ball.speedY]) }
     return out }
@@ -477,6 +523,7 @@ S13_JS = """([A, B, frames, cutAt]) => {
   levelChoosed(0)
   const third = traceRun(frames)
   if (keep === undefined) delete lv.portals; else lv.portals = keep
+  lv.lines.length = n0
   levelChoosed(0)
   let same2 = 0, same3 = 0
   for (let i = 0; i < frames; ++i) {
@@ -490,7 +537,7 @@ def s13(page):
     """restart()/levelChoosed() mid-transit clears portal state: the next run reproduces the first exactly."""
     # level 1 ball starts at (512, 125): A right under it, B a wall facing left
     A, B = portal(512, 300, -90, 'A'), portal(1000, 300, 180, 'B')
-    r = page.evaluate(S13_JS, [A, B, 60, 200000])
+    r = page.evaluate(S13_JS, [A, B, [wall_line(A), wall_line(B)], 60, 200000])
     out = dict(r)
     out['teleports'] = len(r['firstTeleports'])
     out['ok_first_teleported'] = len(r['firstTeleports']) >= 1
@@ -502,6 +549,7 @@ def s13(page):
 
 
 S14_JS = """(frames) => {
+  playtestLevel = null
   const runLevel = (i) => { thisLevel = i; levelChoosed(i); const out = []
     for (let f = 0; f < frames; ++f) { for (let k = 0; k < cyclesPerTact; ++k) gamePhysics(); out.push([ball.posX, ball.posY]) }
     return {out, teleports: portalState.teleports.length, steps: portalState.steps} }
@@ -736,7 +784,7 @@ def w6(page):
     return out
 
 
-SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S5': s5, 'S6': s6, 'S7': s7, 'S8': s8,
+SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S6': s6, 'S7': s7, 'S8': s8,
              'S9': s9, 'S10': s10, 'S11': s11, 'S12': s12, 'S13': s13, 'S14': s14,
              'W1': w1, 'W2': w2, 'W3': w3, 'W4': w4, 'W5': w5, 'W6': w6}
 

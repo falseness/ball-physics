@@ -448,14 +448,16 @@ window.__portalTest = {
         // scratch play-test level (curLevel()) so the real levels stay untouched
         playtestLevel = null
         const mk = l => new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line')
-        const level = cfg.wall ? { lines: (cfg.lines || []).map(mk), lineK: 0, flagX: -1e6, flagY: -1e6 } : levels[thisLevel]
+        const b = cfg.ball || {}
+        // the scratch level starts the ball where the test puts it, so restart() / levelChoosed() work on it
+        const level = cfg.wall ? { lines: (cfg.lines || []).map(mk), lineK: cfg.lineK || 0, flagX: -1e6, flagY: -1e6, flagRotate: 0,
+                                   ballX: b.x, ballY: b.y } : levels[thisLevel]
         level.portals = (cfg.portals || []).map(p => Object.assign({ h: 45 }, p))
         if (!level.portals.length)
             delete level.portals
         if (cfg.wall)
             playtestLevel = level
         lines = cfg.wall ? level.lines.slice() : (cfg.lines || []).map(mk)
-        const b = cfg.ball || {}
         ball.posX = b.x; ball.posY = b.y
         ball.speedX = b.vx || 0; ball.speedY = b.vy || 0
         ball.radius = b.r !== undefined ? b.r : 10
