@@ -321,6 +321,18 @@ function editorPortalBlocked(P)
 {
     return editorPortalLineDist(P) <= ball.radius + EDITOR_PORTAL_CLEAR
 }
+// Same rule seen from the line side: segment (x1,y1)-(x2,y2) is within ball.radius +
+// EDITOR_PORTAL_CLEAR of any portal opening in the list (line tool and import)
+function editorSegNearPortal(x1, y1, x2, y2, portals)
+{
+    for (const P of portals)
+    {
+        const r = portalRims(P)
+        if (segSegDist(x1, y1, x2, y2, r[0][0], r[0][1], r[1][0], r[1][1]) <= ball.radius + EDITOR_PORTAL_CLEAR)
+            return true
+    }
+    return false
+}
 
 function editorNewPortal(coords, name)
 {
@@ -405,7 +417,8 @@ function editorDrawSelection()
 }
 
 // Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
-// working copy with dotСorrection); appends a level line. Zero-length lines are ignored.
+// working copy with dotСorrection); appends a level line. Zero-length lines are ignored; a line
+// within ball.radius + EDITOR_PORTAL_CLEAR of a portal opening is refused (start point kept).
 function editorLineClick(coords)
 {
     const W = editor.level
@@ -416,9 +429,18 @@ function editorLineClick(coords)
         return
     }
     const p = editor.pending
-    editor.pending = null
     if (p[0] == c[0] && p[1] == c[1])
+    {
+        editor.pending = null
         return
+    }
+    const portals = editor.portalPending ? W.portals.concat([editor.portalPending]) : W.portals
+    if (editorSegNearPortal(p[0], p[1], c[0], c[1], portals))
+    {
+        editorShowError('line too close to a portal') // refused: keep the start point for another end
+        return
+    }
+    editor.pending = null
     W.lines.push(new Line(p[0], p[1], c[0], c[1], dotRadius, levelLineColor, 'line'))
 }
 
@@ -589,6 +611,9 @@ function editorLevelFromData(d)
             return null
     for (const P of d.portals)
         if (!P || typeof P != 'object' || !inField(P.x, P.y) || !num(P.angle) || !num(P.h) || P.h <= 0)
+            return null
+    for (const l of d.lines)
+        if (editorSegNearPortal(l[0], l[1], l[2], l[3], d.portals))
             return null
     return {
         ballX: d.ballX, ballY: d.ballY, flagX: d.flagX, flagY: d.flagY,
