@@ -49,7 +49,7 @@ function trailSegments()
 // strand points of one segment: per sample i >= 1 {p: [P1, P2], alpha}
 function trailStrands(H)
 {
-    const n = H.length, k = Math.min(n, TRAIL_MAX), s0 = n - k
+    const n = H.length
     // width scale: the fastest step of the segment, so A = 2 + 12 * L / vmax stays in [2, 14]
     let vmax = 0
     for (let i = 1; i < n; ++i)
@@ -66,12 +66,13 @@ function trailStrands(H)
         }
         const A = 2 + (vmax > 0 ? 12 * L / vmax : 0)
         const a = H[i].frame * 0.45
-        const f = (i - s0) / k
+        // linear fade over the drawn points i = 1..n-1: 0 at the oldest, 1 at the ball (1 for a single point)
+        const f = n > 2 ? Math.min(1, Math.max(0, (i - 1) / (n - 2))) : 1
         const s1 = A * Math.sin(a), s2 = A * Math.sin(a + Math.PI)
         pts.push({
             i: i, frame: H[i].frame,
             p: [[H[i].x + nx * s1, H[i].y + ny * s1], [H[i].x + nx * s2, H[i].y + ny * s2]],
-            fade: Math.min(1, f * 5), alpha: Math.min(1, f * 5) * 0.85
+            fade: f, alpha: 0.85 * f
         })
     }
     return pts
@@ -82,6 +83,16 @@ function trailWidths()
 {
     return trailSegments().filter(H => H.length >= 3).map(H => trailStrands(H).reduce((m, q) =>
         Math.max(m, Math.hypot(q.p[0][0] - H[q.i].x, q.p[0][1] - H[q.i].y), Math.hypot(q.p[1][0] - H[q.i].x, q.p[1][1] - H[q.i].y)), 0))
+}
+
+// test hook: per strand point of the newest segment, the alpha of strand 1/2 and the rung fade trailDraw uses
+// (both strands share one alpha); [] when there is no trail
+function trailAlphas()
+{
+    const segs = trailSegments()
+    if (!segs.length)
+        return []
+    return trailStrands(segs[segs.length - 1]).map(q => ({ i: q.i, alpha0: q.alpha, alpha1: q.alpha, fade: q.fade }))
 }
 
 function trailDraw()
