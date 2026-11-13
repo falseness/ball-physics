@@ -273,10 +273,18 @@ function editorMouseDown(coords)
         editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1], x0: c[2], y0: c[3] }
 }
 
+// Pointer input in the letterbox bars maps to logical coords outside the field; every point the
+// editor stores from the pointer is clamped to 0..EDITOR_FIELD.w x 0..EDITOR_FIELD.h, so its own
+// export always passes editorLevelFromData
+function editorClampToField(x, y)
+{
+    return [Math.min(Math.max(x, 0), EDITOR_FIELD.w), Math.min(Math.max(y, 0), EDITOR_FIELD.h)]
+}
+
 function editorDragTo(coords)
 {
     const d = editor.drag, W = editor.level
-    const x = coords[0] + d.dx, y = coords[1] + d.dy
+    const [x, y] = editorClampToField(coords[0] + d.dx, coords[1] + d.dy)
     if (d.kind == 'flag') { W.flagX = x; W.flagY = y }
     else if (d.kind == 'ball') { W.ballX = x; W.ballY = y }
     else { W.portals[d.i].x = x; W.portals[d.i].y = y }
@@ -336,7 +344,8 @@ function editorSegNearPortal(x1, y1, x2, y2, portals)
 
 function editorNewPortal(coords, name)
 {
-    return { x: coords[0], y: coords[1], angle: EDITOR_PORTAL_ANGLE, h: EDITOR_PORTAL_H, name: name }
+    const c = editorClampToField(coords[0], coords[1])
+    return { x: c[0], y: c[1], angle: EDITOR_PORTAL_ANGLE, h: EDITOR_PORTAL_H, name: name }
 }
 
 // Portal tool: 1st click places A (pending), 2nd places B; the pair then replaces the existing pair
@@ -422,7 +431,8 @@ function editorDrawSelection()
 function editorLineClick(coords)
 {
     const W = editor.level
-    const c = dotСorrection(coords[0], coords[1], dotRadius, W.lines)
+    const k = editorClampToField(coords[0], coords[1])
+    const c = dotСorrection(k[0], k[1], dotRadius, W.lines)
     if (!editor.pending)
     {
         editor.pending = [c[0], c[1]]
