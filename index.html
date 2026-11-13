@@ -438,7 +438,10 @@
                         levelCompletedWindow = true
                     }
                     if (!ball.onMap())
-                        restart()
+                    {
+                        restart() // reset level: no more physics steps this frame
+                        break
+                    }
                 }
                 // trail: one sample per frame (drawing only; a teleport starts a new segment)
                 if (physics)
