@@ -8,7 +8,15 @@
          player lines, loaded from DIR/index.html (default: this repo). Used to
          compare against a pre-portal checkout.
   python3 tests/portal/sim.py --compare BASE.json CUR.json --out OUT.json
+  python3 tests/portal/sim.py --trajectory OUT.json --levels 10
+      -> only levels 1..10 (the pre-portal ones); each entry also carries a sha256 of its x/y list.
+
+W1-W6 (--scenarios W1,...) run one-sided wall portals ({line, u, side} on the scenario's own
+lines, installed by __portalTest.setup({wall: true, ...}) as a scratch level).
+--out: a bare file name is written to artifacts/<task>/, a path with a directory as given.
 """
+import hashlib
+import random
 import argparse
 import json
 import math
@@ -535,11 +543,205 @@ def s14(page):
     return out
 
 
-SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S5': s5, 'S6': s6, 'S7': s7, 'S8': s8,
-             'S9': s9, 'S10': s10, 'S11': s11, 'S12': s12, 'S13': s13, 'S14': s14}
+# ---- Wall portals (TASK-064): one-sided teleport, host line split while in front ----
+# Standard pair: A cut into a floor (450,600)-(750,600) facing up, B into the wall x = 1040
+# (0..450) at y = 250 facing +x.
+W_LINES = [[450, 600, 750, 600], [1040, 0, 1040, 450]]
+W_PORTALS = [{'line': 0, 'u': 0.5, 'side': -1, 'h': 45, 'name': 'A'},
+             {'line': 1, 'u': 250 / 450, 'side': -1, 'h': 45, 'name': 'B'}]
 
-TRAJ_JS = """(frames) => { const out = []
-  for (let i = 0; i < levels.length; ++i) {
+# Runs one wall-portal configuration step by step and returns a compact summary:
+#  teleports (step, from, to, exit position / velocity in the exit portal's frame),
+#  W5 window: host-line collisions of the exit portal's host line within 50 steps after each
+#   teleport, split by the velocity's normal component before the hit (vn >= 0: moving away),
+#  A-tracking until the first teleport: min d of the ball in front of/behind A's host segment
+#   (only while the centre projects onto the segment) and front->back crossings of the segment,
+#  end: 'left' (off the map), 'settled' (|v| < 1e-4 for 20000 steps) or 'steps'.
+W_RUN_JS = r"""([cfg, maxSteps, traj]) => {
+  const T = window.__portalTest; T.setup(cfg)
+  const P = currentPortals() || [], A = P[0] || {x: 0, y: 0, angle: 0, line: 0}   // no portals: plain-line reference run
+  const la = curLevel().lines[A.line]
+  const lp = (l, x, y) => { const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY
+    return ((x - l.posX) * dx + (y - l.posY) * dy) / (dx * dx + dy * dy) }
+  let prevD = portalLocal(A, ball.posX, ball.posY).d, minD = Infinity, leftExtent = false, passThroughs = 0
+  const wins = [], tps = [], path = []
+  let end = 'steps', step = 0, still = 0
+  for (; step < maxSteps; ++step) {
+    const n0 = portalState.teleports.length
+    gamePhysics()
+    const n1 = portalState.teleports.length, st = portalState.steps
+    if (n1 > n0) {
+      const t = portalState.teleports[n1 - 1], Q = P.find(q => q.name === t.to), f = portalFrame(Q)
+      const L = portalLocal(Q, t.after[0], t.after[1])
+      tps.push({step: t.step, from: t.from, to: t.to, s: t.s, d: t.d, exitS: L.s, exitD: L.d,
+                exitVn: (t.after[2] * f.nx + t.after[3] * f.ny) / Math.hypot(t.after[2], t.after[3])})
+      wins.push({step: t.step, line: Q.line, Q: Q, hits: 0, awayHits: 0})
+    }
+    const h = portalState.hostHit
+    if (h && h.step === st)
+      for (const w of wins)
+        if (st > w.step && st - w.step <= 50 && h.line === w.line) {
+          const f = portalFrame(w.Q), vn = h.v[0] * f.nx + h.v[1] * f.ny
+          ++w.hits; if (vn >= 0) ++w.awayHits
+        }
+    const L = portalLocal(A, ball.posX, ball.posY), u = lp(la, ball.posX, ball.posY)
+    if (n1 === 0 && !leftExtent) {
+      if (L.d <= 0 && (u < 0 || u > 1)) leftExtent = true
+      else if (u >= 0 && u <= 1) {
+        if (L.d < minD) minD = L.d
+        if (prevD > 0 && L.d <= 0) ++passThroughs
+      }
+    }
+    prevD = L.d
+    if (traj && step % traj === 0) path.push([ball.posX, ball.posY])
+    if (!ball.onMap()) { end = 'left'; break }
+    if (Math.hypot(ball.speedX, ball.speedY) < 1e-4) { if (++still >= 20000) { end = 'settled'; break } } else still = 0
+  }
+  return {steps: step, end, teleports: tps, windows: wins.map(w => ({step: w.step, line: w.line, hits: w.hits, awayHits: w.awayHits})),
+          minD: minD === Infinity ? null : minD, passThroughs, leftExtent, hostHits: portalState.hostHits,
+          rimHits: portalState.rimHits, final: [ball.posX, ball.posY, ball.speedX, ball.speedY], r: ball.radius, path} }"""
+
+
+def w_run(page, ball, lines=None, portals=None, steps=40000, traj=0):
+    cfg = {'wall': True, 'lines': lines or W_LINES, 'portals': W_PORTALS if portals is None else portals, 'ball': ball}
+    return page.evaluate(W_RUN_JS, [cfg, steps, traj])
+
+
+W5_RUNS = []        # every W1 / W4 run, checked by W5
+
+
+def w1(page):
+    """Ball thrown at A's front inside the opening: 1 teleport, leaves B's front moving away from B's wall."""
+    out = {}
+    for key, b in (('drop', {'x': 600, 'y': 450, 'vx': 0, 'vy': 0}),
+                   ('thrown', {'x': 560, 'y': 500, 'vx': 0.02, 'vy': 0.05})):
+        r = w_run(page, b)
+        W5_RUNS.append(('W1.' + key, r))
+        t = r['teleports'][0] if r['teleports'] else {}
+        out[key] = {'teleports': len(r['teleports']), 'end': r['end'], 'entry_sd': [t.get('s'), t.get('d')],
+                    'exit_sd': [t.get('exitS'), t.get('exitD')], 'exitVnOverSpeed': t.get('exitVn'),
+                    'to': t.get('to'), 'final': r['final']}
+    cases = [out['drop'], out['thrown']]
+    out['teleports'] = [c['teleports'] for c in cases]
+    out['exitVnOverSpeed'] = [c['exitVnOverSpeed'] for c in cases]
+    out['ok_one_teleport'] = out['teleports'] == [1, 1] and all(c['to'] == 'B' for c in cases)
+    out['ok_exit_front'] = all(c['exit_sd'][1] is not None and c['exit_sd'][1] >= 0 for c in cases)
+    out['ok_moving_away_from_B'] = all((c['exitVnOverSpeed'] or 0) > 0.5 for c in cases)
+    out['ok_left_map'] = all(c['end'] == 'left' and c['final'][0] > 1040 for c in cases)
+    return out
+
+
+def w2(page):
+    """Ball hitting the back of A's (and B's) wall at the opening bounces off: 0 teleports."""
+    out = {}
+    cases = {'A_back': ({'x': 600, 'y': 700, 'vx': 0, 'vy': -0.1}, 'y'),
+             'B_back': ({'x': 980, 'y': 250, 'vx': 0.1, 'vy': 0}, 'x')}
+    for key, (b, axis) in cases.items():
+        r = w_run(page, b)
+        out[key] = {'teleports': len(r['teleports']), 'hostHits': r['hostHits'], 'end': r['end'], 'final': r['final']}
+        # bounced: the velocity component that was into the wall is reversed
+        out[key]['bounced'] = r['final'][3] > 0 if axis == 'y' else r['final'][2] < 0
+    out['teleports'] = [out[k]['teleports'] for k in cases]
+    out['ok_no_teleport'] = out['teleports'] == [0, 0]
+    out['ok_bounced'] = all(out[k]['bounced'] and out[k]['hostHits'] >= 1 for k in cases)
+    out['ok_stayed_behind'] = out['A_back']['final'][1] > 600 and out['B_back']['final'][0] < 1040
+    return out
+
+
+def w3(page):
+    """Ball hitting A's / B's host line outside the opening: same trajectory as a plain line, 0 teleports."""
+    out = {}
+    cases = {'A_left': {'x': 500, 'y': 450, 'vx': 0, 'vy': 0},
+             'A_right': {'x': 700, 'y': 450, 'vx': 0, 'vy': 0},
+             'B_above': {'x': 1100, 'y': 120, 'vx': -0.1, 'vy': 0}}
+    for key, b in cases.items():
+        r = w_run(page, b, steps=30000, traj=50)
+        plain = w_run(page, b, portals=[], steps=30000, traj=50)
+        dev = max(math.hypot(p[0] - q[0], p[1] - q[1]) for p, q in zip(r['path'], plain['path']))
+        out[key] = {'teleports': len(r['teleports']), 'hostHits': r['hostHits'], 'maxDevFromPlainLine': dev,
+                    'samples': len(r['path']), 'samePathLength': len(r['path']) == len(plain['path'])}
+    out['teleports'] = [out[k]['teleports'] for k in cases]
+    out['maxDevFromPlainLine'] = max(out[k]['maxDevFromPlainLine'] for k in cases)
+    out['ok_no_teleport'] = out['teleports'] == [0, 0, 0]
+    out['ok_hit_host_line'] = all(out[k]['hostHits'] >= 1 for k in cases)
+    out['ok_like_plain_line'] = out['maxDevFromPlainLine'] <= 1e-9 and all(out[k]['samePathLength'] for k in cases)
+    return out
+
+
+def w4(page, n=200, seed=64):
+    """200 seeded throws at A's opening near the rims (|s| in [h - r, h]): never behind A's wall without a teleport."""
+    rng = random.Random(seed)
+    A = {'x': 600.0, 'y': 600.0}           # A centre; t_A = (1, 0) (side -1 on a left-to-right floor), n_A = (0, -1)
+    h, r = 45, 10
+    res = []
+    for k in range(n):
+        s = rng.uniform(h - r, h) * rng.choice((-1, 1))
+        theta = rng.uniform(-60, 60) * PI / 180              # angle from -n (straight into the wall)
+        speed = rng.uniform(0.03, 0.15)
+        dist = rng.uniform(25, 60)
+        dx, dy = math.sin(theta), math.cos(theta)            # direction: down (+y), tilted by theta
+        tx, ty = A['x'] + s, A['y']
+        b = {'x': tx - dx * dist, 'y': ty - dy * dist, 'vx': speed * dx, 'vy': speed * dy}
+        rr = w_run(page, b, steps=30000)
+        W5_RUNS.append(('W4.%d' % k, rr))
+        res.append({'s': s, 'thetaDeg': theta * 180 / PI, 'speed': speed, 'teleports': len(rr['teleports']),
+                    'minD': rr['minD'], 'passThroughs': rr['passThroughs'], 'end': rr['end']})
+    behind = [x for x in res if x['minD'] is not None and x['minD'] < -r]
+    out = {'throws': n, 'seed': seed,
+           'teleportedThrows': sum(1 for x in res if x['teleports']),
+           'teleports': sum(x['teleports'] for x in res),
+           'minDBehindWall': min(x['minD'] for x in res if x['minD'] is not None),
+           'behindWithoutTeleport': len(behind), 'passThroughsWithoutTeleport': sum(x['passThroughs'] for x in res),
+           'ends': {e: sum(1 for x in res if x['end'] == e) for e in ('left', 'settled', 'steps')},
+           'cases': [[round(x['s'], 3), round(x['thetaDeg'], 2), round(x['speed'], 4), x['teleports'],
+                      None if x['minD'] is None else round(x['minD'], 4), x['passThroughs']] for x in res],
+           'casesFormat': ['s', 'thetaDeg', 'speed', 'teleports', 'minD', 'passThroughs']}
+    out['ok_never_behind_without_teleport'] = out['behindWithoutTeleport'] == 0 and out['passThroughsWithoutTeleport'] == 0
+    out['ok_throw_count'] = len(res) == n
+    return out
+
+
+def w5(page):
+    """After every teleport of W1/W4: no hit on the exit portal's host line within 50 steps while moving away."""
+    if not W5_RUNS:
+        w1(page)
+        w4(page)
+    wins = [(name, w) for name, r in W5_RUNS for w in r['windows']]
+    away = [(name, w) for name, w in wins if w['awayHits']]
+    out = {'runs': len(W5_RUNS), 'teleportsChecked': len(wins),
+           'hitsWithin50': sum(w['hits'] for _, w in wins),
+           'hitsWithin50MovingAway': sum(w['awayHits'] for _, w in wins),
+           'turnedBackHits': sum(w['hits'] - w['awayHits'] for _, w in wins),
+           'offenders': [[n, w['step']] for n, w in away[:20]]}
+    out['teleports'] = len(wins)
+    out['ok_checked_teleports'] = len(wins) >= 3
+    out['ok_no_spurious_exit_hit'] = out['hitsWithin50MovingAway'] == 0
+    return out
+
+
+def w6(page):
+    """Two wall portals facing each other across a 400 px gap: the run ends with <= 20 teleports in 3000 frames."""
+    lines = [[400, 0, 400, 600], [800, 0, 800, 600]]
+    portals = [{'line': 0, 'u': 0.5, 'side': -1, 'h': 45, 'name': 'A'},      # x = 400, front +x
+               {'line': 1, 'u': 0.5, 'side': 1, 'h': 45, 'name': 'B'}]       # x = 800, front -x
+    out = {}
+    for key, b in (('slow', {'x': 600, 'y': 285, 'vx': -0.2, 'vy': 0}),
+                   ('fast', {'x': 600, 'y': 300, 'vx': -1.0, 'vy': 0})):
+        r = w_run(page, b, lines=lines, portals=portals, steps=3000 * 500)
+        out[key] = {'teleports': len(r['teleports']), 'end': r['end'], 'steps': r['steps'],
+                    'frames': r['steps'] // 500, 'final': r['final']}
+    out['teleports'] = [out[k]['teleports'] for k in ('slow', 'fast')]
+    out['ok_ended'] = all(out[k]['end'] in ('left', 'settled') for k in ('slow', 'fast'))
+    out['ok_teleports_le_20'] = max(out['teleports']) <= 20 and min(out['teleports']) >= 1
+    return out
+
+
+SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S5': s5, 'S6': s6, 'S7': s7, 'S8': s8,
+             'S9': s9, 'S10': s10, 'S11': s11, 'S12': s12, 'S13': s13, 'S14': s14,
+             'W1': w1, 'W2': w2, 'W3': w3, 'W4': w4, 'W5': w5, 'W6': w6}
+
+TRAJ_JS = """([frames, nLevels]) => { const out = []
+  for (let i = 0; i < Math.min(levels.length, nLevels || levels.length); ++i) {
     thisLevel = i; levelChoosed(i)
     const xs = [], ys = []
     for (let f = 0; f < frames; ++f) {
@@ -560,6 +762,7 @@ def main():
     ap.add_argument('--root', default=ROOT)
     ap.add_argument('--frames', type=int, default=600)
     ap.add_argument('--compare', nargs=2)
+    ap.add_argument('--levels', type=int, default=0)
     a = ap.parse_args()
 
     if a.compare:
@@ -586,7 +789,9 @@ def main():
     with sync_playwright() as p:
         browser, page, errors = open_page(p, a.root)
         if a.trajectory:
-            res = page.evaluate(TRAJ_JS, a.frames)
+            res = page.evaluate(TRAJ_JS, [a.frames, a.levels])
+            for lv in res:
+                lv['sha256'] = hashlib.sha256(json.dumps([lv['x'], lv['y']], separators=(',', ':')).encode()).hexdigest()
             browser.close()
             with open(a.trajectory, 'w') as f:
                 json.dump(res, f, separators=(',', ':'))
@@ -601,13 +806,15 @@ def main():
             print(name, 'PASS' if chk['pass'] else 'FAIL',
                   {k: v for k, v in chk.items() if k.startswith('ok_') or k in (
                       'teleports', 'speedRelErr', 'posErr', 'velRelErr', 'maxOffsetErr', 'energyExcess',
-                      'minMoveIn10Frames', 'flips', 'displacement', 'maxErr', 'comparedFrames', 'mismatchingFrames')})
+                      'minMoveIn10Frames', 'flips', 'displacement', 'maxErr', 'comparedFrames', 'mismatchingFrames',
+                      'exitVnOverSpeed', 'minDBehindWall', 'behindWithoutTeleport', 'maxDevFromPlainLine',
+                      'hitsWithin50MovingAway', 'teleportsChecked')})
         browser.close()
     results['errors'] = errors
     results['pass'] = ok and not errors
-    out_dir = os.path.join(ROOT, 'artifacts', a.task)
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, a.out), 'w') as f:
+    out_path = a.out if os.path.dirname(a.out) else os.path.join(ROOT, 'artifacts', a.task, a.out)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    with open(out_path, 'w') as f:
         json.dump(results, f, separators=(',', ':'))
     print('OK' if results['pass'] else 'FAILED', 'errors=%d' % len(errors))
     return 0 if results['pass'] else 1

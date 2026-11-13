@@ -59,9 +59,57 @@ class Ball extends Sprite
         }
         return false
     }
+    // Collision with the segment (x1, y1)-(x2, y2) (the original per-line code); true = it reflected
+    collisionWithSegment(x1, y1, x2, y2)
+    {
+        let x0 = this.posX
+        let y0 = this.posY
+        let r = this.radius
+        
+        if (x1 == x2)
+        {
+            let root1 = y0 + Math.sqrt(Math.pow(r, 2) - Math.pow(x1 - x0, 2))
+            let root2 = y0 - Math.sqrt(Math.pow(r, 2) - Math.pow(x1 - x0, 2))
+            //if (Math.pow(y1 - y0, 2) + Math.pow(x1 - x0, 2) <= Math.pow(this.radius, 2) && this.speedY > 0 ||
+             //  Math.pow(y2 - y0, 2) + Math.pow(x2 - x0, 2) <= Math.pow(this.radius, 2) && this.speedY < 0)
+             //   this.speedY *= -1
+            if (root1 < y1 && y2 < root1 ||
+                    root1 < y2 && y1 < root1 ||
+                    root2 < y1 && y2 < root2 ||
+                    root2 < y2 && y1 < root2)
+            {
+                this.speedX *= -1
+                return true
+            }
+        }
+        else if (collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r))
+        {
+            let lineAngle = Math.atan((y1 - y2) / (x1 - x2))
+
+            let xn = -this.speedX
+            let yn = -this.speedY
+
+            let x = xn * Math.cos(lineAngle) + yn * Math.sin(lineAngle)
+            let y = yn * Math.cos(lineAngle) - xn * Math.sin(lineAngle)
+
+            x = -x
+
+            xn = x * Math.cos(lineAngle) - y * Math.sin(lineAngle)
+            yn = y * Math.cos(lineAngle) + x * Math.sin(lineAngle)
+
+            this.speedX = xn
+            this.speedY = yn
+            this.speedX += gravitationalAcceleration * Math.cos(lineAngle) * Math.sin(lineAngle)
+            this.speedY -= gravitationalAcceleration * Math.pow(Math.cos(lineAngle), 2)
+            return true
+        }
+        return false
+    }
     collision()
     {
         //Добавь обработку коллизий с краями прямых
+        // wall-portal host lines (null when the level has none): line object -> its resolved portals
+        const hosts = portalHosts()
         for (let i = 0; i < lines.length; ++i)
         {
             if (this.collisionWithDot(lines[i].posX, lines[i].posY) || this.collisionWithDot(lines[i].posX2, lines[i].posY2))
@@ -70,51 +118,11 @@ class Ball extends Sprite
             y1 = kx1 + b
             y2 = kx2 + b
             */
-            let x1 = lines[i].posX
-            let y1 = lines[i].posY
-            let x2 = lines[i].posX2
-            let y2 = lines[i].posY2
-            /*
-             y = kx + b
-             (x - x0) ^ 2 + (y - y0) ^ 2 = r ^ 2
-            */
-            let x0 = this.posX
-            let y0 = this.posY
-            let r = this.radius
-            
-            if (x1 == x2)
-            {
-                let root1 = y0 + Math.sqrt(Math.pow(r, 2) - Math.pow(x1 - x0, 2))
-                let root2 = y0 - Math.sqrt(Math.pow(r, 2) - Math.pow(x1 - x0, 2))
-                //if (Math.pow(y1 - y0, 2) + Math.pow(x1 - x0, 2) <= Math.pow(this.radius, 2) && this.speedY > 0 ||
-                 //  Math.pow(y2 - y0, 2) + Math.pow(x2 - x0, 2) <= Math.pow(this.radius, 2) && this.speedY < 0)
-                 //   this.speedY *= -1
-                if (root1 < y1 && y2 < root1 ||
-                        root1 < y2 && y1 < root1 ||
-                        root2 < y1 && y2 < root2 ||
-                        root2 < y2 && y1 < root2)
-                    this.speedX *= -1
-            }
-            else if (collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r))
-            {
-                let lineAngle = Math.atan((y1 - y2) / (x1 - x2))
-
-                let xn = -this.speedX
-                let yn = -this.speedY
-
-                let x = xn * Math.cos(lineAngle) + yn * Math.sin(lineAngle)
-                let y = yn * Math.cos(lineAngle) - xn * Math.sin(lineAngle)
-
-                x = -x
-
-                xn = x * Math.cos(lineAngle) - y * Math.sin(lineAngle)
-                yn = y * Math.cos(lineAngle) + x * Math.sin(lineAngle)
-
-                this.speedX = xn
-                this.speedY = yn
-                this.speedX += gravitationalAcceleration * Math.cos(lineAngle) * Math.sin(lineAngle)
-                this.speedY -= gravitationalAcceleration * Math.pow(Math.cos(lineAngle), 2)
-            }
+            const host = hosts && hosts.get(lines[i])
+            if (host)
+                portalHostCollision(this, lines[i], host)
+            else
+                this.collisionWithSegment(lines[i].posX, lines[i].posY, lines[i].posX2, lines[i].posY2)
         }
     }
     gravity()

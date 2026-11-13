@@ -4,19 +4,24 @@
 // lines (see portalResolve); currentPortals() returns them resolved to {x, y, angle, h, ...}.
 // Front normal n = (cos angle, sin angle), tangent t = (-n.y, n.x); the opening is the
 // segment c ± h·t. For the ball centre p: d = (p - c)·n (signed distance), s = (p - c)·t.
-// A crossing = d changed sign since the previous step (either side) while |s| <= h.
+// A crossing (wall portal, numeric `line`) = d went from > 0 to <= 0 since the previous step
+// (front to back only) while |s| <= h; a legacy free-standing portal (no `line`, test setups)
+// still teleports on a crossing in either direction.
 // Teleport = rotation by (angleExit - angleEntry + PI): local (s, d) at the entry maps to
 // (-s, -d) at the exit and the velocity is rotated by the same angle, so entering a
 // front leaves through the other portal's front, a back leaves through its back.
-// The rims (c ± h·t) are solid points; the portal body is not a collider.
+// The rims (c ± h·t) are solid points; the portal body is not a collider. A wall portal's host
+// line collides as the pieces outside the opening while the ball centre is in front of the
+// portal (d > 0) and as the whole line from behind (portalHostCollision).
 
 // rims: the first RIM_LOG_MAX rim bounces {step, rim, n, before:[vx,vy], after:[vx,vy]}
+// hostHits: host-line collisions so far; hostHit: the latest {step, line, v: [vx, vy] before}
 const RIM_LOG_MAX = 64
-let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0 }
+let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }
 
 function portalReset()
 {
-    portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0 }
+    portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }
 }
 
 // The path preview (Bounce.calc) runs gamePhysics() too: it must start from the same portal
@@ -26,7 +31,8 @@ function portalSave()
     const saved = portalState
     portalState = {
         prevD: saved.prevD.slice(), teleports: saved.teleports.slice(),
-        rimHits: saved.rimHits, rims: saved.rims.slice(), steps: saved.steps
+        rimHits: saved.rimHits, rims: saved.rims.slice(), steps: saved.steps,
+        hostHits: saved.hostHits, hostHit: saved.hostHit
     }
     return saved
 }
@@ -73,7 +79,7 @@ function portalResolveAll(list, lines)
 
 // Resolved portals of the current level, cached per level object, portal list and host line
 // coordinates: levelChoosed() refreshes it and any change to a host line re-resolves it.
-let portalCache = { level: null, src: null, key: '', list: null }
+let portalCache = { level: null, src: null, key: '', list: null, hosts: null }
 
 function portalHostKey(src, lines)
 {
@@ -93,13 +99,78 @@ function portalRefresh()
     const src = level && level.portals && level.portals.length ? level.portals : null
     if (!src)
     {
-        portalCache = { level: level, src: null, key: '', list: null }
+        portalCache = { level: level, src: null, key: '', list: null, hosts: null }
         return null
     }
     const key = portalHostKey(src, level.lines)
     if (portalCache.level !== level || portalCache.src !== src || portalCache.key !== key)
-        portalCache = { level: level, src: src, key: key, list: portalResolveAll(src, level.lines) }
+    {
+        const list = portalResolveAll(src, level.lines)
+        portalCache = { level: level, src: src, key: key, list: list, hosts: portalHostMap(list, level.lines) }
+    }
     return portalCache.list
+}
+
+// Map host line object -> [resolved portals cut into it]; null when no portal sits on a line
+function portalHostMap(list, levelLines)
+{
+    let hosts = null
+    for (const P of list)
+    {
+        const l = typeof P.line == 'number' ? levelLines[P.line] : null
+        if (!l)
+            continue
+        hosts = hosts || new Map()
+        if (!hosts.has(l))
+            hosts.set(l, [])
+        hosts.get(l).push(P)
+    }
+    return hosts
+}
+
+// Host lines of the current level (Ball.collision); null = no wall portals, old code path
+function portalHosts()
+{
+    return portalRefresh() ? portalCache.hosts : null
+}
+
+// Ball b against host line l carrying the resolved portals `list`: every portal whose front
+// the ball centre is on (d > 0) opens its gap u ± h/len, the line collides as the remaining
+// pieces (lineGapPieces); from behind (no open gap) the whole line collides. The rims are
+// solid points handled in portalStep.
+// The pieces only reflect a ball that is not moving away from the front (v·n <= 0): a ball that
+// leaves the exit portal near a rim overlaps the piece next to the opening without having
+// travelled into it, and the original reflect-on-overlap code would send it straight back
+// through the exit (ping-pong teleport). A normal bounce never overlaps a line while moving away,
+// so for it the pieces behave exactly like the plain line.
+function portalHostCollision(b, l, list)
+{
+    const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY, len = Math.hypot(dx, dy)
+    const gaps = []
+    let front = null
+    for (const P of list)
+        if (len > 0 && portalLocal(P, b.posX, b.posY).d > 0)
+        {
+            gaps.push([P.u - P.h / len, P.u + P.h / len])
+            front = front || portalFrame(P)
+        }
+    const vx = b.speedX, vy = b.speedY
+    let hit = false
+    if (!gaps.length)
+        hit = b.collisionWithSegment(l.posX, l.posY, l.posX2, l.posY2)
+    else if (vx * front.nx + vy * front.ny <= 0)
+        for (const [a, c] of lineGapPieces(gaps))
+        {
+            const x1 = a === 0 ? l.posX : l.posX + a * dx, y1 = a === 0 ? l.posY : l.posY + a * dy
+            const x2 = c === 1 ? l.posX2 : l.posX + c * dx, y2 = c === 1 ? l.posY2 : l.posY + c * dy
+            if (b.collisionWithSegment(x1, y1, x2, y2))
+                hit = true
+        }
+    if (hit)
+    {
+        ++portalState.hostHits
+        portalState.hostHit = { step: portalState.steps + 1, line: list[0].line, v: [vx, vy], open: gaps.length > 0 }
+    }
 }
 
 function currentPortals()
@@ -207,7 +278,8 @@ function portalStep()
         const L = portalLocal(P[i], ball.posX, ball.posY)
         const prev = portalState.prevD[i]
         portalState.prevD[i] = L.d
-        const crossed = (prev > 0 && L.d <= 0) || (prev < 0 && L.d >= 0)
+        // wall portal: front -> back only; legacy free-standing portal: either direction
+        const crossed = (prev > 0 && L.d <= 0) || (typeof P[i].line != 'number' && prev < 0 && L.d >= 0)
         if (crossed && Math.abs(L.s) <= P[i].h && P[i ^ 1])
         {
             portalTeleport(P[i], P[i ^ 1], L.s, L.d)
@@ -372,11 +444,17 @@ window.__portalTest = {
         levelCompletedWindow = false
         line = false
         linesK = 0
-        const level = levels[thisLevel]
+        // cfg.wall: portals are wall portals {line, u, side} on cfg.lines, installed as a
+        // scratch play-test level (curLevel()) so the real levels stay untouched
+        playtestLevel = null
+        const mk = l => new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line')
+        const level = cfg.wall ? { lines: (cfg.lines || []).map(mk), lineK: 0, flagX: -1e6, flagY: -1e6 } : levels[thisLevel]
         level.portals = (cfg.portals || []).map(p => Object.assign({ h: 45 }, p))
         if (!level.portals.length)
             delete level.portals
-        lines = (cfg.lines || []).map(l => new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line'))
+        if (cfg.wall)
+            playtestLevel = level
+        lines = cfg.wall ? level.lines.slice() : (cfg.lines || []).map(mk)
         const b = cfg.ball || {}
         ball.posX = b.x; ball.posY = b.y
         ball.speedX = b.vx || 0; ball.speedY = b.vy || 0
@@ -395,7 +473,8 @@ window.__portalTest = {
         return {
             x: ball.posX, y: ball.posY, vx: ball.speedX, vy: ball.speedY, r: ball.radius,
             steps: portalState.steps, rimHits: portalState.rimHits,
-            teleports: portalState.teleports, rims: portalState.rims
+            teleports: portalState.teleports, rims: portalState.rims,
+            hostHits: portalState.hostHits, hostHit: portalState.hostHit
         }
     }
 }
