@@ -982,6 +982,15 @@ function editorLevelFromData(d)
         if (!P || typeof P != 'object' || !Number.isInteger(P.line) || P.line < 0 || P.line >= lines.length ||
             !num(P.u) || P.u < 0 || P.u > 1 || (P.side !== 1 && P.side !== -1) || !num(P.h) || P.h <= 0)
             return null
+    // the editor's own portal rules: h within EDITOR_PORTAL_H_MIN..MAX and shared by the pair,
+    // the host line long enough for the opening plus ball.radius at both ends, u already clamped
+    for (const P of d.portals)
+    {
+        const l = d.lines[P.line], len = Math.hypot(l[2] - l[0], l[3] - l[1])
+        if (P.h < EDITOR_PORTAL_H_MIN || P.h > EDITOR_PORTAL_H_MAX || P.h !== d.portals[0].h ||
+            len < 2 * (P.h + ball.radius) || Math.abs(P.u - portalClampU(P.u, len, P.h)) > 1e-9)
+            return null
+    }
     const portals = d.portals.map((P, i) => ({ line: P.line, u: P.u, side: P.side, h: P.h,
                                               name: typeof P.name == 'string' && P.name ? P.name : (i ? 'B' : 'A') }))
     if (editorPortalsOverlap(portals, lines))
