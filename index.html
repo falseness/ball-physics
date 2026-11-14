@@ -124,7 +124,7 @@
             coords = dotСorrection(coords[0], coords[1], line.radius)
             if (portalBlocksSegment(line.posX, line.posY, coords[0], coords[1]))
                 return false
-            if (collisionCircleWithLine(line.posX, line.posY, coords[0], coords[1], ball.posX, ball.posY, ball.radius))
+            if (pointSegDist(ball.posX, ball.posY, line.posX, line.posY, coords[0], coords[1]) <= ball.radius)
                 return false
             line.posX2 = coords[0]
             line.posY2 = coords[1]
