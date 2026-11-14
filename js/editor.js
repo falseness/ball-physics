@@ -61,16 +61,15 @@ function editorBarRect()
     return [EDITOR_BAR.x - p, EDITOR_BAR.y - p, last.x + last.w - EDITOR_BAR.x + 2 * p, EDITOR_BAR.h + 2 * p]
 }
 
-// Pause-menu 'editor' button: right part of the third level-grid row (squares 12-15 are unused;
-// levelRectXY(10) is the only square in that row), clear of resume/restart, the grid and the logo.
+// Pause-menu 'editor' button: right end of the 'Levels' heading row, between the restart button
+// (bottom at +435) and the level grid (top at +rectMarginTop). Independent of levels.length, so it
+// never collides with a level square (the grid's 3 rows hold up to 15 levels) and fits the
+// 34 px 'editor' label (~65 px) with padding.
+const EDITOR_BUTTON_W = 120, EDITOR_BUTTON_H = 40
 function editorButtonRect()
 {
-    // Right-aligned in the level grid's last row, starting no further left than just after the
-    // last level square (11 levels: 250 px wide as before; 12 levels: 200 px; 13 levels: 125 px, clear of square 13)
-    const n = levels.length, row = Math.floor((n - 1) / 5), col = (n - 1) % 5 + 1
-    const right = menuSize[0] - rectMarginLeft, free = right - (rectMarginLeft + rectSize) * col - rectMarginLeft
-    const w = Math.min(menuTextRect[0], free), h = menuTextRect[1]
-    return [menuCoords[0] + right - w, menuCoords[1] + rectMarginTop + row * 60, w, h]
+    const right = menuSize[0] - rectMarginLeft, cy = 495  // heading centre: 335 + 85 * 2 - 10
+    return [menuCoords[0] + right - EDITOR_BUTTON_W, menuCoords[1] + cy - EDITOR_BUTTON_H / 2, EDITOR_BUTTON_W, EDITOR_BUTTON_H]
 }
 function inEditorButton(coords)
 {
