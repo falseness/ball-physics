@@ -197,6 +197,12 @@
                 editorEndPlaytest()
                 return
             }
+            if (levelCompletedWindow && !playtestLevel && inEditorButton(coords))
+            {
+                levelCompletedWindow = false
+                editorOpen() // edit the level just won
+                return
+            }
             if ((levelCompletedWindow || drawMenu) && levelsRectCollision(coords[0], coords[1]))
             {
                 return    

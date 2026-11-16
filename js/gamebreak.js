@@ -27,5 +27,12 @@ function levelCompleted()
         menuButton(bx, menuCoords[1] + blocks[2], menuTextRect[0], menuTextRect[1], 'restart')
         drawLevels()
         drawLogo()
+        // same small 'editor' button and rect as the pause menu; in play-test the 'editor' button
+        // above (in place of 'next level') is the way back, so no duplicate
+        if (!playtestLevel)
+        {
+            const er = editorButtonRect()
+            menuButton(er[0], er[1], er[2], er[3], 'editor')
+        }
     }
 }

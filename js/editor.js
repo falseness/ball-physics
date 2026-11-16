@@ -62,15 +62,17 @@ function editorBarRect()
     return [EDITOR_BAR.x - p, EDITOR_BAR.y - p, last.x + last.w - EDITOR_BAR.x + 2 * p, EDITOR_BAR.h + 2 * p]
 }
 
-// Pause-menu 'editor' button: right end of the 'Levels' heading row, between the restart button
-// (bottom at +435) and the level grid (top at +rectMarginTop). Independent of levels.length, so it
-// never collides with a level square (the grid's 3 rows hold up to 15 levels) and fits the
-// 34 px 'editor' label (~65 px) with padding.
+// 'editor' button shared by the pause menu and the level-completed window (same rect in both):
+// top-right corner inside the logo frame (frame x +30..+370, y +70..+285), under the 'Ball physics'
+// title (bottom ~+64) and above the logo drawing (line/ball start at y +120/+150). The old spot at
+// the right end of the pause menu's 'Levels' row overlapped the win window's 'restart' button
+// (+455..+505). Independent of levels.length, so it never collides with a level square (the grid's
+// 3 rows from +rectMarginTop hold up to 15 levels) and fits the 34 px 'editor' label (~65 px).
 const EDITOR_BUTTON_W = 120, EDITOR_BUTTON_H = 40
 function editorButtonRect()
 {
-    const right = menuSize[0] - rectMarginLeft, cy = 495  // heading centre: 335 + 85 * 2 - 10
-    return [menuCoords[0] + right - EDITOR_BUTTON_W, menuCoords[1] + cy - EDITOR_BUTTON_H / 2, EDITOR_BUTTON_W, EDITOR_BUTTON_H]
+    const right = menuSize[0] - 30 - 10, top = 80
+    return [menuCoords[0] + right - EDITOR_BUTTON_W, menuCoords[1] + top, EDITOR_BUTTON_W, EDITOR_BUTTON_H]
 }
 function inEditorButton(coords)
 {
