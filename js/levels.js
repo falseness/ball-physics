@@ -252,6 +252,82 @@ levels.push(
         { line: 2, u: 0.5, side: -1, h: 90, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 15 (the user's editor export 'level (1)', squared; the free-standing B portal got its own
+    // 160 px pad): a tall wall with portal A cut into its right face, a corner around the flag, and
+    // portal B on a floor pad at the bottom left.
+    ballX: 516,
+    ballY: 124,
+    flagX: 1235,
+    flagY: 132,
+    flagRotate: Math.PI / 2,
+    lineK: 1,
+    lines: [
+        new Line(633, 90, 633, 791, dotRadius, levelLineColor, 'line'),
+        new Line(1239, 322, 1239, 30, dotRadius, levelLineColor, 'line'),
+        new Line(1239, 30, 999, 30, dotRadius, levelLineColor, 'line'),
+        new Line(75, 671, 235, 671, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (633, 304) facing right (1, 0),
+    // B at (155, 671) on the pad facing up (0, -1)
+    portals: [
+        { line: 0, u: (304 - 90) / 701, side: -1, h: 45, name: 'A' },
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
+},
+{
+    // Level 16 (the user's editor export 'level (2)', squared; both free-standing portals got their own
+    // 160 px pads): portal A on a floor pad facing up, portal B on a short wall at the bottom left
+    // facing right, a ledge under the flag and a sloped ramp on the right.
+    ballX: 291,
+    ballY: 255,
+    flagX: 1035,
+    flagY: 114,
+    flagRotate: Math.PI,
+    lineK: 1,
+    lines: [
+        new Line(43, 750, 165, 750, dotRadius, levelLineColor, 'line'),
+        new Line(312, 244, 312, 475, dotRadius, levelLineColor, 'line'),
+        new Line(920, 110, 1137, 110, dotRadius, levelLineColor, 'line'),
+        new Line(1233, 670, 829, 778, dotRadius, levelLineColor, 'line'),
+        new Line(437, 469, 597, 469, dotRadius, levelLineColor, 'line'),
+        new Line(64, 590, 64, 750, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (517, 469) on the pad facing up (0, -1),
+    // B at (64, 689) facing right (1, 0)
+    portals: [
+        { line: 4, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 5, u: (689 - 590) / 160, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
+},
+{
+    // Level 17 (the user's editor export 'level (3)', squared; portal A snapped onto its wall, the
+    // free-standing B portal got its own 160 px pad): the flag sits in a pocket on the right, behind
+    // the wall that carries portal A on its left face; B is on a floor pad at the left.
+    ballX: 519,
+    ballY: 317,
+    flagX: 1239,
+    flagY: 645,
+    flagRotate: Math.PI / 2,
+    lineK: 1,
+    lines: [
+        new Line(308, 253, 308, 475, dotRadius, levelLineColor, 'line'),
+        new Line(1091, 749, 1091, 245, dotRadius, levelLineColor, 'line'),
+        new Line(1242, 34, 1242, 748, dotRadius, levelLineColor, 'line'),
+        new Line(1091, 697, 1242, 697, dotRadius, levelLineColor, 'line'),
+        new Line(1242, 34, 996, 34, dotRadius, levelLineColor, 'line'),
+        new Line(38, 342, 198, 342, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (1091, 561) facing left (-1, 0),
+    // B at (118, 342) on the pad facing up (0, -1)
+    portals: [
+        { line: 1, u: (749 - 561) / 504, side: -1, h: 45, name: 'A' },
+        { line: 5, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
