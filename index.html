@@ -43,6 +43,7 @@
     <script src = "js/portal.js"></script>
     <script src = "js/editor.js"></script>
     <script src = "js/draw.js"></script>
+    <script src = "js/select.js"></script>
     <script src = "js/visualsperf.js"></script>
     <script>
         'use strict'
@@ -147,6 +148,7 @@
             linesK = 0
             levelStarted = false
             physics = false
+            playerSel = null
             flag = []
             for (let i = 0; i < flagCoords.length; ++i)
             {
@@ -259,6 +261,7 @@
                     bounce.cancel() // an unfinished preview job is dropped
                     if (linesK >= curLevel().lineK)
                     {
+                        selectionClear()
                         bounce.setDrawEnable(false)
                         physics = true
                         levelStarted = true
@@ -266,19 +269,36 @@
                 }
                 else
                 {
-                    if (!line && inMenuIcon(coords))
+                    if (playerSel !== null && selectionEditable() && inBin(coords))
                     {
+                        deleteSelectedLine() // bin: remove the selected player line
+                    }
+                    else if (!line && inMenuIcon(coords))
+                    {
+                        selectionClear()
                         drawMenu = true
                         drawMenuIcon = false
                         physics = false
                     }
                     else if (inPlayIcon(coords))
                     {
+                        selectionClear()
                         physics = !physics
                         levelStarted = true
                     }
+                    else if (playerSel !== null && selectionEditable())
+                    {
+                        selectionClick(coords) // select another player line or deselect; no new line
+                    }
                     else if (!levelStarted)
                     {  
+                        // a click on a player line selects it (priority over starting a line)
+                        const hit = playerLineAt(coords[0], coords[1])
+                        if (hit !== null)
+                        {
+                            playerSel = hit
+                            return
+                        }
                         if (linesK < curLevel().lineK)
                         {
                             coords = dotСorrection(coords[0], coords[1], dotRadius)
@@ -332,6 +352,8 @@
                 return false
             if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)))
                 return false
+            if (playerSel !== null || playerLineAt(coords[0], coords[1]) !== null)
+                return false // the tap selects / deselects / deletes instead (handleClick at touchend)
             if (linesK >= curLevel().lineK)
                 return false
             let c = dotСorrection(coords[0], coords[1], dotRadius)

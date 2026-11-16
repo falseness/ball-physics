@@ -138,5 +138,6 @@ function draw()
     if (!drawPortalBall())
         ball.draw()
     drawNewLine()
+    drawSelection() // selected player line: capsule, handles, 'delete' bin
     levelCompleted()
 }
