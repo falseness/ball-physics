@@ -536,6 +536,7 @@
         function gameLoop()
         {
             bounce.update(6) // progressive path preview: at most ~6 ms of physics per frame
+            editorPreviewUpdate(6) // editor: live path preview of the working copy (same budget)
 
             draw()
 

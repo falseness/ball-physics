@@ -1,6 +1,7 @@
 // Level editor (opened from the pause menu's 'editor' button).
 //
-// editorMode = true: the game's clicks, the path preview and physics are off; draw() shows the
+// editorMode = true: the game's clicks, the play-mode path preview and physics are off (the editor
+// draws its own live path preview of the working copy, editorPreviewUpdate); draw() shows the
 // working copy of levels[thisLevel] (lines, flag, ball start, portals) and the toolbar.
 // Working copy shape: {ballX, ballY, flagX, flagY, flagRotate, lineK, lines: [Line], portals: [] | [A, B]}.
 // 'exit' writes the copy back to levels[thisLevel] (this session only) and reloads the level.
@@ -102,6 +103,7 @@ function editorOpen()
     editor.selected = null
     editor.error = null
     editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
+    editorPreviewClear()
     editorMode = true
 }
 
@@ -118,6 +120,7 @@ function editorExit()
     else
         delete L.portals
     editorMode = false
+    editorPreviewClear()
     editor.level = null
     editor.pending = null
     editor.drag = null
@@ -200,6 +203,7 @@ function editorNewLevel()
     editor.portalPending = null
     editor.selected = null
     editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
+    editorPreviewClear()
 }
 
 // 'play': load a clone of the working copy as playtestLevel and switch to normal play.
@@ -210,6 +214,7 @@ function editorStartPlaytest()
     editor.drag = null
     editor.portalPending = null
     editor.error = null
+    editorPreviewClear()
     playtestLevel = editorCloneLevel(editor.level)
     editorMode = false
     drawMenu = false
@@ -861,6 +866,7 @@ function editorDraw()
         // placed A waiting for its partner (the existing pair stays until B is placed)
         drawPortal(portalResolve(editor.portalPending, W.lines), PORTAL_STYLE[0])
     }
+    editorPreviewDraw() // live predicted ball path of the working copy (TASK-094)
     editorDrawSelection()
     drawStartMarker(W.ballX, W.ballY)
     Ball.prototype.draw.call({ posX: W.ballX, posY: W.ballY, radius: ball.radius })
@@ -1032,6 +1038,7 @@ function editorImportText(text)
     editor.selected = null
     editor.error = null
     editor.flagPoly = editorFlagPolygon(L.flagRotate)
+    editorPreviewClear()
     return true
 }
 
@@ -1064,4 +1071,140 @@ function editorImportInput()
 function editorImportOpen()
 {
     editorImportInput().click()
+}
+
+// ---- Editor path preview (TASK-094) ----
+// While the editor is open (editorMode, no play-test) the predicted ball path of the working copy is
+// drawn live. editorPreviewUpdate() runs once per frame from gameLoop: it builds a key from the
+// working copy (ball start, every line, every portal) plus the line tool's pending segment and, when
+// the key changed, starts a new job on a snapshot (editorCloneLevel + the pending segment as a
+// 'player' line). The job is advanced like Bounce.update (TASK-085/086): resumable, slices of
+// STEP_CHUNK gamePhysics() steps for up to budgetMs per frame (at least one slice), a point pushed
+// after every cyclesPerTact steps, pointsCount points in total. Each slice installs the snapshot as
+// playtestLevel / lines, the job's ball state, portalState and portal cache, and restores the real
+// ones afterwards, so editor.level, the real ball, lines, portalState and playtestLevel never change.
+let editorPrev = null   // {key, snap, ballX, ballY, speedX, speedY, portal, cache, step, points, slices, done}
+
+// End point of the line tool's pending segment as the second click would place it, or null
+function editorPendingEnd()
+{
+    if (editor.tool != 'line' || !editor.pending || !editor.mouse || !editor.level)
+        return null
+    const k = editorClampToField(editor.mouse[0], editor.mouse[1])
+    const c = dotСorrection(k[0], k[1], dotRadius, editor.level.lines)
+    if (c[0] == editor.pending[0] && c[1] == editor.pending[1])
+        return null // zero length: the click would only cancel the start point
+    return c
+}
+
+function editorPreviewKey(W, pend)
+{
+    let key = W.ballX + ',' + W.ballY + '|'
+    for (const l of W.lines)
+        key += l.posX + ',' + l.posY + ',' + l.posX2 + ',' + l.posY2 + ',' + l.radius + ';'
+    key += '|'
+    for (const P of W.portals || [])
+        key += typeof P.line == 'number' ? P.line + ',' + P.u + ',' + P.side + ',' + P.h + ';'
+                                         : P.x + ',' + P.y + ',' + P.angle + ',' + P.h + ';'
+    if (pend)
+        key += '|' + editor.pending[0] + ',' + editor.pending[1] + ',' + pend[0] + ',' + pend[1]
+    return key
+}
+
+function editorPreviewClear()
+{
+    editorPrev = null
+}
+
+function editorPreviewStart(key, pend)
+{
+    const snap = editorCloneLevel(editor.level)
+    if (pend)
+        snap.lines.push(new Line(editor.pending[0], editor.pending[1], pend[0], pend[1], dotRadius, '#0000ff', 'player'))
+    editorPrev = {
+        key: key, snap: snap,
+        ballX: snap.ballX, ballY: snap.ballY, speedX: 0, speedY: 0,
+        portal: { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }, // = portalReset()
+        cache: { level: null, src: null, vals: [], list: null, hosts: null },
+        step: 0, points: [], slices: 0, done: false
+    }
+}
+
+// Up to maxSteps steps of the job's current point on the job's own state
+function editorPreviewSlice(job, maxSteps)
+{
+    const savedPlay = playtestLevel, savedLines = lines, savedPortal = portalState, savedCache = portalCache
+    const bx = ball.posX, by = ball.posY, vx = ball.speedX, vy = ball.speedY
+    playtestLevel = job.snap
+    lines = job.snap.lines
+    portalState = job.portal
+    portalCache = job.cache
+    ball.posX = job.ballX; ball.posY = job.ballY
+    ball.speedX = job.speedX; ball.speedY = job.speedY
+    try
+    {
+        const n = Math.min(maxSteps, cyclesPerTact - job.step)
+        for (let j = 0; j < n; ++j)
+            gamePhysics()
+        job.step += n
+        if (job.step >= cyclesPerTact)
+        {
+            job.step = 0
+            job.points.push({x: ball.getX(), y: ball.getY()})
+        }
+        job.ballX = ball.posX; job.ballY = ball.posY
+        job.speedX = ball.speedX; job.speedY = ball.speedY
+        job.portal = portalState
+        job.cache = portalCache
+        job.slices++
+    }
+    finally
+    {
+        ball.posX = bx; ball.posY = by
+        ball.speedX = vx; ball.speedY = vy
+        portalCache = savedCache
+        portalState = savedPortal
+        lines = savedLines
+        playtestLevel = savedPlay
+    }
+}
+
+// Game loop, once per frame
+function editorPreviewUpdate(budgetMs = 6)
+{
+    if (!editorMode || playtestLevel || !editor.level)
+    {
+        editorPrev = null
+        return
+    }
+    const start = performance.now()
+    const pend = editorPendingEnd()
+    const key = editorPreviewKey(editor.level, pend)
+    if (!editorPrev || editorPrev.key !== key)
+        editorPreviewStart(key, pend)
+    const job = editorPrev
+    if (job.done)
+        return
+    do
+        editorPreviewSlice(job, STEP_CHUNK)
+    while (job.points.length < bounce.pointsCount && performance.now() - start < budgetMs)
+    job.done = job.points.length >= bounce.pointsCount
+}
+
+// Same look as Bounce.draw (cyan hollow circles, fading, spacing rule); partial paths too
+function editorPreviewDraw()
+{
+    if (!editorPrev || !editorPrev.points.length)
+        return
+    Bounce.prototype.draw.call({ drawEnable: true, positions: editorPrev.points, pointsCount: bounce.pointsCount,
+        color: bounce.color, dotRadius: bounce.dotRadius, spacing: bounce.spacing })
+}
+
+// Test hook
+window.editorPreview = function()
+{
+    if (!editorPrev)
+        return { key: null, done: false, points: [], slices: 0, teleports: 0 }
+    return { key: editorPrev.key, done: editorPrev.done, points: editorPrev.points.map(p => [p.x, p.y]), slices: editorPrev.slices,
+             teleports: editorPrev.portal.teleports.length }
 }
