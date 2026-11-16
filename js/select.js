@@ -279,3 +279,68 @@ function drawDragHint()
     ctx.fillText(h.text, x, y)
     ctx.restore()
 }
+
+// ---- Locked after a run ----
+// Once a run was started (levelStarted, physics running or paused with the play icon) the
+// player's lines can't be edited; an attempt (click/tap within SEL_HIT of a player line, or a
+// press within END_HIT of a player line end) shows a plain handwritten hint at the pointer that
+// fades out linearly over LOCK_HINT_MS. Nothing is selected, moved or deleted.
+const LOCK_HINT_MS = 1500
+const LOCK_HINT_TEXT = 'locked after run · menu → restart to edit'
+let lockHint = null          // {x, y, t0}
+
+function lockedState()
+{
+    return levelStarted && !line && !drawMenu && !levelCompletedWindow && !editorMode
+}
+// click / tap at coords: show the hint if it is an edit attempt on a locked player line
+function lockClick(coords)
+{
+    if (!lockedState() || inMenuIcon(coords) || inPlayIcon(coords))
+        return false
+    if (playerLineAt(coords[0], coords[1]) === null && playerEndAt(coords[0], coords[1]) === null)
+        return false
+    lockHint = {x: coords[0], y: coords[1], t0: performance.now()}
+    return true
+}
+// press (mousedown / touchstart) at coords: only a press on a player line end counts
+function lockPress(coords)
+{
+    if (!lockedState() || inMenuIcon(coords) || inPlayIcon(coords))
+        return false
+    if (playerEndAt(coords[0], coords[1]) === null)
+        return false
+    lockHint = {x: coords[0], y: coords[1], t0: performance.now()}
+    return true
+}
+function lockHintAlpha()
+{
+    if (!lockHint)
+        return 0
+    const a = 1 - (performance.now() - lockHint.t0) / LOCK_HINT_MS
+    if (a <= 0)
+    {
+        lockHint = null
+        return 0
+    }
+    return a
+}
+function drawLockHint()
+{
+    const a = lockHintAlpha()
+    if (a <= 0)
+        return
+    ctx.save()
+    ctx.font = '20px ' + THEME.fontStack
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
+    const w = ctx.measureText(LOCK_HINT_TEXT).width
+    // right of / above the pointer, flipped to stay on the canvas
+    let x = lockHint.x + 16, y = lockHint.y - 16
+    if (x + w > GAME_W - 8) x = lockHint.x - 16 - w
+    if (x < 8) x = 8
+    if (y - 20 < 8) y = lockHint.y + 34
+    ctx.globalAlpha = a
+    ctx.fillStyle = THEME.soft
+    ctx.fillText(LOCK_HINT_TEXT, x, y)
+    ctx.restore()
+}

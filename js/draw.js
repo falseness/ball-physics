@@ -140,5 +140,6 @@ function draw()
     drawNewLine()
     drawSelection() // selected player line: capsule, handles, 'delete' bin
     drawDragHint()  // rejected end drop: short handwritten reason
+    drawLockHint()  // edit attempt after a run: "locked after run" hint
     levelCompleted()
 }
