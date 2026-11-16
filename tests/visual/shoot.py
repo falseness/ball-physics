@@ -280,6 +280,13 @@ LEVEL13_MAX_FRAMES = 3000
 LEVEL14_LINE = ((183, 580), (779, 608))
 LEVEL14_MAX_FRAMES = 3000
 
+# Level 15 (index 14) solution: one short ramp under the ball rising to the right. The ball lands on it, rolls
+# down-left, flies into portal B (an upright pad at the bottom left facing right, TASK-099) and comes out of A on
+# the wall's right face rising to the right, straight into the flag (won on physics frame 83). Found by a lattice
+# search with in-page stepped frames (artifacts/TASK-099/design.md); all 8 single-coordinate +-3 px variants also win.
+LEVEL15_LINE = ((460, 580), (620, 380))
+LEVEL15_MAX_FRAMES = 3000
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -359,6 +366,10 @@ def sc_level14(page, info):
     play_solution(page, info, 13, [LEVEL14_LINE], LEVEL14_MAX_FRAMES, 'level14')
 
 
+def sc_level15(page, info):
+    play_solution(page, info, 14, [LEVEL15_LINE], LEVEL15_MAX_FRAMES, 'level15', via=('B', 'A'))
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -379,6 +390,7 @@ SCENARIOS = {
     'level12': sc_level12,
     'level13': sc_level13,
     'level14': sc_level14,
+    'level15': sc_level15,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

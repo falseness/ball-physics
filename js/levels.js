@@ -256,7 +256,10 @@ levels.push(
 {
     // Level 15 (the user's editor export 'level (1)', squared; the free-standing B portal got its own
     // 160 px pad): a tall wall with portal A cut into its right face, a corner around the flag, and
-    // portal B on a floor pad at the bottom left.
+    // portal B on a short upright pad at the bottom left, facing right (TASK-099: the pad was a floor
+    // pad facing up, which made the level unwinnable: a ball reaching B from the start always moves
+    // left, and B up -> A right turns that into a downward exit; facing right, B -> A just reverses the
+    // velocity, so a ball falling left into B leaves A rising to the right).
     ballX: 516,
     ballY: 124,
     flagX: 1235,
@@ -267,10 +270,10 @@ levels.push(
         new Line(633, 90, 633, 791, dotRadius, levelLineColor, 'line'),
         new Line(1239, 322, 1239, 30, dotRadius, levelLineColor, 'line'),
         new Line(1239, 30, 999, 30, dotRadius, levelLineColor, 'line'),
-        new Line(75, 671, 235, 671, dotRadius, levelLineColor, 'line')
+        new Line(155, 591, 155, 751, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (633, 304) facing right (1, 0),
-    // B at (155, 671) on the pad facing up (0, -1)
+    // B at (155, 671) on the pad facing right (1, 0)
     portals: [
         { line: 0, u: (304 - 90) / 701, side: -1, h: 45, name: 'A' },
         { line: 3, u: 0.5, side: -1, h: 45, name: 'B' }
