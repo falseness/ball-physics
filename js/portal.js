@@ -69,15 +69,24 @@ function portalClampU(u, len, h)
 function portalResolve(P, lines)
 {
     if (typeof P.line != 'number')
-        return Object.assign({}, P)
+        return portalWithFrame(Object.assign({}, P))
     const l = lines[P.line]
     const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY, len = Math.hypot(dx, dy)
     const tx = len > 0 ? dx / len : 1, ty = len > 0 ? dy / len : 0
     const side = P.side < 0 ? -1 : 1, u = portalClampU(P.u, len, P.h)
-    return {
+    return portalWithFrame({
         x: l.posX + u * dx, y: l.posY + u * dy, angle: Math.atan2(side * tx, side * -ty),
         h: P.h, name: P.name, line: P.line, u: u, side: side
-    }
+    })
+}
+
+// A resolved portal keeps its frame (portalFrame's values for its angle) in `frame`, so the
+// per-step physics does not recompute cos/sin or allocate; portalFrame only uses it while P.angle
+// is still the angle it was computed for.
+function portalWithFrame(R)
+{
+    R.frame = portalFrameOf(R.angle)
+    return R
 }
 
 function portalResolveAll(list, lines)
@@ -87,8 +96,50 @@ function portalResolveAll(list, lines)
 
 // Resolved portals of the current level, cached per level object, portal list and host line
 // coordinates: levelChoosed() refreshes it and any change to a host line re-resolves it.
-let portalCache = { level: null, src: null, key: '', list: null, hosts: null }
+// vals holds the numbers the cache was resolved from (per portal: a host-line flag, then the host
+// line's posX, posY, posX2, posY2, u, side, h, or x, y, angle, h for a legacy portal); portalRefresh
+// compares them in place every call (no strings, no allocation) and re-resolves when one differs.
+const PORTAL_VALS_PER = 8
+let portalCache = { level: null, src: null, vals: [], list: null, hosts: null }
 
+// same value: === plus NaN == NaN (the old string key treated NaN as equal to itself)
+function portalSame(a, b)
+{
+    return a === b || (a !== a && b !== b)
+}
+
+// Writes (store) or compares (!store) the cache numbers of src; returns true when they all match
+function portalVals(src, lines, vals, store)
+{
+    if (!store && vals.length !== src.length * PORTAL_VALS_PER)
+        return false
+    if (store)
+        vals.length = src.length * PORTAL_VALS_PER
+    let k = 0
+    for (let i = 0; i < src.length; ++i)
+    {
+        const P = src[i]
+        const l = typeof P.line == 'number' ? lines[P.line] : null
+        const a = l ? 1 : 0
+        const v0 = l ? l.posX : P.x, v1 = l ? l.posY : P.y, v2 = l ? l.posX2 : P.angle, v3 = l ? l.posY2 : P.h
+        const v4 = l ? P.u : 0, v5 = l ? P.side : 0, v6 = l ? P.h : 0
+        if (store)
+        {
+            vals[k] = a; vals[k + 1] = v0; vals[k + 2] = v1; vals[k + 3] = v2
+            vals[k + 4] = v3; vals[k + 5] = v4; vals[k + 6] = v5; vals[k + 7] = v6
+        }
+        else if (vals[k] !== a ||
+                 (vals[k + 1] !== v0 && !portalSame(vals[k + 1], v0)) || (vals[k + 2] !== v1 && !portalSame(vals[k + 2], v1)) ||
+                 (vals[k + 3] !== v2 && !portalSame(vals[k + 3], v2)) || (vals[k + 4] !== v3 && !portalSame(vals[k + 4], v3)) ||
+                 (vals[k + 5] !== v4 && !portalSame(vals[k + 5], v4)) || (vals[k + 6] !== v5 && !portalSame(vals[k + 6], v5)) ||
+                 (vals[k + 7] !== v6 && !portalSame(vals[k + 7], v6)))
+            return false
+        k += PORTAL_VALS_PER
+    }
+    return true
+}
+
+// The cache numbers of src as one string (diagnostics / tests only; portalRefresh does not call it)
 function portalHostKey(src, lines)
 {
     let key = ''
@@ -107,14 +158,15 @@ function portalRefresh()
     const src = level && level.portals && level.portals.length ? level.portals : null
     if (!src)
     {
-        portalCache = { level: level, src: null, key: '', list: null, hosts: null }
+        if (portalCache.level !== level || portalCache.src !== null)
+            portalCache = { level: level, src: null, vals: [], list: null, hosts: null }
         return null
     }
-    const key = portalHostKey(src, level.lines)
-    if (portalCache.level !== level || portalCache.src !== src || portalCache.key !== key)
+    if (portalCache.level !== level || portalCache.src !== src || !portalVals(src, level.lines, portalCache.vals, false))
     {
-        const list = portalResolveAll(src, level.lines)
-        portalCache = { level: level, src: src, key: key, list: list, hosts: portalHostMap(list, level.lines) }
+        const list = portalResolveAll(src, level.lines), vals = []
+        portalVals(src, level.lines, vals, true)
+        portalCache = { level: level, src: src, vals: vals, list: list, hosts: portalHostMap(list, level.lines) }
     }
     return portalCache.list
 }
@@ -130,7 +182,12 @@ function portalHostMap(list, levelLines)
             continue
         hosts = hosts || new Map()
         if (!hosts.has(l))
-            hosts.set(l, [])
+        {
+            const host = []
+            host.hostLine = l; host.hostX = l.posX; host.hostY = l.posY; host.hostX2 = l.posX2; host.hostY2 = l.posY2
+            host.hostLen = Math.hypot(l.posX2 - l.posX, l.posY2 - l.posY)
+            hosts.set(l, host)
+        }
         hosts.get(l).push(P)
     }
     return hosts
@@ -153,36 +210,74 @@ function portalHosts()
 // so for it the pieces behave exactly like the plain line.
 function portalHostCollision(b, l, list)
 {
-    const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY, len = Math.hypot(dx, dy)
-    const gaps = []
+    // list.hostLen: the host line length, stored by portalHostMap when the list was built from the
+    // same line coordinates (the cache re-resolves on any change), so Math.hypot is not redone
+    const dx = l.posX2 - l.posX, dy = l.posY2 - l.posY
+    const len = list.hostLine === l && list.hostX === l.posX && list.hostY === l.posY && list.hostX2 === l.posX2 && list.hostY2 === l.posY2
+        ? list.hostLen : Math.hypot(dx, dy)
+    // the first gap is kept as two numbers; arrays only when a line carries several open portals
+    let gaps = null, g0 = 0, g1 = 0, nGaps = 0
     let front = null
-    for (const P of list)
-        if (len > 0 && portalLocal(P, b.posX, b.posY).d > 0)
+    for (let i = 0; i < list.length; ++i)
+    {
+        const P = list[i]
+        if (len > 0 && portalLocalD(P, b.posX, b.posY) > 0)
         {
-            gaps.push([P.u - P.h / len, P.u + P.h / len])
+            const lo = P.u - P.h / len, hi = P.u + P.h / len
+            if (nGaps++ === 0)
+            {
+                g0 = lo; g1 = hi
+            }
+            else
+                (gaps = gaps || [[g0, g1]]).push([lo, hi])
             front = front || portalFrame(P)
         }
+    }
     const vx = b.speedX, vy = b.speedY
     let hit = false
-    if (!gaps.length)
+    if (!nGaps)
         hit = b.collisionWithSegment(l.posX, l.posY, l.posX2, l.posY2)
     else if (vx * front.nx + vy * front.ny <= 0)
-        for (const [a, c] of lineGapPieces(gaps))
+    {
+        if (nGaps === 1)
         {
-            const x1 = a === 0 ? l.posX : l.posX + a * dx, y1 = a === 0 ? l.posY : l.posY + a * dy
-            const x2 = c === 1 ? l.posX2 : l.posX + c * dx, y2 = c === 1 ? l.posY2 : l.posY + c * dy
-            // a ball being captured does not bounce off the piece next to the opening (TASK-074)
-            const q = segClosestPoint(b.posX, b.posY, x1, y1, x2, y2)
-            if (portalCaptureZone(b, list, q[0], q[1]))
-                continue
-            if (b.collisionWithSegment(x1, y1, x2, y2))
-                hit = true
+            // lineGapPieces([g0]) inline: [0, a] when a > 0 and [c, 1] when c < 1, if the gap is non-empty
+            const a = Math.max(0, Math.min(g0, g1)), c = Math.min(1, Math.max(g0, g1))
+            if (!(c > a))
+                hit = portalHostPiece(b, l, list, dx, dy, 0, 1)
+            else
+            {
+                if (a > 0 && portalHostPiece(b, l, list, dx, dy, 0, a))
+                    hit = true
+                if (c < 1 && portalHostPiece(b, l, list, dx, dy, c, 1))
+                    hit = true
+            }
         }
+        else
+            for (const [a, c] of lineGapPieces(gaps))
+                if (portalHostPiece(b, l, list, dx, dy, a, c))
+                    hit = true
+    }
     if (hit)
     {
         ++portalState.hostHits
-        portalState.hostHit = { step: portalState.steps + 1, line: list[0].line, v: [vx, vy], open: gaps.length > 0 }
+        portalState.hostHit = { step: portalState.steps + 1, line: list[0].line, v: [vx, vy], open: nGaps > 0 }
     }
+}
+
+// Piece a..c (line parameters) of host line l: collides unless the ball is being captured and the
+// contact point lies in the capture zone (TASK-074); true when it bounced
+function portalHostPiece(b, l, list, dx, dy, a, c)
+{
+    const x1 = a === 0 ? l.posX : l.posX + a * dx, y1 = a === 0 ? l.posY : l.posY + a * dy
+    const x2 = c === 1 ? l.posX2 : l.posX + c * dx, y2 = c === 1 ? l.posY2 : l.posY + c * dy
+    // a ball being captured does not bounce off the piece next to the opening (TASK-074)
+    // (segClosestPoint inline)
+    const ex = x2 - x1, ey = y2 - y1, L2 = ex * ex + ey * ey
+    const k = L2 > 0 ? Math.max(0, Math.min(1, ((b.posX - x1) * ex + (b.posY - y1) * ey) / L2)) : 0
+    if (portalCaptureZone(b, list, x1 + k * ex, y1 + k * ey))
+        return false
+    return b.collisionWithSegment(x1, y1, x2, y2)
 }
 
 // True when ball b is being captured by one of `list` (front side d > 0, moving toward it v·n < 0)
@@ -194,9 +289,9 @@ function portalCaptureZone(b, list, qx, qy)
     for (const P of list)
     {
         const f = portalFrame(P)
-        if (portalLocal(P, b.posX, b.posY).d <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
+        if (portalLocalD(P, b.posX, b.posY) <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
             continue
-        if (Math.abs(portalLocal(P, qx, qy).s) <= P.h + b.radius)
+        if (Math.abs(portalLocalS(P, qx, qy)) <= P.h + b.radius)
             return true
     }
     return false
@@ -212,11 +307,16 @@ function segClosestPoint(px, py, x1, y1, x2, y2)
 // Ball b touches portal P's opening from its front while moving toward it (capture by touch)
 function portalTouches(P, b)
 {
-    const f = portalFrame(P), L = portalLocal(P, b.posX, b.posY)
-    if (!(L.d > 0) || !(b.speedX * f.nx + b.speedY * f.ny < 0))
+    const f = portalFrame(P), d = portalLocalD(P, b.posX, b.posY)
+    if (!(d > 0) || !(b.speedX * f.nx + b.speedY * f.ny < 0))
         return false
-    const r = portalRims(P)
-    return pointSegDist(b.posX, b.posY, r[0][0], r[0][1], r[1][0], r[1][1]) <= b.radius
+    // portalRims(P) inline; a centre more than radius + 1 outside the opening's bounding box is
+    // farther than radius from it, so pointSegDist (Math.hypot) is skipped there
+    const x1 = P.x + P.h * f.tx, y1 = P.y + P.h * f.ty, x2 = P.x - P.h * f.tx, y2 = P.y - P.h * f.ty
+    const m = b.radius + 1
+    if (b.posX < Math.min(x1, x2) - m || b.posX > Math.max(x1, x2) + m || b.posY < Math.min(y1, y2) - m || b.posY > Math.max(y1, y2) + m)
+        return false
+    return pointSegDist(b.posX, b.posY, x1, y1, x2, y2) <= b.radius
 }
 
 function currentPortals()
@@ -224,16 +324,36 @@ function currentPortals()
     return portalRefresh()
 }
 
+function portalFrameOf(angle)
+{
+    const nx = Math.cos(angle), ny = Math.sin(angle)
+    return { nx: nx, ny: ny, tx: -ny, ty: nx, angle: angle }
+}
+
+// Callers only read nx, ny, tx, ty
 function portalFrame(P)
 {
-    const nx = Math.cos(P.angle), ny = Math.sin(P.angle)
-    return { nx: nx, ny: ny, tx: -ny, ty: nx }
+    const f = P.frame
+    return f !== undefined && f.angle === P.angle ? f : portalFrameOf(P.angle)
 }
 
 function portalLocal(P, x, y)
 {
     const f = portalFrame(P), dx = x - P.x, dy = y - P.y
     return { s: dx * f.tx + dy * f.ty, d: dx * f.nx + dy * f.ny }
+}
+
+// portalLocal(P, x, y).d / .s without the result object
+function portalLocalD(P, x, y)
+{
+    const f = portalFrame(P), dx = x - P.x, dy = y - P.y
+    return dx * f.nx + dy * f.ny
+}
+
+function portalLocalS(P, x, y)
+{
+    const f = portalFrame(P), dx = x - P.x, dy = y - P.y
+    return dx * f.tx + dy * f.ty
 }
 
 // kind 'touch': local (s, d) -> (-clamp(s, -h, h), max(d, PORTAL_EXIT_MIN_D)) at the exit (in front of it);
@@ -325,30 +445,35 @@ function portalStep()
     ++portalState.steps
     for (let i = 0; i < P.length; ++i)
     {
-        const L = portalLocal(P[i], ball.posX, ball.posY)
+        const Ld = portalLocalD(P[i], ball.posX, ball.posY), Ls = portalLocalS(P[i], ball.posX, ball.posY)
         const prev = portalState.prevD[i]
-        portalState.prevD[i] = L.d
+        portalState.prevD[i] = Ld
         // wall portal: front -> back only; legacy free-standing portal: either direction
-        const crossed = (prev > 0 && L.d <= 0) || (typeof P[i].line != 'number' && prev < 0 && L.d >= 0)
+        const crossed = (prev > 0 && Ld <= 0) || (typeof P[i].line != 'number' && prev < 0 && Ld >= 0)
         const kind = !P[i ^ 1] ? null : portalTouches(P[i], ball) ? 'touch'
-                   : crossed && Math.abs(L.s) <= P[i].h ? 'cross' : null
+                   : crossed && Math.abs(Ls) <= P[i].h ? 'cross' : null
         if (kind)
         {
-            portalTeleport(P[i], P[i ^ 1], L.s, L.d, kind)
+            portalTeleport(P[i], P[i ^ 1], Ls, Ld, kind)
             // at most one teleport per step; every stored side (the exit's included)
             // becomes the ball's new side, so the exit cannot re-trigger next step
             for (let k = 0; k < P.length; ++k)
-                portalState.prevD[k] = portalLocal(P[k], ball.posX, ball.posY).d
+                portalState.prevD[k] = portalLocalD(P[k], ball.posX, ball.posY)
             break
         }
     }
     // rims: solid points, reflect about the contact normal when moving towards them
     for (let i = 0; i < P.length; ++i)
     {
-        const rims = portalRims(P[i])
+        const Q = P[i], f = portalFrame(Q)
         for (let k = 0; k < 2; ++k)
         {
-            const dx = ball.posX - rims[k][0], dy = ball.posY - rims[k][1]
+            // portalRims(Q)[k] inline
+            const rx = k === 0 ? Q.x + Q.h * f.tx : Q.x - Q.h * f.tx, ry = k === 0 ? Q.y + Q.h * f.ty : Q.y - Q.h * f.ty
+            const dx = ball.posX - rx, dy = ball.posY - ry
+            // Math.hypot(dx, dy) >= max(|dx|, |dy|): no contact, skip the hypot
+            if (Math.abs(dx) >= ball.radius || Math.abs(dy) >= ball.radius)
+                continue
             const dist = Math.hypot(dx, dy)
             if (dist >= ball.radius || dist === 0)
                 continue
@@ -361,7 +486,7 @@ function portalStep()
             ball.speedY -= 2 * vn * ny
             ++portalState.rimHits
             if (portalState.rims.length < RIM_LOG_MAX)
-                portalState.rims.push({ step: portalState.steps, rim: rims[k], n: [nx, ny],
+                portalState.rims.push({ step: portalState.steps, rim: [rx, ry], n: [nx, ny],
                     before: before, after: [ball.speedX, ball.speedY] })
         }
     }

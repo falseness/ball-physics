@@ -49,9 +49,14 @@ class Ball extends Sprite
         ctx.stroke()
         ctx.restore()
     }
+    // collisionWithDot's test alone (no side effects)
+    dotHit(x, y)
+    {
+        return Math.pow(this.posX - x, 2) + Math.pow(this.posY - y, 2) < Math.pow(this.radius, 2) - 1
+    }
     collisionWithDot(x, y)
     {
-        if (Math.pow(this.posX - x, 2) + Math.pow(this.posY - y, 2) < Math.pow(this.radius, 2) - 1)
+        if (this.dotHit(x, y))
         {//-1 - костыль, который чинит физику при колизии при скатывании
             this.speedX *= -1
             this.speedY *= -1
@@ -114,8 +119,9 @@ class Ball extends Sprite
         {
             const host = hosts && hosts.get(lines[i])
             // a ball being captured by a portal on this line ignores a line end next to the opening (TASK-074)
-            if (host ? (!portalCaptureZone(this, host, lines[i].posX, lines[i].posY) && this.collisionWithDot(lines[i].posX, lines[i].posY)) ||
-                       (!portalCaptureZone(this, host, lines[i].posX2, lines[i].posY2) && this.collisionWithDot(lines[i].posX2, lines[i].posY2))
+            // (dotHit first: when it is false collisionWithDot would do nothing, so the capture zone is not needed)
+            if (host ? (this.dotHit(lines[i].posX, lines[i].posY) && !portalCaptureZone(this, host, lines[i].posX, lines[i].posY) && this.collisionWithDot(lines[i].posX, lines[i].posY)) ||
+                       (this.dotHit(lines[i].posX2, lines[i].posY2) && !portalCaptureZone(this, host, lines[i].posX2, lines[i].posY2) && this.collisionWithDot(lines[i].posX2, lines[i].posY2))
                      : this.collisionWithDot(lines[i].posX, lines[i].posY) || this.collisionWithDot(lines[i].posX2, lines[i].posY2))
                 break
             /*
