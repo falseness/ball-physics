@@ -1,6 +1,7 @@
 'use strict'
 // Measurement annotations in the 07 "Engineering Pad" style (purely visual, no gameplay values):
-//  - every player line: offset dimension line with arrowheads + rotated '<len> mm @ <deg>°' label
+//  - every player line: offset dimension line with arrowheads + rotated '<len> mm' label, and at its
+//    left end (lower end for vertical lines) a dash-dot horizontal reference + filled circle sector + '<deg>°'
 //  - a 'target' leader next to the flag
 //  - an angle callout (dash-dot horizontal reference + filled circle sector on the free side + '<deg>°')
 //    on the first sloped level line
@@ -15,7 +16,127 @@ function lineSlopeDeg(x1, y1, x2, y2)
 }
 function dimensionLabel(x1, y1, x2, y2)
 {
-    return Math.round(Math.hypot(x2 - x1, y2 - y1)) + ' mm @ ' + lineSlopeDeg(x1, y1, x2, y2).toFixed(1) + '°'
+    return Math.round(Math.hypot(x2 - x1, y2 - y1)) + ' mm'
+}
+// Left end first (lower end, larger y, for vertical lines): the dimension label reads upright and the
+// angle sector opens from a horizontal reference pointing toward +x.
+function orientLeftRight(l)
+{
+    let x1 = l.posX, y1 = l.posY, x2 = l.posX2, y2 = l.posY2
+    if (x2 < x1 || (x2 == x1 && y2 > y1)) [x1, y1, x2, y2] = [x2, y2, x1, y1]
+    return [x1, y1, x2, y2]
+}
+function dimensionLabelBox(l)
+{
+    const [x1, y1, x2, y2] = orientLeftRight(l)
+    const a = Math.atan2(y2 - y1, x2 - x1), nx = Math.sin(a) * DIM_OFFSET, ny = -Math.cos(a) * DIM_OFFSET
+    const label = dimensionLabel(x1, y1, x2, y2)
+    ctx.save(); ctx.font = '17px ' + THEME.fontStack
+    const w = ctx.measureText(label).width; ctx.restore()
+    const cx = (x1 + x2) / 2 + nx * 1.45, cy = (y1 + y2) / 2 + ny * 1.45, c = Math.cos(a), s = Math.sin(a)
+    const hw = w / 2, hh = 17 / 2
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c])
+}
+// Player line angle mark: vertex at the left end, dash-dot horizontal reference (r + 20) toward +x, filled
+// sector between the reference and the line (r = min(28, len*0.4)) and '<deg>°' centred on the bisector at
+// r + 12. The label is pushed outward along the bisector (up to +20 px), then shifted perpendicular to the line
+// toward +x (reference side, up to 40 px) while its box crosses the line (±5 px), the reference or the
+// dimension label, or leaves the field. deg < 1: no reference/sector, label next to the left end.
+const PLAYER_ANGLE_GAP = 12, PLAYER_ANGLE_FONT = 17, PLAYER_ANGLE_PUSH = 20, PLAYER_ANGLE_SHIFT = 40
+function playerAngleGeom(l)
+{
+    const [x1, y1, x2, y2] = orientLeftRight(l)
+    const len = Math.hypot(x2 - x1, y2 - y1)
+    if (len < 1)
+        return null
+    const dx = (x2 - x1) / len, dy = (y2 - y1) / len
+    const deg = lineSlopeDeg(x1, y1, x2, y2), r = Math.min(28, len * .4)
+    const sector = deg >= 1
+    const a1 = Math.atan2(dy, dx) // in [-90°, 90°]; reference at angle 0
+    const label = deg.toFixed(1) + '°'
+    ctx.save(); ctx.font = PLAYER_ANGLE_FONT + 'px ' + THEME.fontStack
+    const w = ctx.measureText(label).width; ctx.restore()
+    const h = PLAYER_ANGLE_FONT
+    const T = 5
+    const lineBand = [[x1 - dy * T - dx * T, y1 + dx * T - dy * T], [x2 - dy * T + dx * T, y2 + dx * T + dy * T],
+        [x2 + dy * T + dx * T, y2 - dx * T + dy * T], [x1 + dy * T - dx * T, y1 - dx * T - dy * T]]
+    const obstacles = [lineBand, dimensionLabelBox(l)]
+    if (sector)
+        obstacles.push([[x1, y1 - 1], [x1 + r + 20, y1 - 1], [x1 + r + 20, y1 + 1], [x1, y1 + 1]])
+    const boxAt = (cx, cy) => ({ x: cx - w / 2, y: cy - h / 2, w: w, h: h })
+    const blocked = b => {
+        if (b.x < 0 || b.y < 0 || b.x + b.w > GAME_W || b.y + b.h > GAME_H)
+            return true
+        const P = [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]]
+        return obstacles.some(Q => convexOverlap(P, Q))
+    }
+    let box = null, push = 0, shift = 0, bx, by, sx, sy
+    if (sector)
+    {
+        bx = Math.cos(a1 / 2); by = Math.sin(a1 / 2)
+        // line normal pointing to +x: from the line into the sector (toward the reference)
+        sx = -dy; sy = dx
+        if (sx < 0) { sx = -sx; sy = -sy }
+    }
+    else
+    {
+        // flat line: label to the left of the left end, else below / above it
+        bx = -1; by = 0; sx = 0; sy = 1
+    }
+    const base = sector ? r + PLAYER_ANGLE_GAP : PLAYER_ANGLE_GAP + w / 2
+    for (push = 0; push <= PLAYER_ANGLE_PUSH; push += 2)
+    {
+        box = boxAt(x1 + bx * (base + push), y1 + by * (base + push))
+        if (!blocked(box))
+            break
+    }
+    if (push > PLAYER_ANGLE_PUSH)
+    {
+        push = PLAYER_ANGLE_PUSH
+        const cx = x1 + bx * (base + push), cy = y1 + by * (base + push)
+        for (shift = 2; shift <= PLAYER_ANGLE_SHIFT; shift += 2)
+        {
+            box = boxAt(cx + sx * shift, cy + sy * shift)
+            if (!blocked(box))
+                break
+        }
+        if (shift > PLAYER_ANGLE_SHIFT)
+            shift = PLAYER_ANGLE_SHIFT
+    }
+    return { vertex: [x1, y1], r: r, a0: 0, a1: a1, ccw: a1 < 0, sector: sector, refLen: sector ? r + 20 : 0,
+        bisector: [bx, by], labelBox: box, push: push, shift: shift, label: label, deg: deg,
+        line: [x1, y1, x2, y2], dimBox: obstacles[1] }
+}
+function drawPlayerAngle(l)
+{
+    const g = playerAngleGeom(l)
+    if (!g)
+        return null
+    const [x1, y1] = g.vertex
+    if (g.sector)
+    {
+        ctx.save()
+        ctx.strokeStyle = THEME.soft; ctx.fillStyle = THEME.soft
+        ctx.globalAlpha = .6; ctx.lineWidth = 1
+        ctx.setLineDash([6, 3, 1, 3])
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + g.refLen, y1); ctx.stroke()
+        ctx.setLineDash([])
+        ctx.globalAlpha = .10
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.arc(x1, y1, g.r, g.a0, g.a1, g.ccw); ctx.closePath(); ctx.fill()
+        ctx.globalAlpha = .6
+        ctx.beginPath(); ctx.arc(x1, y1, g.r, g.a0, g.a1, g.ccw); ctx.stroke()
+        ctx.restore()
+    }
+    ctx.save()
+    ctx.globalAlpha = .7
+    const b = g.labelBox
+    annotText(g.label, b.x + b.w / 2, b.y + b.h / 2, PLAYER_ANGLE_FONT, THEME.soft)
+    ctx.restore()
+    return g.label
+}
+window.playerAngleGeoms = function()
+{
+    return lines.filter(l => l.type == 'player').map(l => playerAngleGeom(l))
 }
 function annotText(t, x, y, size, color, rot = 0, align = 'center')
 {
@@ -26,11 +147,10 @@ function annotText(t, x, y, size, color, rot = 0, align = 'center')
 }
 function drawDimension(l)
 {
-    let x1 = l.posX, y1 = l.posY, x2 = l.posX2, y2 = l.posY2
+    // orient left -> right so the label reads upright and the offset sits above the line
+    const [x1, y1, x2, y2] = orientLeftRight(l)
     if (Math.hypot(x2 - x1, y2 - y1) < 1)
         return null
-    // orient left -> right so the label reads upright and the offset sits above the line
-    if (x2 < x1 || (x2 == x1 && y2 > y1)) [x1, y1, x2, y2] = [x2, y2, x1, y1]
     const a = Math.atan2(y2 - y1, x2 - x1), nx = Math.sin(a) * DIM_OFFSET, ny = -Math.cos(a) * DIM_OFFSET
     const R = sketchRng(sketchSeed([x1, y1, x2, y2, 7]))
     const label = dimensionLabel(l.posX, l.posY, l.posX2, l.posY2)
@@ -195,6 +315,8 @@ function drawAnnotations()
         {
             const d = drawDimension(lines[i])
             if (d) labels.push(d)
+            const g = drawPlayerAngle(lines[i])
+            if (g) labels.push(g)
         }
     lastAnnotationLabels = labels
 }
