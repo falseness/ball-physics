@@ -2,11 +2,15 @@
 //
 // Progressive (TASK-085): input handlers only call request(coords); the game loop calls
 // update(budgetMs) once per frame before draw(). update() validates the newest target with
-// addNewLine() (refused -> the previous job and positions stay, as before) and then runs whole
-// points (cyclesPerTact gamePhysics() steps each) of the current job for up to budgetMs (at least one
-// point per frame). A job owns its ball position/speed and its own portalState copy, so each slice
-// starts where the previous one stopped and leaves the real ball, portalState and lines untouched.
+// addNewLine() (refused -> the previous job and positions stay, as before) and then runs the current
+// job in slices of up to STEP_CHUNK gamePhysics() steps for up to budgetMs (at least one slice per
+// frame; TASK-086: a whole point is cyclesPerTact = 500 steps, 70-120 ms under 6x CPU throttling, too
+// coarse a floor). A point's position is pushed once its cyclesPerTact steps are done. A job owns its
+// ball position/speed and its own portalState copy, so each slice starts where the previous one
+// stopped and leaves the real ball, portalState and lines untouched.
 // The finished pointsCount positions equal calcSync() (the old synchronous algorithm, kept for tests).
+// gamePhysics() steps per update() slice (the per-frame floor); positions match any chunk size
+const STEP_CHUNK = 50
 class Bounce
 {
     constructor()
@@ -21,7 +25,7 @@ class Bounce
         this.spacing = 6
 
         this.target = null      // latest requested end point (logical coords), null = nothing new
-        this.job = null         // {x2, y2, ballX, ballY, speedX, speedY, portal, positions, teleports}
+        this.job = null         // {x2, y2, ballX, ballY, speedX, speedY, portal, step, positions, teleports}
     }
     // Input handlers: remember the newest end point only (no physics here)
     request(coords)
@@ -57,7 +61,7 @@ class Bounce
         if (!job)
             return
         do
-            this.runPoint(job)
+            this.runSlice(job, STEP_CHUNK)
         while (job.positions.length < this.pointsCount && performance.now() - start < budgetMs)
         if (job.positions.length >= this.pointsCount)
         {
@@ -74,14 +78,16 @@ class Bounce
             x2: line.posX2, y2: line.posY2,
             ballX: ball.getX(), ballY: ball.getY(), speedX: ball.speedX, speedY: ball.speedY,
             portal: portalCopy(portalState),
+            step: 0,            // steps done in the current point (0..cyclesPerTact-1)
             positions: [],
             teleports: 0
         }
         this.positions = this.job.positions
         this.drawed = true
     }
-    // One whole point (cyclesPerTact steps) of the job, on the job's own state
-    runPoint(job)
+    // Up to maxSteps steps of the job's current point, on the job's own state; pushes the point's
+    // position when its cyclesPerTact steps are complete
+    runSlice(job, maxSteps)
     {
         const lx2 = line.posX2, ly2 = line.posY2
         const bx = ball.posX, by = ball.posY, vx = ball.speedX, vy = ball.speedY
@@ -92,9 +98,15 @@ class Bounce
         ball.posX = job.ballX; ball.posY = job.ballY
         ball.speedX = job.speedX; ball.speedY = job.speedY
         portalState = job.portal
-        for (let j = 0; j < cyclesPerTact; ++j)
+        const n = Math.min(maxSteps, cyclesPerTact - job.step)
+        for (let j = 0; j < n; ++j)
             gamePhysics()
-        job.positions.push({x: ball.getX(), y: ball.getY()})
+        job.step += n
+        if (job.step >= cyclesPerTact)
+        {
+            job.step = 0
+            job.positions.push({x: ball.getX(), y: ball.getY()})
+        }
         job.ballX = ball.posX; job.ballY = ball.posY
         job.speedX = ball.speedX; job.speedY = ball.speedY
         job.portal = portalState
