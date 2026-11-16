@@ -428,6 +428,18 @@
         {
             levelChoosed(thisLevel)
         }
+        // Automatic failure (ball off the map): reset the level but keep the player's lines and
+        // linesK, so the player can press play again (menu 'restart' etc. still call levelChoosed)
+        function restartKeepLines()
+        {
+            const kept = lines.filter(function(l) { return l.type == 'player' })
+            const k = linesK
+            levelChoosed(thisLevel)
+            for (let i = 0; i < kept.length; ++i)
+                lines.push(kept[i])
+            linesK = k
+            bounce.positions = [] // no stale path preview
+        }
         function gameMechanics()
         {
             if (physics && !editorMode)
@@ -450,7 +462,7 @@
                     }
                     if (!ball.onMap())
                     {
-                        restart() // reset level: no more physics steps this frame
+                        restartKeepLines() // reset level, keep player lines: no more physics steps this frame
                         break
                     }
                 }

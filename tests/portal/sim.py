@@ -464,7 +464,7 @@ S12_JS = """([cfg, l1, l2]) => {
   const stateAfterPreview = {teleports: portalState.teleports.length, prevD: portalState.prevD.slice()}
   handleClick(l2)                               // places the line -> physics = true
   const placed = !line && physics
-  const real = [], onMap = [], realRestart = restart
+  const real = [], onMap = [], realRestart = restartKeepLines   // the off-map reset (TASK-087)
   let restarted = false, tpSteps = null
   const realPhysics = gamePhysics, pl = lines[lines.length - 1]
   let minDist = Infinity
@@ -475,12 +475,12 @@ S12_JS = """([cfg, l1, l2]) => {
     const u = Math.max(0, Math.min(1, ((ball.posX - pl.posX) * dx + (ball.posY - pl.posY) * dy) / (dx * dx + dy * dy)))
     minDist = Math.min(minDist, Math.hypot(ball.posX - pl.posX - u * dx, ball.posY - pl.posY - u * dy))
   }
-  restart = function () { if (!restarted) tpSteps = portalState.teleports.map(t => t.step); restarted = true; realRestart() }   // the real game restarts an off-map ball
+  restartKeepLines = function () { if (!restarted) tpSteps = portalState.teleports.map(t => t.step); restarted = true; realRestart() }   // the real game restarts an off-map ball
   for (let f = 0; f < preview.length; ++f) {    // real per-frame code path (rAF cannot interleave here)
     gameMechanics()
     real.push([ball.posX, ball.posY]); onMap.push(!restarted)
   }
-  restart = realRestart
+  restartKeepLines = realRestart
   gamePhysics = realPhysics
   physics = false
   const teleports = tpSteps || portalState.teleports.map(t => t.step)   // teleports before the first restart
