@@ -1,7 +1,7 @@
 let rectMarginTop = 525
 let rectMarginLeft = 25
 let rectSize = 50 
-// rows of 5 squares, 60 px apart (levels 1-5, 6-10, 11-...)
+// rows of 5 squares, 60 px apart (levels 1-5, 6-10, 11-15, 16-20; the panel fits 4 rows)
 function levelRectXY(i)
 {
     return [menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * (i % 5),
