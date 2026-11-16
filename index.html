@@ -256,6 +256,7 @@
                     if (!addNewLine(coords))
                         return
                     line = false
+                    bounce.cancel() // an unfinished preview job is dropped
                     if (linesK >= curLevel().lineK)
                     {
                         bounce.setDrawEnable(false)
@@ -314,7 +315,8 @@
                     return editorCancelDrag()
                 return editorMouseMove(mouseCoords(event))
             }
-            bounce.calc(mouseCoords(event))
+            if (line)
+                bounce.request(mouseCoords(event)) // computed progressively in gameLoop (bounce.update)
         })
 
         // Touch: a tap (touchend within TAP_SLOP logical px of touchstart) goes through handleClick()
@@ -350,8 +352,8 @@
             {
                 line.posX2 = coords[0]
                 line.posY2 = coords[1]
+                bounce.request(coords)
             }
-            bounce.calc(coords)
         }
         canvas.addEventListener('touchstart', function(event)
         {
@@ -459,6 +461,8 @@
         }
         function gameLoop()
         {
+            bounce.update(6) // progressive path preview: at most ~6 ms of physics per frame
+
             draw()
 
             gameMechanics()

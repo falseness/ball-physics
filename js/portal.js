@@ -34,14 +34,19 @@ function portalReset()
 
 // The path preview (Bounce.calc) runs gamePhysics() too: it must start from the same portal
 // state as the real run and must not leave its own state (stored sides, teleport log) behind.
+function portalCopy(s)
+{
+    return {
+        prevD: s.prevD.slice(), teleports: s.teleports.slice(),
+        rimHits: s.rimHits, rims: s.rims.slice(), steps: s.steps,
+        hostHits: s.hostHits, hostHit: s.hostHit
+    }
+}
+
 function portalSave()
 {
     const saved = portalState
-    portalState = {
-        prevD: saved.prevD.slice(), teleports: saved.teleports.slice(),
-        rimHits: saved.rimHits, rims: saved.rims.slice(), steps: saved.steps,
-        hostHits: saved.hostHits, hostHit: saved.hostHit
-    }
+    portalState = portalCopy(saved)
     return saved
 }
 

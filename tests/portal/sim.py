@@ -459,7 +459,7 @@ S12_JS = """([cfg, l1, l2]) => {
   window.__portalTest.setup(cfg)                // wall portals on a scratch level (restart() -> its ball start)
   handleClick(l1)                               // starts the player line (real click path)
   if (!line) return {error: 'line not started'}
-  bounce.calc(l2)                               // mousemove preview
+  bounce.calcSync(l2)                           // mousemove preview (synchronous twin)
   const preview = bounce.positions.map(p => [p.x, p.y])
   const stateAfterPreview = {teleports: portalState.teleports.length, prevD: portalState.prevD.slice()}
   handleClick(l2)                               // places the line -> physics = true
@@ -493,7 +493,7 @@ S12_HOST_A = 120     # short floor under A: the ball leaving B (moving left, fal
 
 
 def s12(page):
-    """Path preview (bounce.calc) with portals + a player line equals the real run frame by frame."""
+    """Path preview (bounce.calcSync) with portals + a player line equals the real run frame by frame."""
     A, B = portal(600, 400, -90, 'A'), portal(1000, 300, 180, 'B')
     cfg = wcfg({'x': 600, 'y': 150, 'vx': 0, 'vy': 0}, [A, B], L=[S12_HOST_A, 300])
     cfg['lineK'] = 1                              # one player line allowed on the scratch level
