@@ -850,7 +850,7 @@ function editorDraw()
 {
     const W = editor.level
     const portals = editorPortals()
-    drawLines(W.lines, W.lines, portals)
+    drawLines(W.lines, W.lines, portals, [W.ballX, W.ballY])
     const saved = flag
     flag = editor.flagPoly
     drawFlag(W.flagX, W.flagY, THEME.ink, THEME.coral)
