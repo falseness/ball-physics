@@ -176,6 +176,11 @@
         }
         document.addEventListener('click', function(event)
         {
+            if (suppressClick)
+            {
+                suppressClick = false // the click that ends a player-line end drag does nothing
+                return
+            }
             handleClick(mouseCoords(event))
         })
         // One click (mouse) or tap (touch) at logical coords
@@ -314,16 +319,22 @@
             }
         }
         
-        // Editor select tool: drag with the mouse (no effect outside editor mode)
+        // Editor select tool: drag with the mouse. Outside editor mode a press on a player line
+        // end (editable state) drags that end (select.js).
         document.addEventListener('mousedown', function(event)
         {
             if (editorMode)
-                editorMouseDown(mouseCoords(event))
+                return editorMouseDown(mouseCoords(event))
+            suppressClick = false
+            if (event.button == 0)
+                dragStart(mouseCoords(event))
         })
         document.addEventListener('mouseup', function(event)
         {
             if (editorMode)
-                editorMouseUp(mouseCoords(event))
+                return editorMouseUp(mouseCoords(event))
+            if (endDrag && dragDrop(mouseCoords(event)))
+                suppressClick = true
         })
         document.addEventListener('mousemove', function(event)
         {
@@ -335,6 +346,12 @@
                     return editorCancelDrag()
                 return editorMouseMove(mouseCoords(event))
             }
+            if (endDrag)
+            {
+                if ((event.buttons & 1) == 0)
+                    return dragCancel() // the mouseup was lost: no drop
+                return dragMove(mouseCoords(event))
+            }
             if (line)
                 bounce.request(mouseCoords(event)) // computed progressively in gameLoop (bounce.update)
         })
@@ -344,7 +361,7 @@
         // touchmove (as mousemove does) and finishes it at touchend (as the second click does).
         // preventDefault everywhere: no page scroll/zoom and no duplicate synthetic mouse click.
         const TAP_SLOP = 10
-        let touch = null // {id, start, last, moved, startedLine}
+        let touch = null // {id, start, last, moved, startedLine, drag}
         // Would a click at coords start a new line? (same conditions as handleClick)
         function lineStartAccepted(coords)
         {
@@ -370,6 +387,8 @@
         {
             if (editorMode)
                 return editorMouseMove(coords)
+            if (endDrag)
+                return dragMove(coords)
             if (line)
             {
                 line.posX2 = coords[0]
@@ -384,10 +403,12 @@
                 return // ignore extra fingers
             let t = event.changedTouches[0]
             let coords = mouseCoords(t)
-            touch = {id: t.identifier, start: coords, last: coords, moved: false, startedLine: false}
+            touch = {id: t.identifier, start: coords, last: coords, moved: false, startedLine: false, drag: false}
             if (editorMode)
                 editorMouseDown(coords)
-            if (lineStartAccepted(coords))
+            else if (dragStart(coords))
+                touch.drag = true // on a player line end: drag it instead of starting a line
+            if (!touch.drag && lineStartAccepted(coords))
             {
                 handleClick(coords)
                 touch.startedLine = !!line
@@ -421,7 +442,17 @@
             if (editorMode)
                 editorMouseUp(coords)
             let tap = Math.hypot(coords[0] - s.start[0], coords[1] - s.start[1]) <= TAP_SLOP && !s.moved
-            if (tap)
+            if (s.drag)
+            {
+                if (tap)
+                {
+                    dragCancel(true) // a tap on an end: select / deselect / bin as before
+                    handleClick(s.start)
+                }
+                else
+                    dragDrop(coords)
+            }
+            else if (tap)
             {
                 // a tap that started a line already acted as the first click
                 if (!s.startedLine)
@@ -435,10 +466,12 @@
         }, {passive: false})
         canvas.addEventListener('touchcancel', function(event)
         {
-            event.preventDefault()
+            if (event.cancelable)
+                event.preventDefault()
             touch = null
             if (editorMode)
                 editorCancelDrag()
+            dragCancel() // an end drag is reverted
         }, {passive: false})
         function gamePhysics()
         {

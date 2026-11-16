@@ -66,7 +66,7 @@ function binCenter(l)
 }
 function inBin(coords)
 {
-    if (playerSel === null || !lines[playerSel])
+    if (endDrag || playerSel === null || !lines[playerSel])
         return false
     const c = binCenter(lines[playerSel])
     return Math.hypot(coords[0] - c[0], coords[1] - c[1]) <= BIN_R
@@ -118,6 +118,8 @@ function drawSelection()
     }
     ctx.restore()
 
+    if (endDrag)
+        return // the bin is hidden while an end is dragged
     // bin button
     const c = binCenter(l), cx = c[0], cy = c[1]
     ctx.save()
@@ -140,5 +142,140 @@ function drawSelection()
     ctx.fillStyle = THEME.coral
     ctx.font = '22px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText('delete', cx, cy - 36)
+    ctx.restore()
+}
+
+// ---- Dragging an end of a player line (editable state only) ----
+// mousedown / touchstart within END_HIT px of an end picks it up and selects its line; the end
+// follows the pointer (clamped to the field); the drop is validated like addNewLine (snap to
+// line ends, no portal contact, not through the ball, not shorter than 1 px). A rejected drop
+// puts the end back where it was picked up and shows a short handwritten hint near it.
+const END_HIT = 12           // pick-up distance to a player line end (logical px)
+const DRAG_SLOP = 3          // movement beyond this makes a press a drag (a click otherwise)
+const DRAG_HINT_MS = 1500    // how long the rejection hint stays
+let endDrag = null           // {li, end: 0|1, orig: [x, y], start: [x, y], prevSel, moved}
+let dragHint = null          // {text, x, y, until}
+let suppressClick = false    // the click that follows a mouse drag is ignored
+
+// [line index, end 0|1] of the nearest player line end within END_HIT of (x, y), or null
+function playerEndAt(x, y)
+{
+    let best = null, bestD = END_HIT
+    for (let i = 0; i < lines.length; ++i)
+    {
+        const l = lines[i]
+        if (l.type != 'player')
+            continue
+        const d1 = Math.hypot(x - l.posX, y - l.posY), d2 = Math.hypot(x - l.posX2, y - l.posY2)
+        if (d1 <= bestD) { best = [i, 0]; bestD = d1 }
+        if (d2 <= bestD) { best = [i, 1]; bestD = d2 }
+    }
+    return best
+}
+function endSet(l, end, x, y)
+{
+    if (end == 0) { l.posX = x; l.posY = y }
+    else { l.posX2 = x; l.posY2 = y }
+}
+// press at coords: start a drag if it is on a player line end in the editable state
+function dragStart(coords)
+{
+    if (!selectionEditable() || inBin(coords) || inMenuIcon(coords) || inPlayIcon(coords))
+        return false
+    const hit = playerEndAt(coords[0], coords[1])
+    if (!hit)
+        return false
+    const l = lines[hit[0]]
+    endDrag = {li: hit[0], end: hit[1], orig: hit[1] == 0 ? [l.posX, l.posY] : [l.posX2, l.posY2],
+               start: coords.slice(), prevSel: playerSel, moved: false}
+    playerSel = hit[0]
+    dragHint = null
+    return true
+}
+function dragMove(coords)
+{
+    if (!endDrag)
+        return
+    const d = endDrag
+    if (Math.hypot(coords[0] - d.start[0], coords[1] - d.start[1]) > DRAG_SLOP)
+        d.moved = true
+    if (!d.moved)
+        return
+    const x = Math.max(0, Math.min(GAME_W, d.orig[0] + coords[0] - d.start[0]))
+    const y = Math.max(0, Math.min(GAME_H, d.orig[1] + coords[1] - d.start[1]))
+    endSet(lines[d.li], d.end, x, y)
+}
+// put the end back; a press that never moved (or asTap: a touch tap) restores the selection it
+// found, so the click / tap that follows behaves as without the drag
+function dragCancel(asTap = false)
+{
+    if (!endDrag)
+        return
+    const d = endDrag
+    endDrag = null
+    endSet(lines[d.li], d.end, d.orig[0], d.orig[1])
+    if (!d.moved || asTap)
+        playerSel = d.prevSel
+}
+// release at coords; returns true if the press was a drag (the follow-up click must be ignored)
+function dragDrop(coords)
+{
+    if (!endDrag)
+        return false
+    dragMove(coords)
+    const d = endDrag
+    if (!d.moved)
+    {
+        dragCancel()
+        return false
+    }
+    endDrag = null
+    const l = lines[d.li]
+    const p = d.end == 0 ? [l.posX, l.posY] : [l.posX2, l.posY2]
+    const others = lines.filter(function(o, i) { return i != d.li })
+    const c = dotСorrection(p[0], p[1], dotRadius, others)
+    const q = d.end == 0 ? [l.posX2, l.posY2] : [l.posX, l.posY] // the fixed end
+    let err = null
+    if (Math.hypot(c[0] - q[0], c[1] - q[1]) < 1)
+        err = 'too short'
+    else if (portalBlocksSegment(q[0], q[1], c[0], c[1]))
+        err = 'too close to a portal'
+    else if (pointSegDist(ball.posX, ball.posY, q[0], q[1], c[0], c[1]) <= ball.radius)
+        err = 'too close to the ball'
+    if (err)
+    {
+        endSet(l, d.end, d.orig[0], d.orig[1])
+        dragHint = {text: err, x: d.orig[0], y: d.orig[1], until: performance.now() + DRAG_HINT_MS}
+    }
+    else
+    {
+        endSet(l, d.end, c[0], c[1])
+        bounce.cancel() // the old path preview no longer matches the lines
+        bounce.positions = []
+    }
+    playerSel = d.li
+    return true
+}
+function drawDragHint()
+{
+    if (!dragHint)
+        return
+    if (performance.now() > dragHint.until || !selectionEditable())
+    {
+        dragHint = null
+        return
+    }
+    const h = dragHint
+    ctx.save()
+    ctx.font = '700 26px ' + THEME.fontStack
+    ctx.textBaseline = 'alphabetic'
+    const w = ctx.measureText(h.text).width
+    // right of the end, flipped left / below to stay on the canvas
+    let x = h.x + 18, y = h.y - 18
+    if (x + w > GAME_W - 8) x = h.x - 18 - w
+    if (y - 26 < 8) y = h.y + 40
+    ctx.textAlign = 'left'
+    ctx.fillStyle = THEME.coral; ctx.shadowColor = 'rgba(255,106,85,.9)'; ctx.shadowBlur = 10
+    ctx.fillText(h.text, x, y)
     ctx.restore()
 }
