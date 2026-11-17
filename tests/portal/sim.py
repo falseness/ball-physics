@@ -20,6 +20,8 @@ W7 (TASK-074) replays artifacts/portal_physics.png (edge capture sweep) and writ
 artifacts/<task>/edge.json and edge.png.
 W1-W6 (--scenarios W1,...) run one-sided wall portals ({line, u, side} on the scenario's own
 lines, installed by __portalTest.setup({wall: true, ...}) as a scratch level).
+W8-W11 (TASK-104): the standard W pair plus one extra plain line across / in front of an opening
+(the line stays solid; see the comment above W_X_JS).
 --out: a bare file name is written to artifacts/<task>/, a path with a directory as given.
 """
 import hashlib
@@ -948,9 +950,230 @@ def w7(page):
     return out
 
 
+# ---- W8-W11 (TASK-104): a plain level line across / in front of a portal opening ----
+# Standard pair (W_LINES / W_PORTALS: A in the floor y = 600 centred at x = 600 facing up, s = x - 600;
+# B in the wall x = 1040 centred at y = 250 facing +x, s = y - 250) plus one extra non-host line (index 2).
+# The line stays solid everywhere: the ball bounces off it and can reach an opening only through the part
+# the line leaves free; a ball leaving a portal into the line bounces off it.
+# Per step (W_X_JS): teleports, bounces off the extra line (centre within r + 0.5 of it and the velocity's
+# component along its normal changed sign, no teleport in that step), crossings of the extra line by the
+# centre path on non-teleport steps, NaN, the max number of teleports in any 2000-step window and, for every
+# A -> B teleport until the next teleport ('exit window'): steps with the centre behind B (d_B <= 0) or,
+# while it projects onto the extra segment, on the other side of the extra line than the exit opening point
+# O (= B - s_exit t_B), plus whether the ball bounced off the extra line in that window.
+# 'teleportPathsBlocked': teleports whose entry path (centre -> closest opening point) or exit path
+# (O -> exit centre) crosses the extra line; 'exitIntoLine': teleports leaving the centre within r of it
+# (from O's side: allowed, the next collision bounces the ball off the line); 'blockedExits' (js/portal.js,
+# TASK-104): teleports refused because the line lies between O and the exit centre (the ball bounces off the
+# entry portal's plane instead; 'blockedList' the first records).
+W_X_JS = r"""([cfg, maxSteps]) => {
+  const T = window.__portalTest; T.setup(cfg)
+  const P = currentPortals(), byName = {}; for (const q of P) byName[q.name] = q
+  const X = cfg.lines[cfg.extra]
+  const side = (x, y) => (X[2] - X[0]) * (y - X[1]) - (X[3] - X[1]) * (x - X[0])
+  const segX = (x0, y0, x1, y1) => { const a0 = side(x0, y0), a1 = side(x1, y1)
+    if (!((a0 > 0 && a1 <= 0) || (a0 < 0 && a1 >= 0))) return false
+    const b0 = (x1 - x0) * (X[1] - y0) - (y1 - y0) * (X[0] - x0), b1 = (x1 - x0) * (X[3] - y0) - (y1 - y0) * (X[2] - x0)
+    return b0 * b1 <= 0 }
+  const L = Math.hypot(X[2] - X[0], X[3] - X[1]), lnx = -(X[3] - X[1]) / L, lny = (X[2] - X[0]) / L
+  const dist = (x, y) => pointSegDist(x, y, X[0], X[1], X[2], X[3])
+  const opening = (Q, x, y) => { const f = portalFrame(Q), s = Math.max(-Q.h, Math.min(Q.h, portalLocalS(Q, x, y)))
+    return [Q.x + s * f.tx, Q.y + s * f.ty] }
+  let nan = 0, bounces = 0, crossings = 0, still = 0, end = 'steps', step = 0, blocked = 0, exitIntoLine = 0
+  const proj = (x, y) => ((x - X[0]) * (X[2] - X[0]) + (y - X[1]) * (X[3] - X[1])) / (L * L)
+  const tps = [], wins = [], crossLog = []
+  let win = null
+  for (; step < maxSteps; ++step) {
+    const n0 = portalState.teleports.length, x0 = ball.posX, y0 = ball.posY
+    const vn0 = ball.speedX * lnx + ball.speedY * lny
+    // gamePhysics() (index.html) split up so a bounce is seen even when the same step teleports
+    ball.physics()
+    const vn1 = ball.speedX * lnx + ball.speedY * lny
+    if (dist(x0, y0) < ball.radius + 0.5 && vn0 * vn1 < 0) { ++bounces; if (win) win.bounced = true }
+    ball.move()
+    portalStep()
+    const n1 = portalState.teleports.length, x1 = ball.posX, y1 = ball.posY
+    if (!(Number.isFinite(x1) && Number.isFinite(y1) && Number.isFinite(ball.speedX) && Number.isFinite(ball.speedY))) { ++nan; end = 'nan'; break }
+    if (n1 > n0) {
+      const t = portalState.teleports[n1 - 1], A = byName[t.from], B = byName[t.to]
+      const ei = opening(A, t.before[0], t.before[1]), O = opening(B, t.after[0], t.after[1])
+      const pb = segX(t.before[0], t.before[1], ei[0], ei[1]) || segX(O[0], O[1], t.after[0], t.after[1])
+      if (pb) ++blocked
+      tps.push({step: t.step, from: t.from, to: t.to, kind: t.kind, s: t.s, d: t.d,
+                exitD: portalLocalD(B, t.after[0], t.after[1]), exitDistToExtra: dist(t.after[0], t.after[1]), pathBlocked: pb})
+      if (dist(t.after[0], t.after[1]) < ball.radius) ++exitIntoLine
+      if (win) { wins.push(win); win = null }
+      if (t.to === 'B') win = {step: t.step, O: O, oSide: Math.sign(side(O[0], O[1])), behindSteps: 0, wrongSideSteps: 0, bounced: false, steps: 0}
+    } else {
+      if (segX(x0, y0, x1, y1)) { ++crossings; if (crossLog.length < 10) crossLog.push([step + 1, x0, y0, x1, y1]) }
+    }
+    if (win) {
+      ++win.steps
+      if (portalLocalD(byName.B, x1, y1) <= 0) ++win.behindSteps
+      const u = proj(x1, y1)
+      if (u >= 0 && u <= 1 && Math.sign(side(x1, y1)) !== win.oSide) ++win.wrongSideSteps
+    }
+    if (!ball.onMap()) { end = 'left'; break }
+    if (Math.hypot(ball.speedX, ball.speedY) < 1e-4) { if (++still >= 20000) { end = 'settled'; break } } else still = 0
+  }
+  if (win) wins.push(win)
+  let maxIn2000 = 0
+  for (let i = 0, j = 0; i < tps.length; ++i) { while (tps[i].step - tps[j].step >= 2000) ++j; maxIn2000 = Math.max(maxIn2000, i - j + 1) }
+  return {steps: step, end, nan, teleports: tps.length, teleportList: tps.slice(0, 12), bounces, crossings, crossLog,
+          maxTeleportsIn2000: maxIn2000, teleportPathsBlocked: blocked, exitIntoLine, hostHits: portalState.hostHits, rimHits: portalState.rimHits,
+          blockedExits: portalState.blockedExits, blockedList: portalState.blocked.slice(0, 4).map(b => ({step: b.step, from: b.from, to: b.to,
+            kind: b.kind, s: b.s, d: b.d, before: b.before, after: b.after})),
+          exitWindows: wins.map(w => ({step: w.step, steps: w.steps, behindSteps: w.behindSteps, wrongSideSteps: w.wrongSideSteps, bounced: w.bounced})),
+          final: [ball.posX, ball.posY, ball.speedX, ball.speedY]} }"""
+
+
+def wx_run(page, ball, extra, steps):
+    cfg = {'wall': True, 'lines': W_LINES + [extra], 'extra': len(W_LINES), 'portals': W_PORTALS, 'ball': ball}
+    return page.evaluate(W_X_JS, [cfg, steps])
+
+
+def wx_common(r):
+    """Invariants for every W8-W11 run: no NaN, the centre never crosses the extra line outside a teleport
+    step, no teleport path through the extra line, no ping-pong (<= 4 teleports in any 2000 steps)."""
+    return r['nan'] == 0 and r['crossings'] == 0 and r['teleportPathsBlocked'] == 0 and r['maxTeleportsIn2000'] <= 4
+
+
+def wx_summary(r):
+    keep = ('steps', 'end', 'nan', 'teleports', 'bounces', 'crossings', 'maxTeleportsIn2000', 'teleportPathsBlocked',
+            'exitIntoLine', 'blockedExits', 'blockedList', 'hostHits', 'rimHits', 'final')
+    out = {k: r[k] for k in keep}
+    out['teleportList'] = r['teleportList'][:6]
+    out['exitWindows'] = r['exitWindows'][:6]
+    if r['crossLog']:
+        out['crossLog'] = r['crossLog']
+    return out
+
+
+def w8(page):
+    """Extra line y = 595 (5 px in front of A), x 530..670: covers A's whole opening plus the capture zone
+    (|s| <= h + r = 55). Balls dropped / thrown at A bounce off it: 0 teleports."""
+    extra = [530, 595, 670, 595]
+    out = {'extra': extra}
+    for key, b in (('drop', {'x': 600, 'y': 450, 'vx': 0, 'vy': 0}),
+                   ('thrown', {'x': 560, 'y': 500, 'vx': 0.02, 'vy': 0.05}),
+                   ('edgeDrop', {'x': 548, 'y': 450, 'vx': 0, 'vy': 0})):
+        out[key] = wx_summary(wx_run(page, b, extra, 40000))
+    cases = [out[k] for k in ('drop', 'thrown', 'edgeDrop')]
+    out['teleports'] = [c['teleports'] for c in cases]
+    out['bounces'] = [c['bounces'] for c in cases]
+    out['ok_no_teleport'] = out['teleports'] == [0, 0, 0]
+    out['ok_bounced_off_extra'] = all(c['bounces'] >= 1 for c in cases)
+    out['ok_stayed_above_extra'] = all(c['final'][1] < 595 for c in cases)
+    out['ok_invariants'] = all(c['nan'] == 0 and c['crossings'] == 0 and c['maxTeleportsIn2000'] <= 4 for c in cases)
+    return out
+
+
+def w9(page):
+    """Extra line y = 595 over the right half of A's opening only (x 600..670, s 0..70). A ball dropped at
+    s = -23 (free half) teleports A -> B; a ball dropped at s = +23 (covered half) bounces off it, 0 teleports."""
+    extra = [600, 595, 670, 595]
+    out = {'extra': extra}
+    out['free'] = wx_summary(wx_run(page, {'x': 577, 'y': 450, 'vx': 0, 'vy': 0}, extra, 40000))
+    out['covered'] = wx_summary(wx_run(page, {'x': 623, 'y': 450, 'vx': 0, 'vy': 0}, extra, 40000))
+    f, c = out['free'], out['covered']
+    out['teleports'] = [f['teleports'], c['teleports']]
+    out['bounces'] = [f['bounces'], c['bounces']]
+    out['ok_free_half_teleports'] = f['teleports'] == 1 and f['teleportList'][0]['from'] == 'A' and f['end'] == 'left'
+    out['ok_covered_half_bounces'] = c['teleports'] == 0 and c['bounces'] >= 1 and c['final'][1] < 595
+    out['ok_invariants'] = all(x['nan'] == 0 and x['crossings'] == 0 and x['teleportPathsBlocked'] == 0
+                               and x['maxTeleportsIn2000'] <= 4 for x in (f, c))
+    return out
+
+
+def wx_exit_case(page, b, extra, steps):
+    r = wx_run(page, b, extra, steps)
+    s = wx_summary(r)
+    s['allExitWindows'] = r['exitWindows']
+    return s
+
+
+def wx_windows(out, cases):
+    wins = [w for c in cases for w in c.pop('allExitWindows')]
+    out['exitWindows'] = len(wins)
+    out['exitWindowsWithoutBounce'] = sum(1 for w in wins if not w['bounced'])
+    out['exitWindowStepsBehindB'] = sum(w['behindSteps'] for w in wins)
+    out['exitWindowStepsWrongSide'] = sum(w['wrongSideSteps'] for w in wins)
+    return wins
+
+
+def blocked_away_from_A(c):
+    """Every blocked exit was a touch from A to B and left the ball moving away from A (v . n_A > 0)."""
+    return c['blockedExits'] >= 1 and all(b['from'] == 'A' and b['to'] == 'B' and b['after'][3] < 0 for b in c['blockedList'])
+
+
+def w10(page):
+    """Extra line across portal B's opening (exit) in front of it, y 150..350 (s_B -100..100).
+    'gap6' (x = 1046, 6 px, the ticket's case): there is no room for the ball (r = 10) between B and the line,
+    so every A -> B exit is blocked: no teleport, the ball bounces off A's opening (as it would after
+    'teleport, bounce off the line, teleport back') and never crosses the line.
+    'gap25' (x = 1065, room for the ball): the ball is teleported A -> B, bounces off the extra line and stays
+    on B's front side without crossing it. Both: no NaN, <= 4 teleports in any 2000 steps."""
+    out = {}
+    g6, g25 = [1046, 150, 1046, 350], [1065, 150, 1065, 350]
+    out['extra'] = {'gap6': g6, 'gap25': g25}
+    for key, b in (('drop', {'x': 600, 'y': 450, 'vx': 0, 'vy': 0}),
+                   ('thrown', {'x': 560, 'y': 500, 'vx': 0.02, 'vy': 0.05}),
+                   ('nearRim', {'x': 557, 'y': 450, 'vx': 0, 'vy': 0})):
+        out['gap6_' + key] = wx_exit_case(page, b, g6, 60000)
+        out['gap25_' + key] = wx_exit_case(page, b, g25, 60000)
+    c6 = [out['gap6_' + k] for k in ('drop', 'thrown', 'nearRim')]
+    c25 = [out['gap25_' + k] for k in ('drop', 'thrown', 'nearRim')]
+    for c in c6:
+        c.pop('allExitWindows')
+    wx_windows(out, c25)
+    out['teleports'] = [c['teleports'] for c in c6 + c25]
+    out['blockedExits'] = [c['blockedExits'] for c in c6 + c25]
+    out['bounces'] = [c['bounces'] for c in c6 + c25]
+    out['ok_gap6_exit_blocked_no_teleport'] = all(c['teleports'] == 0 and blocked_away_from_A(c) for c in c6)
+    out['ok_gap6_ball_stays_above_A'] = all(c['final'][1] < 600 and c['final'][0] < 1040 for c in c6)
+    out['ok_gap25_teleported_to_B'] = all(c['teleports'] >= 1 and c['teleportList'][0]['from'] == 'A' and
+                                          c['teleportList'][0]['to'] == 'B' for c in c25)
+    out['ok_gap25_bounced_off_extra_after_exit'] = out['exitWindows'] >= 3 and out['exitWindowsWithoutBounce'] == 0
+    out['ok_gap25_stays_on_B_front_side'] = out['exitWindowStepsBehindB'] == 0 and out['exitWindowStepsWrongSide'] == 0
+    out['ok_invariants'] = all(wx_common(c) for c in c6 + c25)
+    return out
+
+
+def w11(page):
+    """Extra line at 45 deg through B's front zone touching B's lower rim: (1040, 295) up-right to (1110, 225).
+    Drops at A's s = 0 / -35 / -40 / -44 would leave B at y = 250 / 285 / 290 / 294 (s_B = -s_A), exit centre
+    x = 1050. s = 0: 24.7 px from the line, the ball is teleported, runs into the line and bounces off it.
+    s = -35: the exit centre is just on the opening's side of the line (overlapping it, as in S11): teleported,
+    bounced off the line. Both stay on B's front side without crossing it. s = -40 / -44: the exit centre
+    would be on the far side of the line: blocked, no teleport, the ball bounces off A and never crosses
+    the line. All: no NaN, <= 4 teleports in any 2000 steps."""
+    extra = [1040, 295, 1110, 225]
+    out = {'extra': extra}
+    keys = []
+    for sA in (0, -35, -40, -44):
+        k = 's%d' % sA
+        keys.append(k)
+        out[k] = wx_exit_case(page, {'x': 600 + sA, 'y': 450, 'vx': 0, 'vy': 0}, extra, 60000)
+    tp, bl = keys[:2], keys[2:]
+    wx_windows(out, [out[k] for k in tp])
+    for k in bl:
+        out[k].pop('allExitWindows')
+    cases = [out[k] for k in keys]
+    out['teleports'] = [c['teleports'] for c in cases]
+    out['blockedExits'] = [c['blockedExits'] for c in cases]
+    out['bounces'] = [c['bounces'] for c in cases]
+    out['ok_teleported_to_B'] = all(out[k]['teleports'] >= 1 and out[k]['teleportList'][0]['to'] == 'B' for k in tp)
+    out['ok_bounced_off_extra_after_exit'] = out['exitWindows'] >= 2 and out['exitWindowsWithoutBounce'] == 0
+    out['ok_stays_on_B_front_side'] = out['exitWindowStepsBehindB'] == 0 and out['exitWindowStepsWrongSide'] == 0
+    out['ok_far_side_exits_blocked'] = all(out[k]['teleports'] == 0 and blocked_away_from_A(out[k]) for k in bl)
+    out['ok_invariants'] = all(wx_common(c) for c in cases)
+    return out
+
+
 SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S6': s6, 'S7': s7, 'S8': s8,
              'S9': s9, 'S10': s10, 'S11': s11, 'S12': s12, 'S13': s13, 'S14': s14,
-             'W1': w1, 'W2': w2, 'W3': w3, 'W4': w4, 'W5': w5, 'W6': w6, 'W7': w7}
+             'W1': w1, 'W2': w2, 'W3': w3, 'W4': w4, 'W5': w5, 'W6': w6, 'W7': w7,
+             'W8': w8, 'W9': w9, 'W10': w10, 'W11': w11}
 
 TRAJ_JS = """([frames, nLevels]) => { const out = []
   for (let i = 0; i < Math.min(levels.length, nLevels || levels.length); ++i) {
@@ -1022,7 +1245,7 @@ def main():
                       'teleports', 'speedRelErr', 'posErr', 'velRelErr', 'maxOffsetErr', 'energyExcess',
                       'minMoveIn10Frames', 'flips', 'displacement', 'maxErr', 'comparedFrames', 'mismatchingFrames',
                       'exitVnOverSpeed', 'minDBehindWall', 'behindWithoutTeleport', 'maxDevFromPlainLine',
-                      'hitsWithin50MovingAway', 'teleportsChecked')})
+                      'hitsWithin50MovingAway', 'teleportsChecked', 'bounces', 'blockedExits', 'exitWindowStepsWrongSide')})
         browser.close()
     results['errors'] = errors
     results['pass'] = ok and not errors

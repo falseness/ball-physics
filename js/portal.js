@@ -19,17 +19,22 @@
 // whole line from behind (portalHostCollision). A ball being captured (front, v·n < 0) ignores a
 // piece / line end whose contact point is within h + ball.radius of the portal centre along t
 // (portalCaptureZone); farther contacts bounce as a normal line.
+// Other lines may cross an opening (TASK-104) and stay solid: no capture through such a line
+// (portalTouches), and a teleport whose exit centre would be on the far side of a line other than
+// the exit's host line is refused, the ball bounces off the entry plane instead (portalTeleport).
 
+// blockedExits / blocked (TASK-104): teleports refused because a line blocks the exit spot (count /
+// the first RIM_LOG_MAX records, teleport records with blocked: true and the bounced state in after)
 // rims: the first RIM_LOG_MAX rim bounces {step, rim, n, before:[vx,vy], after:[vx,vy]}
 // hostHits: host-line collisions so far; hostHit: the latest {step, line, v: [vx, vy] before}
 const RIM_LOG_MAX = 64
 const PORTAL_EXIT_MIN_D = 1e-6   // touch teleport: minimum exit distance in front of the exit plane
 const PORTAL_DEFAULT_H = 45      // half-width h of a newly placed portal (physics/drawing always read P.h)
-let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }
+let portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null, blockedExits: 0, blocked: [] }
 
 function portalReset()
 {
-    portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null }
+    portalState = { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null, blockedExits: 0, blocked: [] }
 }
 
 // The path preview (Bounce.calc) runs gamePhysics() too: it must start from the same portal
@@ -39,7 +44,8 @@ function portalCopy(s)
     return {
         prevD: s.prevD.slice(), teleports: s.teleports.slice(),
         rimHits: s.rimHits, rims: s.rims.slice(), steps: s.steps,
-        hostHits: s.hostHits, hostHit: s.hostHit
+        hostHits: s.hostHits, hostHit: s.hostHit,
+        blockedExits: s.blockedExits || 0, blocked: (s.blocked || []).slice()
     }
 }
 
@@ -296,10 +302,27 @@ function portalCaptureZone(b, list, qx, qy)
         const f = portalFrame(P)
         if (portalLocalD(P, b.posX, b.posY) <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
             continue
-        if (Math.abs(portalLocalS(P, qx, qy)) <= P.h + b.radius)
+        if (Math.abs(portalLocalS(P, qx, qy)) <= P.h + b.radius && !portalTouchExitBlocked(P, b))
             return true
     }
     return false
+}
+
+// TASK-104: true when a touch teleport of ball b through portal P right now would be refused because a
+// line lies between the partner's exit opening point and the exit centre (as in portalTeleport). Such
+// a spot of the opening is blocked, so it gets no capture zone: the host line's pieces and ends next to
+// it stay solid (a ball let deep into a line end there and then refused would be thrown back and forth
+// by that end every step). Only called for contacts (portalCaptureZone).
+function portalTouchExitBlocked(P, b)
+{
+    const list = currentPortals()
+    const i = list ? list.indexOf(P) : -1, Q = i >= 0 ? list[i ^ 1] : null
+    if (!Q)
+        return false
+    const fq = portalFrame(Q), se = Math.max(-Q.h, Math.min(Q.h, portalLocalS(P, b.posX, b.posY)))
+    const de = Math.max(portalLocalD(P, b.posX, b.posY), PORTAL_EXIT_MIN_D)
+    const ox = Q.x - se * fq.tx, oy = Q.y - se * fq.ty
+    return portalPathBlocked(ox, oy, ox + de * fq.nx, oy + de * fq.ny, Q) < Infinity
 }
 
 function segClosestPoint(px, py, x1, y1, x2, y2)
@@ -321,7 +344,40 @@ function portalTouches(P, b)
     const m = b.radius + 1
     if (b.posX < Math.min(x1, x2) - m || b.posX > Math.max(x1, x2) + m || b.posY < Math.min(y1, y2) - m || b.posY > Math.max(y1, y2) + m)
         return false
-    return pointSegDist(b.posX, b.posY, x1, y1, x2, y2) <= b.radius
+    if (pointSegDist(b.posX, b.posY, x1, y1, x2, y2) > b.radius)
+        return false
+    // TASK-104: a level / player line between the centre and the opening point it touches blocks the
+    // capture (the line stays solid across an opening; rare: only a ball overlapping such a line)
+    const s = Math.max(-P.h, Math.min(P.h, portalLocalS(P, b.posX, b.posY)))
+    return !(portalPathBlocked(b.posX, b.posY, P.x + s * f.tx, P.y + s * f.ty, P) < Infinity)
+}
+
+// TASK-104: smallest fraction k in [0, 1] at which the path (x0, y0) -> (x1, y1) meets a line of
+// the play field other than portal P's host line (Infinity: none). Used on a touch capture's entry
+// path (centre -> touched opening point) and a teleport's exit path (exit opening point -> exit
+// centre) only, so a line crossing an opening stays solid there too.
+// Lines outside the path's bounding box are skipped.
+function portalPathBlocked(x0, y0, x1, y1, P)
+{
+    const host = typeof P.line == 'number' ? curLevel().lines[P.line] : null
+    const ex = x1 - x0, ey = y1 - y0
+    const bx0 = Math.min(x0, x1), bx1 = Math.max(x0, x1), by0 = Math.min(y0, y1), by1 = Math.max(y0, y1)
+    let best = Infinity
+    for (let i = 0; i < lines.length; ++i)
+    {
+        const l = lines[i]
+        if (l === host || Math.max(l.posX, l.posX2) < bx0 || Math.min(l.posX, l.posX2) > bx1 ||
+            Math.max(l.posY, l.posY2) < by0 || Math.min(l.posY, l.posY2) > by1)
+            continue
+        const fx = l.posX2 - l.posX, fy = l.posY2 - l.posY, den = ex * fy - ey * fx
+        if (den === 0)
+            continue
+        const qx = l.posX - x0, qy = l.posY - y0
+        const k = (qx * fy - qy * fx) / den, m = (qx * ey - qy * ex) / den
+        if (k >= 0 && k <= 1 && m >= 0 && m <= 1 && k < best)
+            best = k
+    }
+    return best
 }
 
 function currentPortals()
@@ -376,13 +432,44 @@ function portalTeleport(A, B, s, d, kind)
     const se = kind === 'touch' ? Math.max(-B.h, Math.min(B.h, s)) : s
     // touch: never exactly on the exit plane (a rounded d = 0 would count as 'behind' the exit's host line)
     const de = kind === 'touch' ? -Math.max(d, PORTAL_EXIT_MIN_D) : d
-    ball.posX = B.x - se * fb.tx - de * fb.nx
-    ball.posY = B.y - se * fb.ty - de * fb.ny
+    const ox = B.x - se * fb.tx, oy = B.y - se * fb.ty, ex = ox - de * fb.nx, ey = oy - de * fb.ny
+    // TASK-104: lines may cross an opening and stay solid there. When a line other than B's host line
+    // lies between the exit opening point O and the exit centre (the ball would come out on the far side
+    // of it), the ball does not get through at that spot: no teleport, the opening is a solid wall there
+    // and the ball bounces off A's plane (velocity's normal component reversed; a 'cross' ball, already
+    // up to one step behind A's plane, is mirrored back in front of it). For a line parallel to B's
+    // opening this is 'teleport, bounce off the line, teleport back' in one step. (Clipping the exit to
+    // the line instead left the centre on the line, where the reflect-on-overlap collision kept the ball
+    // stuck.) An exit that only overlaps a line from O's side teleports as before (S11): the next
+    // collision() bounces the ball off that line.
+    if (portalPathBlocked(ox, oy, ex, ey, B) < Infinity)
+    {
+        const fa = portalFrame(A), vn = vx * fa.nx + vy * fa.ny
+        record.blocked = true
+        if (kind === 'cross')
+        {
+            ball.posX -= 2 * d * fa.nx
+            ball.posY -= 2 * d * fa.ny
+        }
+        if (vn < 0)
+        {
+            ball.speedX = vx - 2 * vn * fa.nx
+            ball.speedY = vy - 2 * vn * fa.ny
+        }
+        record.after = [ball.posX, ball.posY, ball.speedX, ball.speedY]
+        ++portalState.blockedExits
+        if (portalState.blocked.length < RIM_LOG_MAX)
+            portalState.blocked.push(record)
+        return false
+    }
+    ball.posX = ex
+    ball.posY = ey
     ball.speedX = vx * c - vy * sn
     ball.speedY = vx * sn + vy * c
     record.after = [ball.posX, ball.posY, ball.speedX, ball.speedY]
     record.speedAfter = Math.hypot(ball.speedX, ball.speedY)
     portalState.teleports.push(record)
+    return true
 }
 
 function portalRims(P)
@@ -460,8 +547,8 @@ function portalStep()
         if (kind)
         {
             portalTeleport(P[i], P[i ^ 1], Ls, Ld, kind)
-            // at most one teleport per step; every stored side (the exit's included)
-            // becomes the ball's new side, so the exit cannot re-trigger next step
+            // at most one teleport (or blocked-exit bounce, TASK-104) per step; every stored side
+            // (the exit's included) becomes the ball's new side, so the exit cannot re-trigger next step
             for (let k = 0; k < P.length; ++k)
                 portalState.prevD[k] = portalLocalD(P[k], ball.posX, ball.posY)
             break
