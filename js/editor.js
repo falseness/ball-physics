@@ -29,7 +29,6 @@ const EDITOR_PORTAL_H = PORTAL_DEFAULT_H   // h of a newly placed portal; 'size 
 const EDITOR_PORTAL_H_STEP = 15           // 'size −' / 'size +' step of h (both portals of the pair)
 const EDITOR_PORTAL_H_MIN = 30
 const EDITOR_PORTAL_H_MAX = 135
-const EDITOR_PORTAL_CLEAR = 2            // level lines must stay > ball.radius + 2 px from an opening
 const EDITOR_ERROR_MS = 2000             // how long the handwritten error text stays
 const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseline of the error text
 
@@ -437,8 +436,8 @@ function editorMouseUp(coords)
     if (d.kind == 'portal')
     {
         const P = editor.level.portals[d.i]
-        const err = !P ? null : editorPortalBlocked(P) ? 'portal too close to a line' :
-                    editorPortalsOverlap(editor.level.portals) ? 'portals overlap' : null
+        // other lines may cross the opening (TASK-106); only the pair overlapping is refused
+        const err = P && editorPortalsOverlap(editor.level.portals) ? 'portals overlap' : null
         if (err)
         {
             // refused drop: back to where it was picked up
@@ -465,9 +464,8 @@ function editorMouseUp(coords)
 
 // Check after line i was moved / rotated / had an endpoint dragged (the edit already applied).
 // Wall portals hosted on line i follow it (they store {line, u, side}), so the edit is refused when
-// the line gets shorter than an opening needs (2*h + 2*ball.radius), the line comes within the
-// clearance of another portal's opening, a carried opening comes within the clearance of another
-// line, or the carried pair overlaps on the line. null = the edit is allowed.
+// the line gets shorter than an opening needs (2*h + 2*ball.radius) or the carried pair overlaps on
+// the line. Lines may cross portal openings (TASK-106: the line stays solid). null = the edit is allowed.
 function editorLineEditError(i)
 {
     const W = editor.level, l = W.lines[i]
@@ -477,10 +475,6 @@ function editorLineEditError(i)
     const len = Math.hypot(l.posX2 - l.posX, l.posY2 - l.posY)
     if (hosted.some(P => len < 2 * P.h + 2 * ball.radius))
         return 'line too short for its portal'
-    if (editorSegNearPortal(l.posX, l.posY, l.posX2, l.posY2, W.portals, i))
-        return 'line too close to a portal'
-    if (hosted.some(editorPortalBlocked))
-        return 'portal too close to a line'
     if (hosted.length && editorPortalsOverlap(W.portals))
         return 'portals overlap'
     return null
@@ -519,40 +513,6 @@ function editorPortals()
     return portalResolveAll(editor.level.portals, editor.level.lines)
 }
 
-// Distance rule (same as TASK-027's design check): every level line must stay farther than
-// ball.radius + EDITOR_PORTAL_CLEAR from the portal opening c ± h·t (rims included).
-// A wall portal's own host line is skipped (the opening is cut into it).
-function editorPortalLineDist(P)
-{
-    const R = portalResolve(P, editor.level.lines), r = portalRims(R)
-    let m = Infinity
-    editor.level.lines.forEach(function(l, i)
-    {
-        if (i !== R.line)
-            m = Math.min(m, segSegDist(l.posX, l.posY, l.posX2, l.posY2, r[0][0], r[0][1], r[1][0], r[1][1]))
-    })
-    return m
-}
-function editorPortalBlocked(P)
-{
-    return editorPortalLineDist(P) <= ball.radius + EDITOR_PORTAL_CLEAR
-}
-// Same rule seen from the line side: segment (x1,y1)-(x2,y2) is within ball.radius +
-// EDITOR_PORTAL_CLEAR of any portal opening in the list (line tool and import).
-// lineIndex: the segment's index in `lines` (-1 = a new line); portals hosted on that line are skipped.
-function editorSegNearPortal(x1, y1, x2, y2, portals, lineIndex = -1, lines = editor.level ? editor.level.lines : [])
-{
-    for (const P0 of portals)
-    {
-        if (editorIsWallPortal(P0) && P0.line === lineIndex)
-            continue
-        const P = portalResolve(P0, lines), r = portalRims(P)
-        if (segSegDist(x1, y1, x2, y2, r[0][0], r[0][1], r[1][0], r[1][1]) <= ball.radius + EDITOR_PORTAL_CLEAR)
-            return true
-    }
-    return false
-}
-
 // Portal tool: a wall portal {line, u, side, h, name} on the level line nearest to the click
 // (within EDITOR_PORTAL_LINE_DIST): u = the clamped projection of the click, side = the side of
 // the line the click is on (the front normal points towards the click). null = no line in reach.
@@ -585,11 +545,11 @@ function editorPortalsOverlap(list, lines = editor.level.lines)
 
 // Portal tool: 1st click places A (pending), 2nd places B; the pair then replaces the existing pair
 // (at most one pair per level). Refused (state kept): a click farther than EDITOR_PORTAL_LINE_DIST
-// from every line, an opening too close to another level line, B overlapping A on the same line.
+// from every line, B overlapping A on the same line. Other lines may cross an opening (TASK-106).
 function editorPortalClick(coords)
 {
     const P = editorNewPortal(coords, editor.portalPending ? 'B' : 'A')
-    const err = !P ? 'portals go on lines' : editorPortalBlocked(P) ? 'portal too close to a line' :
+    const err = !P ? 'portals go on lines' :
                 editor.portalPending && editorPortalsOverlap([editor.portalPending, P]) ? 'portals overlap' : null
     if (err)
     {
@@ -608,7 +568,7 @@ function editorPortalClick(coords)
 }
 
 // ⟲ / ⟳ with a selected portal: a wall portal flips its side (front normal reversed, opening kept);
-// a legacy free-standing one rotates by ∓PI/12, refused (angle kept) when it would hit a line
+// a legacy free-standing one rotates by ∓PI/12 (lines may cross its opening, TASK-106)
 function editorRotatePortal(P, da)
 {
     if (editorIsWallPortal(P))
@@ -616,20 +576,14 @@ function editorRotatePortal(P, da)
         P.side = P.side < 0 ? 1 : -1
         return
     }
-    const a = P.angle
     P.angle += da
-    if (editorPortalBlocked(P))
-    {
-        P.angle = a
-        editorShowError('portal too close to a line')
-    }
 }
 
 // 'size −' / 'size +' with a selected portal: h of BOTH portals of the pair (one shared size) changes
 // by dh, limited to EDITOR_PORTAL_H_MIN..EDITOR_PORTAL_H_MAX (at a limit nothing changes, no error).
 // A wall portal's u is re-clamped to the new h first; the change is refused (h and u of both kept,
-// 'portal does not fit') when an opening plus ball.radius no longer fits on its host line, an opening
-// comes within the clearance of another line, or the pair overlaps. No portal selected: no-op.
+// 'portal does not fit') when an opening plus ball.radius no longer fits on its host line or the pair
+// overlaps; another line crossing or touching an opening is allowed (TASK-106). No portal selected: no-op.
 function editorResizePortals(dh)
 {
     const W = editor.level, S = editorSelectedPortal()
@@ -651,7 +605,7 @@ function editorResizePortals(dh)
         else
             P.u = portalClampU(P.u, len, h)
     }
-    if (fits && (W.portals.some(editorPortalBlocked) || editorPortalsOverlap(W.portals)))
+    if (fits && editorPortalsOverlap(W.portals))
         fits = false
     if (!fits)
     {
@@ -831,8 +785,8 @@ function editorPreviewEnd()
 }
 
 // Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
-// working copy with dotСorrection; in 'snap' mode the end goes through editorSnapEnd); appends a level line. Zero-length lines are ignored; a line
-// within ball.radius + EDITOR_PORTAL_CLEAR of a portal opening is refused (start point kept).
+// working copy with dotСorrection; in 'snap' mode the end goes through editorSnapEnd); appends a level line. Zero-length lines are ignored;
+// a line may cross a portal opening (TASK-106: it stays solid in play).
 function editorLineClick(coords)
 {
     const W = editor.level
@@ -848,12 +802,6 @@ function editorLineClick(coords)
     if (p[0] == c[0] && p[1] == c[1])
     {
         editor.pending = null
-        return
-    }
-    const portals = editor.portalPending ? W.portals.concat([editor.portalPending]) : W.portals
-    if (editorSegNearPortal(p[0], p[1], c[0], c[1], portals))
-    {
-        editorShowError('line too close to a portal') // refused: keep the start point for another end
         return
     }
     editor.pending = null
@@ -1055,10 +1003,7 @@ function editorLevelFromData(d)
     const portals = d.portals.map((P, i) => ({ line: P.line, u: P.u, side: P.side, h: P.h,
                                               name: typeof P.name == 'string' && P.name ? P.name : (i ? 'B' : 'A') }))
     if (editorPortalsOverlap(portals, lines))
-        return null
-    for (let i = 0; i < lines.length; i++)
-        if (editorSegNearPortal(lines[i].posX, lines[i].posY, lines[i].posX2, lines[i].posY2, portals, i, lines))
-            return null
+        return null // other lines may cross an opening (TASK-106)
     return {
         ballX: d.ballX, ballY: d.ballY, flagX: d.flagX, flagY: d.flagY,
         flagRotate: d.flagRotate, lineK: d.lineK, lines: lines, portals: portals

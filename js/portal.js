@@ -478,26 +478,14 @@ function portalRims(P)
     return [[P.x + P.h * f.tx, P.y + P.h * f.ty], [P.x - P.h * f.tx, P.y - P.h * f.ty]]
 }
 
-// Distance helpers (point-segment, segment-segment). Player lines may cross portal openings
-// (TASK-105): the line stays solid, see portalTouches / portalTeleport.
+// Point-segment distance. Player and level lines may cross portal openings (TASK-105/106):
+// the line stays solid, see portalTouches / portalTeleport.
 function pointSegDist(px, py, x1, y1, x2, y2)
 {
     const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy
     let k = L2 > 0 ? ((px - x1) * dx + (py - y1) * dy) / L2 : 0
     k = Math.max(0, Math.min(1, k))
     return Math.hypot(px - (x1 + k * dx), py - (y1 + k * dy))
-}
-
-function segSegDist(ax, ay, bx, by, cx, cy, dx, dy)
-{
-    const cross = (ox, oy, px, py, qx, qy) => (px - ox) * (qy - oy) - (py - oy) * (qx - ox)
-    const d1 = cross(cx, cy, dx, dy, ax, ay), d2 = cross(cx, cy, dx, dy, bx, by)
-    const d3 = cross(ax, ay, bx, by, cx, cy), d4 = cross(ax, ay, bx, by, dx, dy)
-    if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
-        return 0
-    return Math.min(
-        pointSegDist(ax, ay, cx, cy, dx, dy), pointSegDist(bx, by, cx, cy, dx, dy),
-        pointSegDist(cx, cy, ax, ay, bx, by), pointSegDist(dx, dy, ax, ay, bx, by))
 }
 
 function portalStep()
