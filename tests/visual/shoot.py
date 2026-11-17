@@ -295,6 +295,15 @@ LEVEL15_MAX_FRAMES = 3000
 LEVEL16_LINE = ((96, 636), (299, 346))
 LEVEL16_MAX_FRAMES = 3000
 
+# Level 17 (index 16) solution: one long ramp under the ball sloping down to the right towards portal A (on the outer,
+# left face of the flag box wall x=1091). The ball rolls off its low end into A, comes out of B (the pad on the left,
+# facing up) 220 px higher, arcs over the wall x=308, bounces on the ramp and the box wall, rises through the gap above
+# the box wall (y < 245) and drops onto the flag (won on physics frame 273, one A->B teleport). Found by a lattice
+# search with in-page stepped frames (artifacts/TASK-101/search.log); the layout is unchanged. 6 of the 8
+# single-coordinate +-2 px variants also win. Keep these exact integer coordinates.
+LEVEL17_LINE = ((320, 280), (1060, 620))
+LEVEL17_MAX_FRAMES = 3000
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -382,6 +391,10 @@ def sc_level16(page, info):
     play_solution(page, info, 15, [LEVEL16_LINE], LEVEL16_MAX_FRAMES, 'level16', via=('B', 'A'))
 
 
+def sc_level17(page, info):
+    play_solution(page, info, 16, [LEVEL17_LINE], LEVEL17_MAX_FRAMES, 'level17')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -404,6 +417,7 @@ SCENARIOS = {
     'level14': sc_level14,
     'level15': sc_level15,
     'level16': sc_level16,
+    'level17': sc_level17,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
