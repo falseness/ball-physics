@@ -355,23 +355,32 @@ function editorDragLine(d, coords)
     const dy = Math.min(Math.max(coords[1] - d.my, -Math.min(e[1], e[3])), F.h - Math.max(e[1], e[3]))
     l.posX = e[0] + dx; l.posY = e[1] + dy; l.posX2 = e[2] + dx; l.posY2 = e[3] + dy
 }
-// Endpoint drag: only end d.end follows the mouse (grab offset kept), clamped to the field
+// Endpoint drag: only end d.end follows the mouse (grab offset kept), clamped to the field. In 'snap'
+// mode the moving end is editorSnapEnd(fixed end, cursor, the other lines) on every move and the drop.
 function editorDragLineEnd(d, coords)
 {
     const l = editor.level.lines[d.i]
     if (!l)
         return
-    const [x, y] = editorClampToField(coords[0] + d.dx, coords[1] + d.dy)
+    let [x, y] = editorClampToField(coords[0] + d.dx, coords[1] + d.dy)
+    if (editor.snap)
+    {
+        const fx = d.end == 0 ? l.posX2 : l.posX, fy = d.end == 0 ? l.posY2 : l.posY
+        ;[x, y] = editorSnapEnd(fx, fy, x, y, editor.level.lines.filter((o, j) => j != d.i))
+    }
     if (d.end == 0) { l.posX = x; l.posY = y }
     else { l.posX2 = x; l.posY2 = y }
 }
-// Endpoint drop: snap to another line's endpoint (dotСorrection, the line itself excluded); refused
-// (true) when the line gets shorter than 1 px
+// Endpoint drop: snap to another line's endpoint (dotСorrection, the line itself excluded; in 'snap'
+// mode editorDragLineEnd already did it, so the 15° angle is kept); refused (true) when the line gets
+// shorter than 1 px
 function editorDropLineEnd(d)
 {
     const W = editor.level, l = W.lines[d.i]
     if (!l)
         return false
+    if (editor.snap)
+        return Math.hypot(l.posX2 - l.posX, l.posY2 - l.posY) < 1
     const others = W.lines.filter((o, j) => j != d.i)
     const x = d.end == 0 ? l.posX : l.posX2, y = d.end == 0 ? l.posY : l.posY2
     const c = dotСorrection(x, y, dotRadius, others)
