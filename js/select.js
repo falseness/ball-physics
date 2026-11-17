@@ -148,7 +148,7 @@ function drawSelection()
 // ---- Dragging an end of a player line (editable state only) ----
 // mousedown / touchstart within END_HIT px of an end picks it up and selects its line; the end
 // follows the pointer (clamped to the field); the drop is validated like addNewLine (snap to
-// line ends, no portal contact, not through the ball, not shorter than 1 px). A rejected drop
+// line ends, not through the ball, not shorter than 1 px; crossing a portal is allowed). A rejected drop
 // puts the end back where it was picked up and shows a short handwritten hint near it.
 const END_HIT = 12           // pick-up distance to a player line end (logical px)
 const DRAG_SLOP = 3          // movement beyond this makes a press a drag (a click otherwise)
@@ -238,8 +238,6 @@ function dragDrop(coords)
     let err = null
     if (Math.hypot(c[0] - q[0], c[1] - q[1]) < 1)
         err = 'too short'
-    else if (portalBlocksSegment(q[0], q[1], c[0], c[1]))
-        err = 'too close to a portal'
     else if (pointSegDist(ball.posX, ball.posY, q[0], q[1], c[0], c[1]) <= ball.radius)
         err = 'too close to the ball'
     if (err)

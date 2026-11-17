@@ -478,9 +478,8 @@ function portalRims(P)
     return [[P.x + P.h * f.tx, P.y + P.h * f.ty], [P.x - P.h * f.tx, P.y - P.h * f.ty]]
 }
 
-// Player lines may not touch portals (user decision): a line start within ball.radius of an
-// opening segment (c ± h·t, rims included) is rejected, and so is a segment that intersects
-// an opening or comes within ball.radius of it. No portals -> always false.
+// Distance helpers (point-segment, segment-segment). Player lines may cross portal openings
+// (TASK-105): the line stays solid, see portalTouches / portalTeleport.
 function pointSegDist(px, py, x1, y1, x2, y2)
 {
     const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy
@@ -499,34 +498,6 @@ function segSegDist(ax, ay, bx, by, cx, cy, dx, dy)
     return Math.min(
         pointSegDist(ax, ay, cx, cy, dx, dy), pointSegDist(bx, by, cx, cy, dx, dy),
         pointSegDist(cx, cy, ax, ay, bx, by), pointSegDist(dx, dy, ax, ay, bx, by))
-}
-
-function portalBlocksPoint(x, y)
-{
-    const portals = currentPortals()
-    if (!portals)
-        return false
-    for (const P of portals)
-    {
-        const r = portalRims(P)
-        if (pointSegDist(x, y, r[0][0], r[0][1], r[1][0], r[1][1]) <= ball.radius)
-            return true
-    }
-    return false
-}
-
-function portalBlocksSegment(x1, y1, x2, y2)
-{
-    const portals = currentPortals()
-    if (!portals)
-        return false
-    for (const P of portals)
-    {
-        const r = portalRims(P)
-        if (segSegDist(x1, y1, x2, y2, r[0][0], r[0][1], r[1][0], r[1][1]) <= ball.radius)
-            return true
-    }
-    return false
 }
 
 function portalStep()
