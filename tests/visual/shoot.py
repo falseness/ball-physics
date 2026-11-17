@@ -287,6 +287,14 @@ LEVEL14_MAX_FRAMES = 3000
 LEVEL15_LINE = ((460, 580), (620, 380))
 LEVEL15_MAX_FRAMES = 3000
 
+# Level 16 (index 15) solution: one line under the ball sloping down to the left, ending just above portal B.
+# The ball rolls down it into B (on the short wall at the bottom left, facing right), comes out of A (the floor pad,
+# facing up) moving up-left, bounces off the right face of the tall wall x=312, flies right onto the sloped ramp and
+# bounces straight up into the flag (won on physics frame 147). Found by a focused lattice + dense local search with
+# in-page stepped frames (artifacts/TASK-100/search.log); the layout is unchanged. Keep these exact integer coordinates.
+LEVEL16_LINE = ((96, 636), (299, 346))
+LEVEL16_MAX_FRAMES = 3000
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -370,6 +378,10 @@ def sc_level15(page, info):
     play_solution(page, info, 14, [LEVEL15_LINE], LEVEL15_MAX_FRAMES, 'level15', via=('B', 'A'))
 
 
+def sc_level16(page, info):
+    play_solution(page, info, 15, [LEVEL16_LINE], LEVEL16_MAX_FRAMES, 'level16', via=('B', 'A'))
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -391,6 +403,7 @@ SCENARIOS = {
     'level13': sc_level13,
     'level14': sc_level14,
     'level15': sc_level15,
+    'level16': sc_level16,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
