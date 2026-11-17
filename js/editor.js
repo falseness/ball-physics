@@ -15,7 +15,7 @@ function curLevel()
     return playtestLevel || levels[thisLevel]
 }
 let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null,
-               portalPending: null, selected: null, error: null }
+               portalPending: null, selected: null, error: null, snap: false }
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
 const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
 const EDITOR_PICK_DIST = 20           // select tool: max distance to flag anchor / ball start / portal centre
@@ -35,12 +35,12 @@ const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseli
 
 // Toolbar: glass panel at the top-left, clear of the top-right HUD.
 // kind 'tool' = selectable tool (editor.tool), 'action' = one-shot action (editor.lastAction),
-// 'value' = lineK display (no hit area).
+// 'toggle' = on/off switch (editor[id], e.g. editor.snap), 'value' = lineK display (no hit area).
 const EDITOR_BAR = { x: 30, y: 22, h: 38, gap: 6, pad: 8 }
 const EDITOR_BUTTONS = (function()
 {
     const spec = [
-        ['select', 'tool', 'select', 70], ['line', 'tool', 'line', 56], ['portal', 'tool', 'portal', 70],
+        ['select', 'tool', 'select', 70], ['line', 'tool', 'line', 56], ['snap', 'toggle', 'snap', 56], ['portal', 'tool', 'portal', 70],
         ['delete', 'tool', 'delete', 70], ['flagCCW', 'action', 'flag', 70], ['flagCW', 'action', 'flag', 70],
         ['portalSmaller', 'action', 'size −', 62], ['portalBigger', 'action', 'size +', 62],
         ['linesDec', 'action', 'lines −', 66], ['lineK', 'value', '', 36], ['linesInc', 'action', 'lines +', 66],
@@ -98,6 +98,7 @@ function editorOpen()
     line = false
     editor.level = editorCloneLevel(levels[thisLevel])
     editor.tool = 'select'
+    editor.snap = false
     editor.lastAction = null
     editor.pending = null
     editor.drag = null
@@ -156,6 +157,11 @@ function editorClick(coords)
             editorPortalClick(coords)
         else if (editor.tool == 'delete')
             editorDeleteAt(coords)
+        return
+    }
+    if (b.kind == 'toggle')
+    {
+        editor[b.id] = !editor[b.id] // 'snap': kept across tool changes and play-tests until the editor reopens
         return
     }
     if (b.kind == 'tool')
@@ -782,14 +788,48 @@ function editorDrawPortalSize(P)
     menuLabel('h = ' + Math.round(P.h), x, y, 24, THEME.cyan)
 }
 
+// 'snap' mode: end point of a segment from (fx, fy) towards (x, y). An existing endpoint within
+// dotRadius (dotСorrection) wins and is returned unchanged; otherwise the direction is rounded to a
+// multiple of 15° at the same length, and a point that would leave EDITOR_FIELD is pulled back along
+// that same ray to the field edge (the angle stays exact).
+const EDITOR_SNAP_STEP = Math.PI / 12
+function editorSnapEnd(fx, fy, x, y, list)
+{
+    const c = dotСorrection(x, y, dotRadius, list)
+    if (c[0] != x || c[1] != y)
+        return c
+    let r = Math.hypot(x - fx, y - fy)
+    if (r < 1)
+        return [x, y]
+    const a = Math.round(Math.atan2(y - fy, x - fx) / EDITOR_SNAP_STEP) * EDITOR_SNAP_STEP
+    const ca = Math.cos(a), sa = Math.sin(a), F = EDITOR_FIELD
+    if (ca > 0) r = Math.min(r, (F.w - fx) / ca)
+    if (ca < 0) r = Math.min(r, -fx / ca)
+    if (sa > 0) r = Math.min(r, (F.h - fy) / sa)
+    if (sa < 0) r = Math.min(r, -fy / sa)
+    r = Math.max(r, 0)
+    return editorClampToField(fx + r * ca, fy + r * sa) // only rounding noise is clamped here
+}
+window.editorSnapEnd = editorSnapEnd
+
+// Line end shown by the live preview: the cursor, or editorSnapEnd(pending, cursor) in 'snap' mode
+function editorPreviewEnd()
+{
+    if (!editor.snap)
+        return editor.mouse
+    const k = editorClampToField(editor.mouse[0], editor.mouse[1])
+    return editorSnapEnd(editor.pending[0], editor.pending[1], k[0], k[1], editor.level.lines)
+}
+
 // Line tool: first click = start, second click = end (both snapped to an existing endpoint of the
-// working copy with dotСorrection); appends a level line. Zero-length lines are ignored; a line
+// working copy with dotСorrection; in 'snap' mode the end goes through editorSnapEnd); appends a level line. Zero-length lines are ignored; a line
 // within ball.radius + EDITOR_PORTAL_CLEAR of a portal opening is refused (start point kept).
 function editorLineClick(coords)
 {
     const W = editor.level
     const k = editorClampToField(coords[0], coords[1])
-    const c = dotСorrection(k[0], k[1], dotRadius, W.lines)
+    const c = editor.snap && editor.pending ? editorSnapEnd(editor.pending[0], editor.pending[1], k[0], k[1], W.lines)
+                                            : dotСorrection(k[0], k[1], dotRadius, W.lines)
     if (!editor.pending)
     {
         editor.pending = [c[0], c[1]]
@@ -873,7 +913,11 @@ function editorDraw()
     drawStartMarker(W.ballX, W.ballY)
     Ball.prototype.draw.call({ posX: W.ballX, posY: W.ballY, radius: ball.radius })
     if (editor.pending && editor.mouse)
-        drawNewLine({ posX: editor.pending[0], posY: editor.pending[1], posX2: editor.mouse[0], posY2: editor.mouse[1] })
+    {
+        const e = editorPreviewEnd()
+        editor.previewEnd = e
+        drawNewLine({ posX: editor.pending[0], posY: editor.pending[1], posX2: e[0], posY2: e[1] })
+    }
     editorDrawToolbar()
     editorDrawError()
 }
@@ -908,7 +952,7 @@ function editorDrawToolbar()
             menuLabel(String(editor.level.lineK), cx, cy, 26, THEME.coral)
             continue
         }
-        const active = b.kind == 'tool' && editor.tool == b.id
+        const active = (b.kind == 'tool' && editor.tool == b.id) || (b.kind == 'toggle' && editor[b.id])
         ctx.save()
         ctx.fillStyle = active ? 'rgba(255,106,85,0.22)' : 'rgba(130,210,255,0.06)'
         ctx.fillRect(b.x, b.y, b.w, b.h)
