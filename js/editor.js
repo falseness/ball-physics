@@ -752,15 +752,20 @@ function editorDrawPortalSize(P)
 }
 
 // 'snap' mode: end point of a segment from (fx, fy) towards (x, y). An existing endpoint within
-// dotRadius (dotСorrection) wins and is returned unchanged; otherwise the direction is rounded to a
-// multiple of 15° at the same length, and a point that would leave EDITOR_FIELD is pulled back along
-// that same ray to the field edge (the angle stays exact).
+// dotRadius (the same circle test and order as dotСorrection) wins and is returned unchanged, also when
+// (x, y) lies exactly on it; otherwise the direction is rounded to a multiple of 15° at the same length,
+// and a point that would leave EDITOR_FIELD is pulled back along that same ray to the field edge (the
+// angle stays exact).
 const EDITOR_SNAP_STEP = Math.PI / 12
 function editorSnapEnd(fx, fy, x, y, list)
 {
-    const c = dotСorrection(x, y, dotRadius, list)
-    if (c[0] != x || c[1] != y)
-        return c
+    for (const l of list)
+    {
+        if (collisionTwoCircles(x, y, dotRadius, l.posX, l.posY, l.radius))
+            return [l.posX, l.posY]
+        if (collisionTwoCircles(x, y, dotRadius, l.posX2, l.posY2, l.radius))
+            return [l.posX2, l.posY2]
+    }
     let r = Math.hypot(x - fx, y - fy)
     if (r < 1)
         return [x, y]
