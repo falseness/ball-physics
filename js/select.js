@@ -246,11 +246,8 @@ function dragDrop(coords)
         dragHint = {text: err, x: d.orig[0], y: d.orig[1], until: performance.now() + DRAG_HINT_MS}
     }
     else
-    {
         endSet(l, d.end, c[0], c[1])
-        bounce.cancel() // the old path preview no longer matches the lines
-        bounce.positions = []
-    }
+    // the idle trail (js/bounce.js) is recomputed from the final lines (state signature changes)
     playerSel = d.li
     return true
 }

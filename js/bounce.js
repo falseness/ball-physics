@@ -14,6 +14,8 @@
 // line), from the ball start with speed 0, in the same slices/budget; it restarts only when the
 // state signature (ball start, lines, level) changes. Once a run starts or the editor is open the
 // trail is hidden (positions = [], no job).
+// TASK-112: the idle trail also runs while an end of a player line is dragged (live, from the
+// moved end); while the dragged segment is too close to the ball the last valid trail is kept.
 // gamePhysics() steps per update() slice (the per-frame floor); positions match any chunk size
 const STEP_CHUNK = 50
 class Bounce
@@ -69,6 +71,8 @@ class Bounce
                 this.positions = []
                 return
             }
+            if (this.dragRefused())
+                return  // dragged end in the refused zone: keep the last valid trail, no job
             const sig = this.idleSignature()
             if (sig !== this.idleSig)
             {
@@ -104,6 +108,15 @@ class Bounce
     idleWanted()
     {
         return !line && this.drawEnable && !levelStarted && !physics && !editorMode && !drawMenu && !levelCompletedWindow
+    }
+    // TASK-112: an end of a player line is being dragged (js/select.js) and the dragged segment
+    // passes within ball.radius of the ball centre (the drop would be refused)
+    dragRefused()
+    {
+        if (typeof endDrag == 'undefined' || !endDrag || !lines[endDrag.li])
+            return false
+        const l = lines[endDrag.li]
+        return pointSegDist(ball.posX, ball.posY, l.posX, l.posY, l.posX2, l.posY2) <= ball.radius
     }
     // Cheap state signature for the idle trail: level, ball start, every line's ends
     idleSignature()
