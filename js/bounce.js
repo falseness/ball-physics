@@ -8,7 +8,7 @@
 // coarse a floor). A point's position is pushed once its cyclesPerTact steps are done. A job owns its
 // ball position/speed and its own portalState copy, so each slice starts where the previous one
 // stopped and leaves the real ball, portalState and lines untouched.
-// The finished pointsCount positions equal calcSync() (the old synchronous algorithm, kept for tests).
+// The finished job.count positions (TASK-118: pointsCount, portalPointsCount on portal levels) equal calcSync() (the old synchronous algorithm, kept for tests).
 // Idle mode (TASK-111): before the first click (no line being drawn, run not started, no menu/editor)
 // update() shows the trail of the level as it is: an idle job simulates `lines` unchanged (no new
 // line), from the ball start with speed 0, in the same slices/budget; it restarts only when the
@@ -25,7 +25,8 @@ class Bounce
         this.drawEnable = true
         this.positions = []
 
-        this.pointsCount = 100
+        this.pointsCount = 100          // points of a preview on a portal-free level
+        this.portalPointsCount = 300    // TASK-118: 3x longer on levels with a portal pair
 
         this.color = THEME.cyan
         this.dotRadius = 4
@@ -45,6 +46,16 @@ class Bounce
     {
         this.target = null
         this.job = null
+    }
+    // TASK-118: preview length for a level object (portal pair -> portalPointsCount)
+    countForLevel(lv)
+    {
+        return lv && lv.portals && lv.portals.length ? this.portalPointsCount : this.pointsCount
+    }
+    // Preview length for the level being played (decided when a job starts, stored as job.count)
+    curCount()
+    {
+        return this.countForLevel(curLevel())
     }
     get busy()
     {
@@ -97,8 +108,8 @@ class Bounce
             return
         do
             this.runSlice(job, STEP_CHUNK)
-        while (job.positions.length < this.pointsCount && performance.now() - start < budgetMs)
-        if (job.positions.length >= this.pointsCount)
+        while (job.positions.length < job.count && performance.now() - start < budgetMs)
+        if (job.positions.length >= job.count)
         {
             this.lastTeleports = job.teleports  // diagnostics: teleports in the finished preview
             this.job = null
@@ -139,6 +150,7 @@ class Bounce
     {
         this.job = {
             idle: true,
+            count: this.curCount(),
             ballX: ball.getX(), ballY: ball.getY(), speedX: 0, speedY: 0,
             portal: portalCopy(portalState),
             step: 0,
@@ -146,6 +158,7 @@ class Bounce
             teleports: 0
         }
         this.positions = this.job.positions
+        this.positionsCount = this.job.count
     }
     startJob(coords)
     {
@@ -154,6 +167,7 @@ class Bounce
         unfastenLastLine()
         this.job = {
             x2: line.posX2, y2: line.posY2,
+            count: this.curCount(),
             ballX: ball.getX(), ballY: ball.getY(), speedX: ball.speedX, speedY: ball.speedY,
             portal: portalCopy(portalState),
             step: 0,            // steps done in the current point (0..cyclesPerTact-1)
@@ -161,6 +175,7 @@ class Bounce
             teleports: 0
         }
         this.positions = this.job.positions
+        this.positionsCount = this.job.count
         this.drawed = true
     }
     // Up to maxSteps steps of the job's current point, on the job's own state; pushes the point's
@@ -204,7 +219,7 @@ class Bounce
         }
     }
     // Test-only: the idle trail computed synchronously (lines as they are, ball start, speed 0);
-    // returns the pointsCount positions and restores ball / portal state
+    // returns the curCount() positions and restores ball / portal state
     calcSyncIdle()
     {
         const bx = ball.posX, by = ball.posY, vx = ball.speedX, vy = ball.speedY
@@ -212,7 +227,8 @@ class Bounce
         ball.speedX = 0
         ball.speedY = 0
         const out = []
-        for (let i = 0; i < this.pointsCount; ++i)
+        const count = this.curCount()
+        for (let i = 0; i < count; ++i)
         {
             for (let j = 0; j < cyclesPerTact; ++j)
                 gamePhysics()
@@ -240,7 +256,9 @@ class Bounce
 
             const portalSaved = portalSave()
 
-            for (let i = 0; i < this.pointsCount; ++i)
+            const count = this.curCount()
+            this.positionsCount = count
+            for (let i = 0; i < count; ++i)
             {
                 for (let j = 0; j < cyclesPerTact; ++j)
                 {
@@ -277,7 +295,7 @@ class Bounce
         ctx.strokeStyle = this.color
         ctx.lineWidth = 1.2
         const n = this.positions.length
-        const N = Math.max(n, this.pointsCount)
+        const N = Math.max(n, this.positionsCount || this.pointsCount)  // fade over the job's count
         let lx = -1e9, ly = -1e9
         for (let i = 0; i < n; ++i)
         {

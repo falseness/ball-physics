@@ -1167,7 +1167,7 @@ function editorImportOpen()
 // the key changed, starts a new job on a snapshot (editorCloneLevel + the pending segment as a
 // 'player' line). The job is advanced like Bounce.update (TASK-085/086): resumable, slices of
 // STEP_CHUNK gamePhysics() steps for up to budgetMs per frame (at least one slice), a point pushed
-// after every cyclesPerTact steps, pointsCount points in total. Each slice installs the snapshot as
+// after every cyclesPerTact steps, job.count points in total (TASK-118: 300 with a portal pair, else 100). Each slice installs the snapshot as
 // playtestLevel / lines, the job's ball state, portalState and portal cache, and restores the real
 // ones afterwards, so editor.level, the real ball, lines, portalState and playtestLevel never change.
 let editorPrev = null   // {key, snap, ballX, ballY, speedX, speedY, portal, cache, step, points, slices, done}
@@ -1213,7 +1213,8 @@ function editorPreviewStart(key, pend)
         ballX: snap.ballX, ballY: snap.ballY, speedX: 0, speedY: 0,
         portal: { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null, blockedExits: 0, blocked: [] }, // = portalReset()
         cache: { level: null, src: null, vals: [], list: null, hosts: null },
-        step: 0, points: [], slices: 0, done: false
+        step: 0, points: [], slices: 0, done: false,
+        count: editorPortals().length ? bounce.portalPointsCount : bounce.pointsCount  // TASK-118: 300 with portals, else 100
     }
 }
 
@@ -1274,8 +1275,8 @@ function editorPreviewUpdate(budgetMs = 6)
         return
     do
         editorPreviewSlice(job, STEP_CHUNK)
-    while (job.points.length < bounce.pointsCount && performance.now() - start < budgetMs)
-    job.done = job.points.length >= bounce.pointsCount
+    while (job.points.length < job.count && performance.now() - start < budgetMs)
+    job.done = job.points.length >= job.count
 }
 
 // Same look as Bounce.draw (cyan hollow circles, fading, spacing rule); partial paths too
@@ -1283,7 +1284,7 @@ function editorPreviewDraw()
 {
     if (!editorPrev || !editorPrev.points.length)
         return
-    Bounce.prototype.draw.call({ drawEnable: true, positions: editorPrev.points, pointsCount: bounce.pointsCount,
+    Bounce.prototype.draw.call({ drawEnable: true, positions: editorPrev.points, pointsCount: editorPrev.count,
         color: bounce.color, dotRadius: bounce.dotRadius, spacing: bounce.spacing })
 }
 
