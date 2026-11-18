@@ -15,7 +15,7 @@ function curLevel()
     return playtestLevel || levels[thisLevel]
 }
 let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null,
-               portalPending: null, selected: null, error: null, snap: false }
+               portalPending: null, selected: null, error: null, snap: false, barDrag: null, barDropAt: null }
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
 const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
 const EDITOR_PICK_DIST = 20           // select tool: max distance to flag anchor / ball start / portal centre
@@ -30,7 +30,7 @@ const EDITOR_PORTAL_H_STEP = 15           // 'size −' / 'size +' step of h (bo
 const EDITOR_PORTAL_H_MIN = 30
 const EDITOR_PORTAL_H_MAX = 135
 const EDITOR_ERROR_MS = 2000             // how long the handwritten error text stays
-const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseline of the error text
+const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseline of the error text (follows the toolbar, editorBarMoveTo)
 
 // Toolbar: glass panel at the top-left, clear of the top-right HUD.
 // kind 'tool' = selectable tool (editor.tool), 'action' = one-shot action (editor.lastAction),
@@ -49,7 +49,7 @@ const EDITOR_BUTTONS = (function()
     let x = EDITOR_BAR.x
     return spec.map(function(s)
     {
-        const b = { id: s[0], kind: s[1], label: s[2], x: x, y: EDITOR_BAR.y, w: s[3], h: EDITOR_BAR.h }
+        const b = { id: s[0], kind: s[1], label: s[2], x: x, y: EDITOR_BAR.y, w: s[3], h: EDITOR_BAR.h, ox: x - EDITOR_BAR.x }
         x += s[3] + EDITOR_BAR.gap
         return b
     })
@@ -60,6 +60,53 @@ function editorBarRect()
     const last = EDITOR_BUTTONS[EDITOR_BUTTONS.length - 1], p = EDITOR_BAR.pad
     return [EDITOR_BAR.x - p, EDITOR_BAR.y - p, last.x + last.w - EDITOR_BAR.x + 2 * p, EDITOR_BAR.h + 2 * p]
 }
+
+// The toolbar can be dragged by its background (TASK-117); the position is kept in localStorage
+const EDITOR_BAR_DEFAULT = [EDITOR_BAR.x - EDITOR_BAR.pad, EDITOR_BAR.y - EDITOR_BAR.pad] // panel top-left
+const EDITOR_BAR_EDGE = 14       // snapped panel distance from the top / bottom field edge
+const EDITOR_BAR_SNAP = 24       // snap when the panel's top / bottom is this close to its snapped place
+const EDITOR_BAR_STORE = 'ballPhysics.editorBar'
+// Move the panel so its rect's top-left is (x, y): kept fully inside the field, snapped to the top /
+// bottom edge when close. Buttons are updated in place (same EDITOR_BUTTONS objects).
+function editorBarMoveTo(x, y)
+{
+    const R = editorBarRect(), w = R[2], h = R[3]
+    x = Math.min(Math.max(x, 0), GAME_W - w)
+    y = Math.min(Math.max(y, 0), GAME_H - h)
+    if (Math.abs(y - EDITOR_BAR_EDGE) <= EDITOR_BAR_SNAP)
+        y = EDITOR_BAR_EDGE
+    else if (Math.abs(y + h - (GAME_H - EDITOR_BAR_EDGE)) <= EDITOR_BAR_SNAP)
+        y = GAME_H - EDITOR_BAR_EDGE - h
+    EDITOR_BAR.x = x + EDITOR_BAR.pad
+    EDITOR_BAR.y = y + EDITOR_BAR.pad
+    for (const b of EDITOR_BUTTONS)
+    {
+        b.x = EDITOR_BAR.x + b.ox
+        b.y = EDITOR_BAR.y
+    }
+    // error text: 32 px below the panel in the top half, 14 px above it in the bottom half
+    EDITOR_ERROR_POS.x = x + EDITOR_BAR.pad
+    EDITOR_ERROR_POS.y = y + h / 2 < GAME_H / 2 ? y + h + 32 : y - 14
+}
+function editorBarSave()
+{
+    const R = editorBarRect()
+    try { localStorage.setItem(EDITOR_BAR_STORE, JSON.stringify({ x: R[0], y: R[1] })) } catch (e) {}
+}
+// Apply the saved position (missing / unparsable / non-finite -> default)
+function editorBarLoad()
+{
+    let pos = EDITOR_BAR_DEFAULT
+    try
+    {
+        const v = JSON.parse(localStorage.getItem(EDITOR_BAR_STORE))
+        if (v && Number.isFinite(v.x) && Number.isFinite(v.y))
+            pos = [v.x, v.y]
+    }
+    catch (e) {}
+    editorBarMoveTo(pos[0], pos[1])
+}
+editorBarLoad()
 
 // 'editor' button shared by the pause menu and the level-completed window (same rect in both):
 // top-right corner inside the logo frame (frame x +30..+370, y +70..+285), under the 'Ball physics'
@@ -105,6 +152,9 @@ function editorOpen()
     editor.selected = null
     editor.error = null
     editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
+    editor.barDrag = null
+    editor.barDropAt = null
+    editorBarLoad()
     editorPreviewClear()
     editorMode = true
 }
@@ -144,6 +194,10 @@ function editorButtonAt(coords)
 // All clicks while editorMode is on end up here (handleClick returns right after)
 function editorClick(coords)
 {
+    const drop = editor.barDropAt
+    editor.barDropAt = null
+    if (drop && drop[0] == coords[0] && drop[1] == coords[1])
+        return // the click that ends a toolbar drag (the drop may be outside the clamped panel)
     const b = editorButtonAt(coords)
     if (!b)
     {
@@ -311,6 +365,15 @@ function editorPickAt(coords)
 function editorMouseDown(coords)
 {
     editor.drag = null
+    editor.barDrag = null
+    editor.barDropAt = null
+    if (editorInBar(coords) && !editorButtonAt(coords))
+    {
+        // panel background (any tool): drag the toolbar, keeping the grab offset
+        const R = editorBarRect()
+        editor.barDrag = { dx: R[0] - coords[0], dy: R[1] - coords[1], x0: R[0], y0: R[1] }
+        return
+    }
     if (editor.tool != 'select' || editorInBar(coords))
         return
     const c = editorPickAt(coords)
@@ -429,6 +492,17 @@ function editorProjectU(l, x, y, h)
 // mouseup / touchend: drop the dragged object at the release point
 function editorMouseUp(coords)
 {
+    const bd = editor.barDrag
+    if (bd)
+    {
+        editor.barDrag = null
+        editorBarMoveTo(coords[0] + bd.dx, coords[1] + bd.dy)
+        const R = editorBarRect()
+        if (R[0] != bd.x0 || R[1] != bd.y0)
+            editor.barDropAt = [coords[0], coords[1]] // swallow the click that follows this mouseup
+        editorBarSave()
+        return
+    }
     if (!editor.drag)
         return
     const d = editor.drag
@@ -485,6 +559,11 @@ function editorLineEditError(i)
 // to where it was picked up (never left where the drop check would refuse it) and the drag ends
 function editorCancelDrag()
 {
+    if (editor.barDrag)
+    {
+        editor.barDrag = null // lost mouseup: the panel stays where it was last moved
+        editorBarSave()
+    }
     const d = editor.drag
     if (!d)
         return
@@ -846,7 +925,9 @@ function editorDeleteAt(coords)
 function editorMouseMove(coords)
 {
     editor.mouse = coords
-    if (editor.drag)
+    if (editor.barDrag)
+        editorBarMoveTo(coords[0] + editor.barDrag.dx, coords[1] + editor.barDrag.dy)
+    else if (editor.drag)
         editorDragTo(coords)
 }
 
