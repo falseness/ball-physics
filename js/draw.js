@@ -91,6 +91,8 @@ function buildBackground()
 function drawIcons()
 {
     drawStartIcon()
+    if (restartIconVisible())
+        drawRestartIcon()
     drawEditIcon()
     drawLinesK()
     menuIcon()

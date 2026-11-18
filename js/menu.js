@@ -117,6 +117,31 @@ function drawStartIcon()
     ctx.fill()
     ctx.restore()
 }
+// 'restart' box: white circular arrow (concept 82 'loop'), drawn only when restartIconVisible()
+function drawRestartIcon()
+{
+    const r = restartIconRect(), cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2, R = 17
+    const a0 = -0.35 * Math.PI, a1 = 1.35 * Math.PI
+    ctx.save()
+    hudBox(r[0], r[1])
+    ctx.strokeStyle = ctx.fillStyle = ctx.shadowColor = THEME.ink
+    ctx.shadowBlur = 8
+    ctx.lineWidth = 4; ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(cx, cy, R, a0, a1)
+    ctx.stroke()
+    // filled arrowhead at the arc start, pointing against the arc direction (counter-clockwise)
+    const px = cx + R * Math.cos(a0), py = cy + R * Math.sin(a0)
+    const tx = Math.sin(a0), ty = -Math.cos(a0)       // tangent pointing backwards along the arc
+    const nx = Math.cos(a0), ny = Math.sin(a0)        // radial
+    ctx.beginPath()
+    ctx.moveTo(px + tx * 9, py + ty * 9)
+    ctx.lineTo(px - tx * 3 + nx * 7, py - ty * 3 + ny * 7)
+    ctx.lineTo(px - tx * 3 - nx * 7, py - ty * 3 - ny * 7)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+}
 // Line counter option A: one mini line glyph per allowed line; used = coral, free = dashed cyan
 function drawLinesK()
 {

@@ -175,6 +175,21 @@
             return collisionWithRect(
                 coords[0], coords[1], menuIconRect[0][0] - 73, menuIconRect[0][1], menuIconRect[0][0] - 73 + menuIconRect[1][0], menuIconRect[0][1] + menuIconRect[1][1])
         }
+        // HUD 'restart' box (artifacts/concepts/82-restart-loop.png): left of the play box, only once
+        // a run was started (running or paused); resets the ball but keeps the player's lines
+        function restartIconRect()
+        {
+            return [menuIconRect[0][0] - 146, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1]]
+        }
+        function inRestartIcon(coords)
+        {
+            const r = restartIconRect()
+            return collisionWithRect(coords[0], coords[1], r[0], r[1], r[0] + r[2], r[1] + r[3])
+        }
+        function restartIconVisible()
+        {
+            return levelStarted && !editorMode && !drawMenu && !levelCompletedWindow && drawMenuIcon
+        }
         document.addEventListener('click', function(event)
         {
             if (suppressClick)
@@ -265,6 +280,12 @@
             }
             else
             {
+                if (restartIconVisible() && inRestartIcon(coords))
+                {
+                    selectionClear()
+                    restartKeepLines() // ball back to the start, lines kept and editable again
+                    return
+                }
                 if (line)
                 {
                     if (!addNewLine(coords))
@@ -376,7 +397,7 @@
         {
             if (editorMode || levelCompletedWindow || drawMenu || line || levelStarted)
                 return false
-            if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)))
+            if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)) || (restartIconVisible() && inRestartIcon(coords)))
                 return false
             if (playerSel !== null || playerLineAt(coords[0], coords[1]) !== null)
                 return false // the tap selects / deselects / deletes instead (handleClick at touchend)

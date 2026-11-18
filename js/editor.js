@@ -231,10 +231,11 @@ function editorStartPlaytest()
     levelChoosed(thisLevel)
 }
 
-// HUD 'edit' box (play-test only): left of the play box, same size and style
+// HUD 'edit' box (play-test only): left of the restart box (x - 146), same size and style;
+// always at x - 219 so it does not jump when the restart box appears
 function editIconRect()
 {
-    return [menuIconRect[0][0] - 146, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1]]
+    return [menuIconRect[0][0] - 219, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1]]
 }
 function inEditIcon(coords)
 {

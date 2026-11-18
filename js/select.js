@@ -35,12 +35,14 @@ function selectionClear()
     playerSel = null
 }
 // HUD rectangles [x1, y1, x2, y2] the bin must not overlap: menu box, play box, edit box
-// (play-test only) and the lines counter
+// (play-test only), restart box (while visible) and the lines counter
 function hudRects()
 {
     const x = menuIconRect[0][0], y = menuIconRect[0][1], w = menuIconRect[1][0], h = menuIconRect[1][1]
     const r = [[x, y, x + w, y + h], [x - 73, y, x - 73 + w, y + h]]
     if (typeof playtestLevel != 'undefined' && playtestLevel)
+        r.push([x - 219, y, x - 219 + w, y + h])
+    if (typeof restartIconVisible == 'function' && restartIconVisible())
         r.push([x - 146, y, x - 146 + w, y + h])
     const n = curLevel().lineK
     r.push([GAME_W - 120 - 4, 63 + 20 + 30 - 9, GAME_W - 120 + (n - 1) * 36 + 26 + 4, 63 + 20 + 30 + 9])
@@ -291,7 +293,7 @@ function lockedState()
 // click / tap at coords: show the hint if it is an edit attempt on a locked player line
 function lockClick(coords)
 {
-    if (!lockedState() || inMenuIcon(coords) || inPlayIcon(coords))
+    if (!lockedState() || inMenuIcon(coords) || inPlayIcon(coords) || (restartIconVisible() && inRestartIcon(coords)))
         return false
     if (playerLineAt(coords[0], coords[1]) === null && playerEndAt(coords[0], coords[1]) === null)
         return false
@@ -301,7 +303,7 @@ function lockClick(coords)
 // press (mousedown / touchstart) at coords: only a press on a player line end counts
 function lockPress(coords)
 {
-    if (!lockedState() || inMenuIcon(coords) || inPlayIcon(coords))
+    if (!lockedState() || inMenuIcon(coords) || inPlayIcon(coords) || (restartIconVisible() && inRestartIcon(coords)))
         return false
     if (playerEndAt(coords[0], coords[1]) === null)
         return false
