@@ -323,6 +323,10 @@
                     {
                         lockClick(coords) // run started: player lines are locked, show a hint
                     }
+                    else if (startLineAtEnd(coords))
+                    {
+                        // a click on a player line end (lines left) started a line there
+                    }
                     else if (playerSel !== null && selectionEditable())
                     {
                         selectionClick(coords) // select another player line or deselect; no new line
@@ -399,6 +403,8 @@
                 return false
             if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)) || (restartIconVisible() && inRestartIcon(coords)))
                 return false
+            if (endStartPoint(coords))
+                return true // on a player line end with lines left: a line starts at that end
             if (playerSel !== null || playerLineAt(coords[0], coords[1]) !== null)
                 return false // the tap selects / deselects / deletes instead (handleClick at touchend)
             if (linesK >= curLevel().lineK)

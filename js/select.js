@@ -174,6 +174,31 @@ function playerEndAt(x, y)
     }
     return best
 }
+// TASK-116: a plain click / tap on a player line end (editable state, lines left, not on the
+// bin) starts a new line exactly at that end; returns that point, or null
+function endStartPoint(coords)
+{
+    if (!selectionEditable() || linesK >= curLevel().lineK || inBin(coords))
+        return null
+    const hit = playerEndAt(coords[0], coords[1])
+    if (!hit)
+        return null
+    const l = lines[hit[0]]
+    const p = hit[1] == 0 ? [l.posX, l.posY] : [l.posX2, l.posY2]
+    if (ball.collisionWithDot(p[0], p[1]))
+        return null // same refusal as a normal line start
+    return p
+}
+function startLineAtEnd(coords)
+{
+    const p = endStartPoint(coords)
+    if (!p)
+        return false
+    selectionClear()
+    line = new Line(p[0], p[1], p[0], p[1], dotRadius, '#0000ff', 'line')
+    linesK++
+    return true
+}
 function endSet(l, end, x, y)
 {
     if (end == 0) { l.posX = x; l.posY = y }
