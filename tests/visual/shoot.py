@@ -280,11 +280,12 @@ LEVEL13_MAX_FRAMES = 3000
 LEVEL14_LINE = ((183, 580), (779, 608))
 LEVEL14_MAX_FRAMES = 3000
 
-# Level 15 (index 14) solution: one short ramp under the ball rising to the right. The ball lands on it, rolls
-# down-left, flies into portal B (an upright pad at the bottom left facing right, TASK-099) and comes out of A on
-# the wall's right face rising to the right, straight into the flag (won on physics frame 83). Found by a lattice
-# search with in-page stepped frames (artifacts/TASK-099/design.md); all 8 single-coordinate +-3 px variants also win.
-LEVEL15_LINE = ((460, 580), (620, 380))
+# Level 15 (index 14) solution (layout from artifacts/new_level15.json, TASK-113): one long line under the ball
+# rising to the right and crossing the wall x=633. The ball lands on it, rolls down-left into portal B (the floor pad
+# facing up), comes out of A on the wall's right face and reaches the flag (won on physics frame 175, one B->A
+# teleport). Found by a lattice + random search with in-page stepped frames (artifacts/TASK-114/search.log); all 8
+# single-coordinate and all 8 whole-line +-2 px variants also win. Keep these exact integer coordinates.
+LEVEL15_LINE = ((207, 547), (1024, 437))
 LEVEL15_MAX_FRAMES = 3000
 
 # Level 16 (index 15) solution: one line under the ball sloping down to the left, ending just above portal B.
