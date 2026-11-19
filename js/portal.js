@@ -163,8 +163,25 @@ function portalHostKey(src, lines)
     return key
 }
 
+// TASK-123: while frozen, portalRefresh() returns the cached list without re-validating it. Set only
+// around a run of gamePhysics() steps in which no line or portal can change (a preview slice, the
+// test-only calcSync / calcSyncIdle); portalFreeze(true) validates the cache once first. Returns the
+// previous flag, so callers restore it in a finally block: portalFreeze(was).
+let portalFrozen = false
+function portalFreeze(on)
+{
+    const was = portalFrozen
+    portalFrozen = false
+    if (on)
+        portalRefresh()
+    portalFrozen = !!on
+    return was
+}
+
 function portalRefresh()
 {
+    if (portalFrozen)
+        return portalCache.list
     const level = curLevel()
     const src = level && level.portals && level.portals.length ? level.portals : null
     if (!src)

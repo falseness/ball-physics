@@ -196,8 +196,16 @@ class Bounce
         ball.speedX = job.speedX; ball.speedY = job.speedY
         portalState = job.portal
         const n = Math.min(maxSteps, cyclesPerTact - job.step)
-        for (let j = 0; j < n; ++j)
-            gamePhysics()
+        const frozen = portalFreeze(true)    // TASK-123: lines / portals are fixed inside a slice
+        try
+        {
+            for (let j = 0; j < n; ++j)
+                gamePhysics()
+        }
+        finally
+        {
+            portalFreeze(frozen)
+        }
         job.step += n
         if (job.step >= cyclesPerTact)
         {
@@ -228,11 +236,19 @@ class Bounce
         ball.speedY = 0
         const out = []
         const count = this.curCount()
-        for (let i = 0; i < count; ++i)
+        const frozen = portalFreeze(true)
+        try
         {
-            for (let j = 0; j < cyclesPerTact; ++j)
-                gamePhysics()
-            out.push({x: ball.getX(), y: ball.getY()})
+            for (let i = 0; i < count; ++i)
+            {
+                for (let j = 0; j < cyclesPerTact; ++j)
+                    gamePhysics()
+                out.push({x: ball.getX(), y: ball.getY()})
+            }
+        }
+        finally
+        {
+            portalFreeze(frozen)
         }
         ball.posX = bx; ball.posY = by
         ball.speedX = vx; ball.speedY = vy
@@ -258,13 +274,21 @@ class Bounce
 
             const count = this.curCount()
             this.positionsCount = count
-            for (let i = 0; i < count; ++i)
+            const frozen = portalFreeze(true)
+            try
             {
-                for (let j = 0; j < cyclesPerTact; ++j)
+                for (let i = 0; i < count; ++i)
                 {
-                    gamePhysics()
+                    for (let j = 0; j < cyclesPerTact; ++j)
+                    {
+                        gamePhysics()
+                    }
+                    this.positions.push({x: ball.getX(), y: ball.getY()})
                 }
-                this.positions.push({x: ball.getX(), y: ball.getY()})
+            }
+            finally
+            {
+                portalFreeze(frozen)
             }
             this.drawed = true
 

@@ -1232,8 +1232,16 @@ function editorPreviewSlice(job, maxSteps)
     try
     {
         const n = Math.min(maxSteps, cyclesPerTact - job.step)
-        for (let j = 0; j < n; ++j)
-            gamePhysics()
+        const frozen = portalFreeze(true)    // TASK-123: validates the job's own cache (job.snap), then frozen
+        try
+        {
+            for (let j = 0; j < n; ++j)
+                gamePhysics()
+        }
+        finally
+        {
+            portalFreeze(frozen)
+        }
         job.step += n
         if (job.step >= cyclesPerTact)
         {
