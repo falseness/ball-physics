@@ -172,6 +172,7 @@ function portalFreeze(on)
 {
     const was = portalFrozen
     portalFrozen = false
+    portalExitMemo.P = null
     if (on)
         portalRefresh()
     portalFrozen = !!on
@@ -248,8 +249,9 @@ function portalHostCollision(b, l, list)
     let front = null
     for (let i = 0; i < list.length; ++i)
     {
-        const P = list[i]
-        if (len > 0 && portalLocalD(P, b.posX, b.posY) > 0)
+        // portalLocalD(P, b.posX, b.posY) inline, with the one frame lookup reused for `front` (TASK-124)
+        const P = list[i], f = portalFrame(P)
+        if (len > 0 && (b.posX - P.x) * f.nx + (b.posY - P.y) * f.ny > 0)
         {
             const lo = P.u - P.h / len, hi = P.u + P.h / len
             if (nGaps++ === 0)
@@ -258,7 +260,7 @@ function portalHostCollision(b, l, list)
             }
             else
                 (gaps = gaps || [[g0, g1]]).push([lo, hi])
-            front = front || portalFrame(P)
+            front = front || f
         }
     }
     const vx = b.speedX, vy = b.speedY
@@ -314,32 +316,49 @@ function portalHostPiece(b, l, list, dx, dy, a, c)
 // the ball, which touches the opening and teleports instead (TASK-074).
 function portalCaptureZone(b, list, qx, qy)
 {
-    for (const P of list)
+    for (let i = 0; i < list.length; ++i)
     {
-        const f = portalFrame(P)
-        if (portalLocalD(P, b.posX, b.posY) <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
+        // portalLocalD / portalLocalS inline on one frame lookup (TASK-124; same operations)
+        const P = list[i], f = portalFrame(P)
+        if ((b.posX - P.x) * f.nx + (b.posY - P.y) * f.ny <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
             continue
-        if (Math.abs(portalLocalS(P, qx, qy)) <= P.h + b.radius && !portalTouchExitBlocked(P, b))
+        if (Math.abs((qx - P.x) * f.tx + (qy - P.y) * f.ty) <= P.h + b.radius && !portalTouchExitBlocked(P, b, f))
             return true
     }
     return false
 }
+
+// TASK-124: the last portalTouchExitBlocked result while portalFrozen (cleared by portalFreeze). Its inputs
+// are P, the partner, the lines (all fixed while frozen) and the ball centre, which is compared exactly.
+const portalExitMemo = { P: null, x: 0, y: 0, r: false }
 
 // TASK-104: true when a touch teleport of ball b through portal P right now would be refused because a
 // line lies between the partner's exit opening point and the exit centre (as in portalTeleport). Such
 // a spot of the opening is blocked, so it gets no capture zone: the host line's pieces and ends next to
 // it stay solid (a ball let deep into a line end there and then refused would be thrown back and forth
 // by that end every step). Only called for contacts (portalCaptureZone).
-function portalTouchExitBlocked(P, b)
+function portalTouchExitBlocked(P, b, fp)
 {
+    const memo = portalExitMemo
+    if (portalFrozen && memo.P === P && memo.x === b.posX && memo.y === b.posY)
+        return memo.r
     const list = currentPortals()
     const i = list ? list.indexOf(P) : -1, Q = i >= 0 ? list[i ^ 1] : null
-    if (!Q)
-        return false
-    const fq = portalFrame(Q), se = Math.max(-Q.h, Math.min(Q.h, portalLocalS(P, b.posX, b.posY)))
-    const de = Math.max(portalLocalD(P, b.posX, b.posY), PORTAL_EXIT_MIN_D)
-    const ox = Q.x - se * fq.tx, oy = Q.y - se * fq.ty
-    return portalPathBlocked(ox, oy, ox + de * fq.nx, oy + de * fq.ny, Q) < Infinity
+    let r = false
+    if (Q)
+    {
+        // portalLocalS / portalLocalD(P, b.posX, b.posY) inline (fp: P's frame when the caller has it)
+        const f = fp || portalFrame(P), dx = b.posX - P.x, dy = b.posY - P.y
+        const fq = portalFrame(Q), se = Math.max(-Q.h, Math.min(Q.h, dx * f.tx + dy * f.ty))
+        const de = Math.max(dx * f.nx + dy * f.ny, PORTAL_EXIT_MIN_D)
+        const ox = Q.x - se * fq.tx, oy = Q.y - se * fq.ty
+        r = portalPathBlocked(ox, oy, ox + de * fq.nx, oy + de * fq.ny, Q) < Infinity
+    }
+    if (portalFrozen)
+    {
+        memo.P = P; memo.x = b.posX; memo.y = b.posY; memo.r = r
+    }
+    return r
 }
 
 function segClosestPoint(px, py, x1, y1, x2, y2)
@@ -352,7 +371,13 @@ function segClosestPoint(px, py, x1, y1, x2, y2)
 // Ball b touches portal P's opening from its front while moving toward it (capture by touch)
 function portalTouches(P, b)
 {
-    const f = portalFrame(P), d = portalLocalD(P, b.posX, b.posY)
+    const f = portalFrame(P), dx = b.posX - P.x, dy = b.posY - P.y
+    return portalTouchesAt(P, b, f, dx * f.nx + dy * f.ny, dx * f.tx + dy * f.ty)
+}
+
+// portalTouches with P's frame f and the ball centre's local d / s already computed (portalStep)
+function portalTouchesAt(P, b, f, d, ls)
+{
     if (!(d > 0) || !(b.speedX * f.nx + b.speedY * f.ny < 0))
         return false
     // portalRims(P) inline; a centre more than radius + 1 outside the opening's bounding box is
@@ -365,7 +390,7 @@ function portalTouches(P, b)
         return false
     // TASK-104: a level / player line between the centre and the opening point it touches blocks the
     // capture (the line stays solid across an opening; rare: only a ball overlapping such a line)
-    const s = Math.max(-P.h, Math.min(P.h, portalLocalS(P, b.posX, b.posY)))
+    const s = Math.max(-P.h, Math.min(P.h, ls))
     return !(portalPathBlocked(b.posX, b.posY, P.x + s * f.tx, P.y + s * f.ty, P) < Infinity)
 }
 
@@ -513,12 +538,14 @@ function portalStep()
     ++portalState.steps
     for (let i = 0; i < P.length; ++i)
     {
-        const Ld = portalLocalD(P[i], ball.posX, ball.posY), Ls = portalLocalS(P[i], ball.posX, ball.posY)
+        // portalLocalD / portalLocalS inline on one frame lookup, shared with portalTouchesAt (TASK-124)
+        const Pi = P[i], f = portalFrame(Pi), dx = ball.posX - Pi.x, dy = ball.posY - Pi.y
+        const Ld = dx * f.nx + dy * f.ny, Ls = dx * f.tx + dy * f.ty
         const prev = portalState.prevD[i]
         portalState.prevD[i] = Ld
         // wall portal: front -> back only; legacy free-standing portal: either direction
         const crossed = (prev > 0 && Ld <= 0) || (typeof P[i].line != 'number' && prev < 0 && Ld >= 0)
-        const kind = !P[i ^ 1] ? null : portalTouches(P[i], ball) ? 'touch'
+        const kind = !P[i ^ 1] ? null : portalTouchesAt(Pi, ball, f, Ld, Ls) ? 'touch'
                    : crossed && Math.abs(Ls) <= P[i].h ? 'cross' : null
         if (kind)
         {
