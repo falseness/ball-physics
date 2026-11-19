@@ -304,6 +304,16 @@ LEVEL16_MAX_FRAMES = 3000
 LEVEL17_LINE = ((320, 280), (1060, 620))
 LEVEL17_MAX_FRAMES = 3000
 
+# Level 18 (index 17, lineK 2) solution: a ramp starting just under the ball and sloping down to the right into portal A
+# (left face of the full-height wall x=640); B (right face of the pit wall x=1000) fires the ball down-right, away from
+# the pit, onto a shallow second line right of the pit wall that bounces it back up-left over the wall x=1000 onto the
+# flag (won on physics frame 150, one A->B teleport). Found with tools/level_search.py: a seed grid of second lines
+# along the B exit path (--mode sample --around, +-6 px variants; artifacts/TASK-129/search_ref.json), then --mode local
+# (+-2 px): 14 of the 16 single-coordinate variants also win (artifacts/TASK-129/local_ref.json).
+# Keep these exact integer coordinates.
+LEVEL18_LINES = [((130, 77), (630, 568)), ((1020, 768), (1189, 700))]
+LEVEL18_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -395,6 +405,10 @@ def sc_level17(page, info):
     play_solution(page, info, 16, [LEVEL17_LINE], LEVEL17_MAX_FRAMES, 'level17')
 
 
+def sc_level18(page, info):
+    play_solution(page, info, 17, LEVEL18_LINES, LEVEL18_MAX_FRAMES, 'level18')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -418,6 +432,7 @@ SCENARIOS = {
     'level15': sc_level15,
     'level16': sc_level16,
     'level17': sc_level17,
+    'level18': sc_level18,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
@@ -482,6 +497,11 @@ def main():
             print('%-9s errors=%d state=%s%s' % (
                 name, len(entry['errors']), json.dumps(entry.get('state'), separators=(',', ':')),
                 (' eval=' + json.dumps(entry['eval'], separators=(',', ':'))[:300]) if 'eval' in entry else ''))
+            if 'play' in entry:  # play_solution scenarios: win frame and teleports of the real-input run
+                pl = entry['play']
+                print('    play levelCompleted=%s winFrame=%s frames=%s teleports=%s' % (
+                    pl['levelCompleted'], pl['winFrame'], pl['frames'],
+                    ','.join(t['from'] + '->' + t['to'] for t in pl['teleports']) or '-'))
             for e in entry['errors']:
                 print('   ', e)
         browser.close()

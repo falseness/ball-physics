@@ -328,6 +328,31 @@ levels.push(
         { line: 5, u: 0.5, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 18, 'send it back' (TASK-129, lineK 2): a full-height wall x = 640 (y 0 to 800) shuts the ball's chamber off
+    // from the flag pit (floor y = 700 between x 640 and 1000). Portal A is cut into the wall's left face
+    // (facing left), portal B into the right face of the short pit wall x = 1000 (facing right), so B fires
+    // the ball AWAY from the pit. One line feeds A, a second, steep line on the right must turn the exit
+    // stream back up and over the pit wall onto the flag (the two lines need opposite slopes).
+    ballX: 220,
+    ballY: 140,
+    flagX: 820,
+    flagY: 700,
+    flagRotate: 0,
+    lineK: 2,
+    lines: [
+        new Line(640, 0, 640, 800, dotRadius, levelLineColor, 'line'),
+        new Line(640, 700, 1000, 700, dotRadius, levelLineColor, 'line'),
+        new Line(1000, 450, 1000, 700, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (640, 560) facing left (-1, 0),
+    // B at (1000, 620) facing right (1, 0)
+    portals: [
+        { line: 0, u: 0.7, side: 1, h: 45, name: 'A' },
+        { line: 2, u: 0.68, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

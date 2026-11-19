@@ -13,6 +13,8 @@ Both trees are loaded (file://, 1280x800, headless Chromium) and run the same pa
   identity (asserted, === / Python == on floats): for every level the idle trail (calcSyncIdle), calcSync
            for 2 deterministic player lines, and a 600-tact real gameMechanics() play run per line
            (ball posX/posY/speedX/speedY per tact). Any difference is a mismatch.
+           Only the levels both trees have are compared (TASK-129: levels appended after the baseline, e.g.
+           level 18, are listed as informational extraLevels); the shared levels keep the strict comparison.
   timing   (informational, never fails): median of --runs calcSyncIdle() per level, pages interleaved.
   fill     (informational per level; gate over portal levels 10..16): after levelChoosed(i), the number
            of requestAnimationFrame frames of the real game loop until
@@ -124,8 +126,8 @@ def compare(B, W):
                 bad(kind, dict(info, i=k))
 
     per = {}
-    if len(B) != len(W):
-        bad('structure', {'why': 'level count', 'b': len(B), 'w': len(W)})
+    # only the levels both trees have are compared (zip stops at the shorter list); levels added after the
+    # baseline are listed by main() as informational extraLevels, the shared ones stay strict (=== per point)
     for b, w in zip(B, W):
         L = b['level']
         n0 = sum(mm.values())
@@ -195,7 +197,8 @@ def main():
            'mismatchTotal': total, 'firstMismatch': first, 'pageErrors': {'base': eb, 'work': ew}, 'levels': rows,
            'portalFillBase': fb_sum, 'portalFillNew': fw_sum, 'fillGatePass': gate,
            'msBaseSum': round(sum(r['baseMs'] for r in rows), 2), 'msNewSum': round(sum(r['newMs'] for r in rows), 2)}
-    ident = total == 0 and n > 0 and len(B) == len(W) and not eb and not ew
+    res['extraLevels'] = {'base': list(range(n, len(B))), 'work': list(range(n, len(W)))}
+    ident = total == 0 and n > 0 and not eb and not ew
     res['identityPass'] = ident
     res['allPass'] = ident and gate
     if a.out:
@@ -206,6 +209,8 @@ def main():
             'PASS' if r.get('mismatches', 1) == 0 else 'FAIL', r['level'], r.get('mismatches', -1),
             r['baseMs'], r['newMs'], r['baseFill'], r['newFill'], r['count']))
     print('points', points, 'mismatches', mm, 'first', first)
+    print('shared levels %d (base %d, work %d); extra levels (informational, not compared): base %s work %s' % (
+        n, len(B), len(W), res['extraLevels']['base'], res['extraLevels']['work']))
     print('%s identity mismatches=%d page_errors=%d' % ('PASS' if ident else 'FAIL', total, len(eb) + len(ew)))
     print('%s fill_gate portal levels 10..16 new %s < base %s' % ('PASS' if gate else 'FAIL', fw_sum, fb_sum))
     print('info ms sum base %.2f new %.2f' % (res['msBaseSum'], res['msNewSum']))
