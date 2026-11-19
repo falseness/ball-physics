@@ -107,7 +107,7 @@ levels[idx] = lv
 return 'ok' }"""
 
 INFO_JS = r"""(idx) => { const L = levels[idx]; return L ? {nLevels: levels.length, lineK: L.lineK, ballX: L.ballX, ballY: L.ballY,
-    flagX: L.flagX, flagY: L.flagY, portals: (L.portals || []).length, cyclesPerTact} : {nLevels: levels.length} }"""
+    flagX: L.flagX, flagY: L.flagY, portals: (L.portals || []).length, cyclesPerTact, levelJson: JSON.stringify(L)} : {nLevels: levels.length} }"""
 
 
 def open_page(pw, args):
@@ -170,6 +170,10 @@ def level_info(args):
         b, pg, errors = open_page(pw, args)
         info = pg.evaluate(INFO_JS, args['level'])
         b.close()
+    lj = info.pop('levelJson', None)
+    if lj is not None:  # sha256 of JSON.stringify(levels[INDEX]): proves several runs used the same layout
+        import hashlib
+        info['levelSha256'] = hashlib.sha256(lj.encode()).hexdigest()
     return info
 
 
