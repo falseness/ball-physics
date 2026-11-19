@@ -1,11 +1,14 @@
 let rectMarginTop = 525
-let rectMarginLeft = 25
-let rectSize = 50 
-// rows of 5 squares, 60 px apart (levels 1-5, 6-10, 11-15, 16-20; the panel fits 4 rows)
+let rectSize = 44
+let rectCols = 7
+let rectGap = 10
+// rows of 7 squares (44 px, 54 px pitch), centred in the panel: grid +525..+731 for 4 rows
+// (28 levels), below the 'Levels' heading and the win window's 'restart' button (+455..+505)
 function levelRectXY(i)
 {
-    return [menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * (i % 5),
-            menuCoords[1] + rectMarginTop + Math.floor(i / 5) * 60]
+    const left = (menuSize[0] - rectCols * rectSize - (rectCols - 1) * rectGap) / 2
+    return [menuCoords[0] + left + (rectSize + rectGap) * (i % rectCols),
+            menuCoords[1] + rectMarginTop + Math.floor(i / rectCols) * (rectSize + rectGap)]
 }
 // Level grid: locked = dim navy outline, unlocked = cyan outline, completed = coral fill.
 // Square positions are the same expressions levelsRectCollision() uses.
@@ -17,7 +20,7 @@ function drawLevels()
     const text = ['rgba(159,198,230,0.4)', THEME.ink, '#071a30']
 
     ctx.save()
-    ctx.font = "bold 36px " + THEME.fontStack
+    ctx.font = "bold 30px " + THEME.fontStack
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
     for (let i = 0; i < levels.length; ++i)

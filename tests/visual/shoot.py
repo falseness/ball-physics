@@ -136,9 +136,8 @@ def sc_menu_level(page, info):
     # Every level is open from the start (js/levels.js), so level 2's square is clickable as is.
     open_menu(page)
     info['before'] = page.evaluate("({thisLevel, drawMenu})")
-    # Centre of level square 2 (i = 1), same expressions as levelsRectCollision().
-    x, y = page.evaluate("""[menuCoords[0] + rectMarginLeft + (rectMarginLeft + rectSize) * 1 + rectSize / 2,
-        menuCoords[1] + rectMarginTop + rectSize / 2]""")
+    # Centre of level square 2 (i = 1), from levelRectXY() like levelsRectCollision().
+    x, y = page.evaluate("() => { const r = levelRectXY(1); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }")
     info['click'] = [x, y]
     click(page, x, y)
 
