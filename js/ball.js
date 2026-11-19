@@ -118,6 +118,16 @@ class Ball extends Sprite
         for (let i = 0; i < lines.length; ++i)
         {
             const host = hosts && hosts.get(lines[i])
+            // exact broadphase (TASK-122): a non-host line cannot touch the ball when its centre lies outside the
+            // line's bounding box grown by radius + 1 (dot hits need distance < radius, segment hits need an
+            // intersection point inside the segment), so its dot/segment tests would all be false - skip them
+            if (!host)
+            {
+                const l = lines[i], m = this.radius + 1, x0 = this.posX, y0 = this.posY
+                if (x0 < (l.posX < l.posX2 ? l.posX : l.posX2) - m || x0 > (l.posX > l.posX2 ? l.posX : l.posX2) + m ||
+                    y0 < (l.posY < l.posY2 ? l.posY : l.posY2) - m || y0 > (l.posY > l.posY2 ? l.posY : l.posY2) + m)
+                    continue
+            }
             // a ball being captured by a portal on this line ignores a line end next to the opening (TASK-074)
             // (dotHit first: when it is false collisionWithDot would do nothing, so the capture zone is not needed)
             if (host ? (this.dotHit(lines[i].posX, lines[i].posY) && !portalCaptureZone(this, host, lines[i].posX, lines[i].posY) && this.collisionWithDot(lines[i].posX, lines[i].posY)) ||
