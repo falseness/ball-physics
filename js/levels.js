@@ -353,6 +353,32 @@ levels.push(
         { line: 2, u: 0.68, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 19, 'kick it up' (TASK-131, lineK 2): portal A is cut into the UNDERSIDE of the middle shelf y = 450
+    // (facing down), so the ball can only enter it moving up. The ball starts above the short right floor y = 300 and
+    // the flag sits on a high shelf (y = 170) above the ball's start, out of reach without the portal. One line rolls
+    // the ball off the floor's left end (it drops under the middle shelf), a second line below the shelf kicks it up
+    // into A; B, high on the left wall x = 40 facing right, fires it up and over onto the flag shelf.
+    ballX: 900,
+    ballY: 250,
+    flagX: 420,
+    flagY: 170,
+    flagRotate: 0,
+    lineK: 2,
+    lines: [
+        new Line(700, 300, 1000, 300, dotRadius, levelLineColor, 'line'),
+        new Line(250, 450, 550, 450, dotRadius, levelLineColor, 'line'),
+        new Line(40, 400, 40, 60, dotRadius, levelLineColor, 'line'),
+        new Line(300, 170, 500, 170, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (400, 450) on the middle shelf's underside
+    // facing down (0, 1), B at (40, 200) facing right (1, 0)
+    portals: [
+        { line: 1, u: 0.5, side: 1, h: 45, name: 'A' },
+        { line: 2, u: 200 / 340, side: 1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
