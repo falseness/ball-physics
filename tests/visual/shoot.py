@@ -349,6 +349,18 @@ LEVEL20_MAX_FRAMES = 1500
 LEVEL21_LINES = [((930, 312), (700, 360)), ((440, 440), (520, 680))]
 LEVEL21_MAX_FRAMES = 1500
 
+# Level 22 (index 21, lineK 3) solution: a shallow ramp from just left of the resting ball rolls it off its pad into
+# portal A (floor pad, facing up); B (right wall, 200 px higher, facing left) fires it left onto a long second line that
+# rolls it back into A for a second lap; the faster ball out of B then rises up-left onto the long third line under
+# the shield wall, which turns it up into the shielded corner flag (won on physics frame 416, teleports A->B, A->B).
+# Found with tools/level_search.py's evaluate() (exploration wrapper artifacts/TASK-137/search/grid.py): line 1 fixed,
+# second lines on a 40 px lattice under B's stream (85 two-lap A->B,A->B routes), then the 2 closest losing pairs with
+# every third line on an 80 px lattice in the left half (artifacts/TASK-137/search_ref.json: 18 three-line wins of
+# 1790), then two --mode local (+-2 px) hill-climb steps for robustness: 19 of the 25 local variants win
+# (artifacts/TASK-137/local_ref.json). Keep these exact integer coordinates.
+LEVEL22_LINES = [((150, 413), (420, 470)), ((1140, 660), (640, 760)), ((720, 482), (60, 540))]
+LEVEL22_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -456,6 +468,10 @@ def sc_level21(page, info):
     play_solution(page, info, 20, LEVEL21_LINES, LEVEL21_MAX_FRAMES, 'level21')
 
 
+def sc_level22(page, info):
+    play_solution(page, info, 21, LEVEL22_LINES, LEVEL22_MAX_FRAMES, 'level22')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -483,6 +499,7 @@ SCENARIOS = {
     'level19': sc_level19,
     'level20': sc_level20,
     'level21': sc_level21,
+    'level22': sc_level22,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

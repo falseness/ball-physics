@@ -437,6 +437,35 @@ levels.push(
         { line: 2, u: 0.5, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 22, 'two laps' (TASK-137, lineK 3): portal A is on a small floor pad at the bottom (facing up), portal B
+    // on the right wall (facing left) 200 px higher. A ball that falls into A comes out of B higher than it went in,
+    // so every A->B lap adds that height to its energy. The flag hangs under a ceiling in the top-left corner, shielded
+    // on the right by a wall x = 340 down to y = 300; it is 300 px above the ball's start (the ball bounces in place
+    // on its pad until a line moves it), more than one lap can give. One line rolls the ball off its pad into A, a
+    // second line under B's exit stream turns it back into A for the second lap, and the faster ball then needs a
+    // third line to reach the shielded flag.
+    ballX: 180,
+    ballY: 400,
+    flagX: 200,
+    flagY: 100,
+    flagRotate: Math.PI,
+    lineK: 3,
+    lines: [
+        new Line(100, 420, 260, 420, dotRadius, levelLineColor, 'line'),
+        new Line(480, 760, 620, 760, dotRadius, levelLineColor, 'line'),
+        new Line(1240, 720, 1240, 400, dotRadius, levelLineColor, 'line'),
+        new Line(120, 100, 280, 100, dotRadius, levelLineColor, 'line'),
+        new Line(340, 40, 340, 300, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (550, 760) on the bottom pad facing up (0, -1),
+    // B at (1240, 560) on the right wall facing left (-1, 0)
+    portals: [
+        { line: 1, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 2, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
