@@ -379,6 +379,36 @@ levels.push(
         { line: 2, u: 200 / 340, side: 1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 20, 'through the window twice' (TASK-133, lineK 3): a divider floor y = 420 splits the field; its only
+    // opening is the window x 480..800. The ball starts on the upper-left part (it bounces in place there until a
+    // line moves it; the lip x = 40 stops it rolling off the left end). The flag hangs under a shelf y = 180 right
+    // above the window, 200 px higher than the ball's start, so only a teleported ball can reach it. Portal A is on
+    // a floor pad at the bottom left (facing up), portal B low on the right wall x = 1240 (facing left), 250 px
+    // above A. One line rolls the ball down through the window, a second line under the window feeds A, and B's
+    // leftward exit stream needs a third line that turns it back up through the same window onto the flag.
+    ballX: 300,
+    ballY: 380,
+    flagX: 660,
+    flagY: 180,
+    flagRotate: Math.PI,
+    lineK: 3,
+    lines: [
+        new Line(40, 420, 480, 420, dotRadius, levelLineColor, 'line'),
+        new Line(800, 420, 1240, 420, dotRadius, levelLineColor, 'line'),
+        new Line(560, 180, 760, 180, dotRadius, levelLineColor, 'line'),
+        new Line(120, 770, 280, 770, dotRadius, levelLineColor, 'line'),
+        new Line(1240, 760, 1240, 440, dotRadius, levelLineColor, 'line'),
+        new Line(40, 360, 40, 420, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (200, 770) on the bottom pad facing up (0, -1),
+    // B at (1240, 520) on the right wall facing left (-1, 0)
+    portals: [
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 4, u: 0.75, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
