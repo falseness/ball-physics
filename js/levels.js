@@ -445,7 +445,7 @@ levels.push(
     // on the right by a wall x = 340 down to y = 300; it is 300 px above the ball's start (the ball bounces in place
     // on its pad until a line moves it), more than one lap can give. One line rolls the ball off its pad into A, a
     // second line under B's exit stream turns it back into A for the second lap, and the faster ball then needs a
-    // third line to reach the shielded flag.
+    // third line to reach the shielded flag. A sloped roof over the start pad keeps the pad from doing line 3's job.
     ballX: 180,
     ballY: 400,
     flagX: 200,
@@ -457,7 +457,10 @@ levels.push(
         new Line(480, 760, 620, 760, dotRadius, levelLineColor, 'line'),
         new Line(1240, 720, 1240, 400, dotRadius, levelLineColor, 'line'),
         new Line(120, 100, 280, 100, dotRadius, levelLineColor, 'line'),
-        new Line(340, 40, 340, 300, dotRadius, levelLineColor, 'line')
+        new Line(340, 40, 340, 300, dotRadius, levelLineColor, 'line'),
+        // sloped roof over the start pad (TASK-138): a ball bouncing on the pad (or falling onto it) cannot rise
+        // straight into the flag above, and the slope keeps the roof itself from becoming a launch pad
+        new Line(60, 390, 260, 340, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (550, 760) on the bottom pad facing up (0, -1),
     // B at (1240, 560) on the right wall facing left (-1, 0)
