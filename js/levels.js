@@ -409,6 +409,34 @@ levels.push(
         { line: 4, u: 0.75, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 21, 'bank shot' (TASK-135, lineK 2): portal A is cut into a 45-degree slope (x 480..680, rising to the right)
+    // facing up-left, the first portal on a slanted line. A teleport turns the velocity by the angle between the two
+    // portal fronts, so the direction the ball enters A decides where it leaves B (a floor pad on the left facing up,
+    // 400 px higher than A and above the ball's start, so the ball can never drop into B): only a ball entering A
+    // head-on (moving down-right) leaves B straight up into the flag that hangs under the ceiling right above B. The ball starts on a pad up and to the RIGHT of A (it bounces in place
+    // there until a line moves it), so it can only fall onto A from the right, which sends it out of B to the right.
+    // One line rolls it off the pad to the left, a second, steep line under that bank-shots it back down-right into A.
+    ballX: 900,
+    ballY: 300,
+    flagX: 220,
+    flagY: 80,
+    flagRotate: Math.PI,
+    lineK: 2,
+    lines: [
+        new Line(820, 320, 980, 320, dotRadius, levelLineColor, 'line'),
+        new Line(480, 760, 680, 560, dotRadius, levelLineColor, 'line'),
+        new Line(140, 260, 300, 260, dotRadius, levelLineColor, 'line'),
+        new Line(140, 80, 300, 80, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (580, 660) on the slope facing up-left
+    // (-0.71, -0.71), B at (220, 260) on the pad facing up (0, -1)
+    portals: [
+        { line: 1, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 2, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

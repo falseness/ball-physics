@@ -337,6 +337,18 @@ LEVEL19_MAX_FRAMES = 1500
 LEVEL20_LINES = [((260, 395), (460, 420)), ((560, 460), (240, 760)), ((660, 500), (820, 580))]
 LEVEL20_MAX_FRAMES = 1500
 
+# Level 21 (index 20, lineK 2) solution: a shallow ramp from just under the resting ball down-left off its pad (the ball
+# rolls off the ramp's left end moving left), and a steep "\" bank line below it that throws the falling ball back
+# down-right, head-on into portal A (cut into the 45-degree slope, facing up-left), so B (pad on the left, facing up)
+# fires it straight up into the hanging flag (won on physics frame 162, one A->B teleport).
+# Found with tools/level_search.py's evaluate() (exploration wrapper artifacts/TASK-135/search/grid.py): line 1 fixed,
+# every second line with both ends on a 40 px lattice (x 240..720, y 360..720, length 40..260;
+# artifacts/TASK-135/search_ref.json: 55 wins of 4913; it was picked by a --mode local (+-2 px) scan of the wins of the
+# first layout, artifacts/TASK-135/iter1), then --mode local on the final layout: 15 of the 16 single-coordinate variants
+# win (artifacts/TASK-135/local_ref.json). Keep these exact integer coordinates.
+LEVEL21_LINES = [((930, 312), (700, 360)), ((440, 440), (520, 680))]
+LEVEL21_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -440,6 +452,10 @@ def sc_level20(page, info):
     play_solution(page, info, 19, LEVEL20_LINES, LEVEL20_MAX_FRAMES, 'level20')
 
 
+def sc_level21(page, info):
+    play_solution(page, info, 20, LEVEL21_LINES, LEVEL21_MAX_FRAMES, 'level21')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -466,6 +482,7 @@ SCENARIOS = {
     'level18': sc_level18,
     'level19': sc_level19,
     'level20': sc_level20,
+    'level21': sc_level21,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
