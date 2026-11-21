@@ -498,6 +498,42 @@ levels.push(
         { line: 1, u: 0.715, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 24, 'pick the half' (TASK-143, lineK 3): a teleport keeps the ball's offset along the opening but
+    // mirrors it (a ball touching A at s along A's opening leaves B at -s), so WHERE the ball goes into A decides
+    // where it comes out of B. B is on the left wall x = 60 (facing right), and a long shelf y = 360 starts right at
+    // B's centre and splits B's mouth into two lanes: the upper lane leads above the shelf to the flag, the lower
+    // lane into a tunnel (shelf + floor y = 410) that throws the ball off the right edge of the field. A is on a
+    // floor pad at the bottom (facing up), 400 px lower than B. The ball starts on a pad to the left of A (it bounces
+    // in place there until a line moves it); rolled off its pad it drops onto A's LEFT half, which is the tunnel
+    // lane. A's right half (the upper lane) is under a small roof, so it can only be reached from the right: one line
+    // carries the ball past A, a second banks it back left under the roof into A's right half, and the flag, in a
+    // pocket under the ceiling that is open only to the right, needs a third line that sends the ball back left.
+    ballX: 260,
+    ballY: 470,
+    flagX: 820,
+    flagY: 110,
+    flagRotate: Math.PI,
+    lineK: 3,
+    lines: [
+        new Line(60, 200, 60, 520, dotRadius, levelLineColor, 'line'),
+        new Line(60, 360, 1240, 360, dotRadius, levelLineColor, 'line'),
+        new Line(60, 410, 1240, 410, dotRadius, levelLineColor, 'line'),
+        new Line(400, 760, 560, 760, dotRadius, levelLineColor, 'line'),
+        new Line(180, 490, 340, 490, dotRadius, levelLineColor, 'line'),
+        new Line(700, 110, 900, 110, dotRadius, levelLineColor, 'line'),
+        new Line(470, 610, 560, 630, dotRadius, levelLineColor, 'line'),
+        new Line(700, 110, 700, 260, dotRadius, levelLineColor, 'line'),
+        new Line(700, 260, 900, 260, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (480, 760) on the bottom pad facing up (0, -1),
+    // B at (60, 360) on the left wall facing right (1, 0), right where the shelf (line 1) meets the wall
+    portals: [
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 0, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

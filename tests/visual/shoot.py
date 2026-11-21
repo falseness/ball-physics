@@ -376,6 +376,20 @@ LEVEL22_MAX_FRAMES = 1500
 LEVEL23_LINES = [((330, 425), (450, 395)), ((880, 760), (1060, 580))]
 LEVEL23_MAX_FRAMES = 1500
 
+# Level 24 (index 23, lineK 3) solution: line 1 is a long, almost flat line over the start pad that rolls the ball
+# off the pad and carries it right, past portal A (rolled straight off the pad it would drop onto A's left half and,
+# mirrored, leave B in the lower lane, the tunnel); it falls onto line 2, a steep backboard right of A, which banks it
+# back left under the small roof into A's RIGHT half, so B (mirrored offset) lets it out in the upper lane, above the
+# shelf; line 3, a near-vertical reflector right of the flag pocket, sends it back left into the pocket (won on
+# physics frame 283, one teleport A->B).
+# Found with an exploration wrapper (artifacts/TASK-143/search/lane.py, same handleClick placement as
+# tools/level_search.py): release lines over the pad, then a lattice of backboards (exit y < 360 = upper lane),
+# then a lattice of third lines right of the pocket (artifacts/TASK-143/search_ref.json: 29 wins of 590);
+# 15 of the 24 single-coordinate +-2 px variants win (artifacts/TASK-143/local_ref.json). Keep these exact
+# integer coordinates.
+LEVEL24_LINES = [((170, 476), (620, 513)), ((790, 610), (730, 714)), ((1000, 140), (1024, 278))]
+LEVEL24_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -491,6 +505,10 @@ def sc_level23(page, info):
     play_solution(page, info, 22, LEVEL23_LINES, LEVEL23_MAX_FRAMES, 'level23')
 
 
+def sc_level24(page, info):
+    play_solution(page, info, 23, LEVEL24_LINES, LEVEL24_MAX_FRAMES, 'level24')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -520,6 +538,7 @@ SCENARIOS = {
     'level21': sc_level21,
     'level22': sc_level22,
     'level23': sc_level23,
+    'level24': sc_level24,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
