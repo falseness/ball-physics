@@ -363,6 +363,19 @@ LEVEL21_MAX_FRAMES = 1500
 LEVEL22_LINES = [((150, 413), (420, 470)), ((1140, 660), (640, 760)), ((720, 482), (60, 540))]
 LEVEL22_MAX_FRAMES = 1500
 
+# Level 23 (index 22, lineK 2) solution: the ball rolls off its start slope; line 1 is a kicker under the slope's end
+# (rising to the right) that throws it up and over the trap portal B in the floor (going in through B would drop it
+# out of the lower portal A and lose height); it flies off the floor's open right end, falls onto line 2, a
+# reflector under that end rising to the right, which sends it back left into A (low wall, facing right); B fires it
+# straight up into the flag hanging high above B (won on physics frame 236, one teleport A->B).
+# Found with tools/level_search.py's evaluate() (exploration wrapper artifacts/TASK-141/search/grid.py): first lines
+# as kickers / slope extensions near the slope's end with 6 random second lines each, then the 15 most promising
+# first lines with every second line of a reflector lattice under the floor's right end
+# (artifacts/TASK-141/search_ref.json: 52 wins of 7410); 16 of the 16 single-coordinate +-2 px variants win
+# (artifacts/TASK-141/local_ref.json). Keep these exact integer coordinates.
+LEVEL23_LINES = [((330, 425), (450, 395)), ((880, 760), (1060, 580))]
+LEVEL23_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -474,6 +487,10 @@ def sc_level22(page, info):
     play_solution(page, info, 21, LEVEL22_LINES, LEVEL22_MAX_FRAMES, 'level22')
 
 
+def sc_level23(page, info):
+    play_solution(page, info, 22, LEVEL23_LINES, LEVEL23_MAX_FRAMES, 'level23')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -502,6 +519,7 @@ SCENARIOS = {
     'level20': sc_level20,
     'level21': sc_level21,
     'level22': sc_level22,
+    'level23': sc_level23,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

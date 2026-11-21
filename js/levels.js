@@ -469,6 +469,35 @@ levels.push(
         { line: 2, u: 0.5, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 23, 'wrong way in' (TASK-141, lineK 2): the ball starts on a slope and rolls off it by itself, straight
+    // into floor portal B (facing up) in the long floor below. That is the trap: going in through B drops the ball
+    // out of A, which is on a low wall under the floor (facing right) 215 px lower than B, so it loses that height
+    // and flies off to the right; it can never come back up to the flag. The flag hangs under a ceiling high above
+    // B, higher than the ball's start, so only an A -> B teleport (which gains the 215 px) can reach it. One line
+    // has to make the ball jump over B (a bridge over B would also block B's exit stream), and a second line under
+    // the floor's open right end has to send the falling ball back left into A, so that it comes out of B going up.
+    ballX: 110,
+    ballY: 238,
+    flagX: 500,
+    flagY: 50,
+    flagRotate: Math.PI,
+    lineK: 2,
+    lines: [
+        new Line(60, 240, 330, 330, dotRadius, levelLineColor, 'line'),
+        new Line(40, 520, 760, 520, dotRadius, levelLineColor, 'line'),
+        new Line(600, 600, 600, 800, dotRadius, levelLineColor, 'line'),
+        new Line(420, 50, 580, 50, dotRadius, levelLineColor, 'line'),
+        new Line(60, 180, 60, 240, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 735) on the low wall facing right (1, 0),
+    // B at (555, 520) on the floor facing up (0, -1)
+    portals: [
+        { line: 2, u: 0.675, side: -1, h: 45, name: 'A' },
+        { line: 1, u: 0.715, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
