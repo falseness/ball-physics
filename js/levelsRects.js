@@ -1,9 +1,9 @@
 let rectMarginTop = 525
-let rectSize = 44
-let rectCols = 7
-let rectGap = 10
-// rows of 7 squares (44 px, 54 px pitch), centred in the panel: grid +525..+731 for 4 rows
-// (28 levels), below the 'Levels' heading and the win window's 'restart' button (+455..+505)
+let rectSize = 40
+let rectCols = 8
+let rectGap = 6
+// rows of 8 squares (40 px, 46 px pitch), centred in the panel: grid +525..+749 for 5 rows
+// (40 levels), below the 'Levels' heading and the win window's 'restart' button (+455..+505)
 function levelRectXY(i)
 {
     const left = (menuSize[0] - rectCols * rectSize - (rectCols - 1) * rectGap) / 2
@@ -20,7 +20,7 @@ function drawLevels()
     const text = ['rgba(159,198,230,0.4)', THEME.ink, '#071a30']
 
     ctx.save()
-    ctx.font = "bold 30px " + THEME.fontStack
+    ctx.font = "bold 24px " + THEME.fontStack
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
     for (let i = 0; i < levels.length; ++i)

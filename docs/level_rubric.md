@@ -6,14 +6,15 @@ the game's own `handleClick`, physics through `gameMechanics()` frames; see the 
 that is still being designed is tested in-page with `--level INDEX --level-json FILE` (an editor export);
 the final gates run on the committed `js/levels.js` entry (`--level INDEX` only).
 
-Notation: `lineK` = the level's line count (2 or 3); the *reference* = the designer's k-line winning solution
+Notation: `lineK` = the level's line count (2, 3 or 4); the *reference* = the designer's k-line winning solution
 (k = lineK), stored with the level ticket's evidence.
 
 ## Hard gates (metrics)
 
 | Gate | Requirement | How to measure |
 |------|-------------|----------------|
-| **G1 – fewer lines cannot win** | No win with fewer than `lineK` lines. One line: `dense1` must simulate **>= 12000 valid** candidates and find **0 wins** (refinement included). For `lineK` 3 also two lines: `sample --lines 2` with **>= 10000 valid** pairs and **0 wins**. | `--mode dense1 --lines 1 [--step 40] [--shard i/n]` (+ `--mode merge`); `--mode sample --lines 2 --random 10000 --seed S` |
+| **G1 – fewer lines cannot win** | No win with fewer than `lineK` lines. One line: `dense1` must simulate **>= 12000 valid** candidates and find **0 wins** (refinement included). For `lineK` 3 also two lines: `sample --lines 2` with **>= 10000 valid** pairs and **0 wins**. For `lineK` 4 see the next row (dense1 plus two- and three-line samples). | `--mode dense1 --lines 1 [--step 40] [--shard i/n]` (+ `--mode merge`); `--mode sample --lines 2 --random 10000 --seed S` |
+| **G1 (lineK 4)** | One line: `dense1` as above (**>= 12000 valid**, **0 wins**). Two lines: `sample --lines 2` with **>= 10000 valid** candidates and **0 wins**. Three lines: `sample --lines 3` with **>= 10000 valid** candidates and **0 wins**. Each sample also gets `--around` seeds: every 2-subset (for k=2) and every 3-subset (for k=3) of the reference's 4 lines, each run once with `--step 20` and once with `--step 40` (the +-20/+-40 px single-coordinate shifts); these seed rows count towards the totals. `tools/level_search.py` sample mode is used unchanged (k=3 smoke: TASK-140 k3_smoke.json). | `--mode sample --lines 2 --random 10000 --seed S [--around subsets2.json --step 20/40]`; `--mode sample --lines 3 --random 10000 --seed S [--around subsets3.json --step 20/40]` (shard + merge for long runs) |
 | **G2 – every line is needed** | Each drop-one-line variant of the reference **loses** (valid placement, no win). | `--mode necessity --lines lineK --solution REF` -> `allDropsLose: true` |
 | **G3 – the reference is robust** | **>= 50 %** of the single-coordinate ±2 px variants of the reference win (`variantsWin / variants >= 0.5`); the reference itself wins. | `--mode local --lines lineK --solution REF` |
 | **G4 – not trivially solvable, portals matter** | A random sample of **3000 valid** `lineK`-line candidates has a win rate **< 10 %**, and **every distinct win found has >= 1 teleport** (`winsWithoutTeleport == 0`). | `--mode sample --lines lineK --random 3000 --seed S` |
@@ -58,7 +59,7 @@ Score each item 1-5 using the anchors below and write one sentence of justificat
 ## Report template (per level)
 
 ```
-G1 dense1: valid N (>= 12000) wins 0 [ + sample k=2: valid N (>= 10000) wins 0 ]   PASS/FAIL
+G1 dense1: valid N (>= 12000) wins 0 [ + sample k=2: valid N (>= 10000) wins 0 ] [ + sample k=3: valid N (>= 10000) wins 0 ]   PASS/FAIL
 G2 necessity: drops lose [true, true(, true)]                                        PASS/FAIL
 G3 local ±2: variantsWin/variants = a/b (>= 0.5), reference win frame F              PASS/FAIL
 G4 sample k=lineK: valid 3000, win rate r (< 0.10), winsWithoutTeleport 0            PASS/FAIL
