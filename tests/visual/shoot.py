@@ -401,6 +401,17 @@ LEVEL24_MAX_FRAMES = 1500
 LEVEL25_LINES = [((535, 597), (635, 603)), ((920, 693), (980, 747))]
 LEVEL25_MAX_FRAMES = 1500
 
+# Level 26 ('one line, two jobs', levels[25], lineK 4): line 1 tips the ball off its pad to the left; line 2, a long
+# ramp under the pad's open side, carries the falling ball right to the shaft; line 3, a near-vertical backboard at
+# the shaft (its right wall is too low), drops it steeply into floor portal A; B on the short right wall lets it out
+# almost flat to the left, back over line 2, which it hits going the other way and bounces up-left off; line 4 at
+# the left edge turns the rising ball right into the flag's pocket (won on physics frame 312, one teleport A->B).
+# Found with exploration scans (artifacts/TASK-147/search/scan.py, same handleClick placement as
+# tools/level_search.py): a lattice of ramps x backboards with a fixed release line, then reflectors at the left edge
+# (artifacts/TASK-147/search_ref.json); keep these exact integer coordinates.
+LEVEL26_LINES = [((230, 286), (90, 300)), ((20, 480), (700, 580)), ((876, 580), (886, 700)), ((15, 240), (15, 390))]
+LEVEL26_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -524,6 +535,10 @@ def sc_level25(page, info):
     play_solution(page, info, 24, LEVEL25_LINES, LEVEL25_MAX_FRAMES, 'level25')
 
 
+def sc_level26(page, info):
+    play_solution(page, info, 25, LEVEL26_LINES, LEVEL26_MAX_FRAMES, 'level26')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -555,6 +570,7 @@ SCENARIOS = {
     'level23': sc_level23,
     'level24': sc_level24,
     'level25': sc_level25,
+    'level26': sc_level26,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

@@ -569,6 +569,41 @@ levels.push(
         { line: 2, u: 0.82609, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 26, 'one line, two jobs' (TASK-147, lineK 4): the ball bounces in place on a pad in the top-left
+    // corner, under the flag's pocket (a ceiling, a wall x = 240 on the right and the pad as the floor, open only
+    // to the left). Portal A lies in the floor of a shaft at the bottom (facing up), portal B on a short wall
+    // on the right (facing left), 360 px higher, so only an A -> B teleport gives the ball the height the flag
+    // needs. The trip has five jobs and the player has four lines: (1) tip the ball off the pad to the left,
+    // (2) a long ramp under the pad's open side that carries the falling ball right to the shaft, (3) a
+    // backboard at the shaft (its right wall is too low to catch it) that drops it steeply into A, (4) a
+    // lift for B's almost flat exit stream, which flies back left over the field and would fall off its left
+    // edge, and (5) a reflector at the left edge that turns the rising ball right into the pocket. B's stream
+    // comes back over the ramp of job 2 in the opposite direction, so the same line can do job 4: a ball that
+    // lands on it going left bounces up-left steeply. One line has to work on both sides of the teleport.
+    ballX: 170,
+    ballY: 280,
+    flagX: 175,
+    flagY: 130,
+    flagRotate: Math.PI,
+    lineK: 4,
+    lines: [
+        new Line(100, 300, 240, 300, dotRadius, levelLineColor, 'line'),
+        new Line(240, 130, 240, 300, dotRadius, levelLineColor, 'line'),
+        new Line(60, 130, 260, 130, dotRadius, levelLineColor, 'line'),
+        new Line(770, 760, 890, 760, dotRadius, levelLineColor, 'line'),
+        new Line(1060, 340, 1060, 460, dotRadius, levelLineColor, 'line'),
+        new Line(770, 640, 770, 760, dotRadius, levelLineColor, 'line'),
+        new Line(890, 680, 890, 760, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (830, 760) in the shaft floor facing up
+    // (0, -1), B at (1060, 400) on the short right wall facing left (-1, 0)
+    portals: [
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 4, u: 0.5, side: 1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
