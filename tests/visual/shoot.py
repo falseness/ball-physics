@@ -411,6 +411,15 @@ LEVEL25_MAX_FRAMES = 1500
 # (artifacts/TASK-147/search_ref.json); keep these exact integer coordinates.
 LEVEL26_LINES = [((230, 286), (90, 300)), ((20, 480), (700, 580)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
 LEVEL26_MAX_FRAMES = 1500
+# Level 27 ('side door', TASK-149, lineK 3; reference solution): line 1 is a tilted kicker inside the well, below
+# portal A. The ball bouncing straight up and down bounces off it sideways and, on its way up, drifts into the left
+# wall at A's depth, so A takes it. Out of B (floating pad, facing down) it heads down and to the right, line 2 lifts it
+# up-right through the gap right of the flag pocket's floor, and line 3 at the right edge turns it back left into the pocket
+# (won on physics frame 154, one teleport A->B). Found with a two-stage grid (artifacts/TASK-149/search/probe.py, same
+# handleClick placement as tools/level_search.py): lift lines after a fixed kicker, filtered for passing the pocket mouth moving right,
+# then right-edge reflectors (artifacts/TASK-149/search_ref.json); keep these exact integer coordinates.
+LEVEL27_LINES = [((530, 720), (630, 740)), ((1001, 540), (1119, 520)), ((1265, 250), (1265, 330))]
+LEVEL27_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -539,6 +548,10 @@ def sc_level26(page, info):
     play_solution(page, info, 25, LEVEL26_LINES, LEVEL26_MAX_FRAMES, 'level26')
 
 
+def sc_level27(page, info):
+    play_solution(page, info, 26, LEVEL27_LINES, LEVEL27_MAX_FRAMES, 'level27')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -571,6 +584,7 @@ SCENARIOS = {
     'level24': sc_level24,
     'level25': sc_level25,
     'level26': sc_level26,
+    'level27': sc_level27,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

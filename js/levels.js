@@ -608,6 +608,44 @@ levels.push(
         { line: 4, u: 0.5, side: 1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 27, 'side door' (TASK-149, lineK 3): the ball starts inside a closed well (walls x = 520 and x = 640 from
+    // y = 260 down to a floor y = 740) and bounces in place, straight up and down, forever: its bounce peaks below the
+    // wall tops, so it can never leave the well by itself. Portal A is cut into the well's LEFT wall (facing right), and
+    // the ball falls past it and rises past it twice per bounce without ever going in, because a portal only
+    // takes a ball that moves INTO its face. A falling ball moves along A's face, not into it. The only way out is to knock the ball
+    // sideways (one line inside the well) so it drifts into the left wall at A's depth. Portal B is on the underside
+    // of a short floating pad (facing down): A and B are a quarter turn apart, so the ball's sideways speed into A comes
+    // out of B straight down and its fall speed comes out of B sideways. Every B exit heads down and would leave the
+    // field, so a second line has to lift it. The flag hangs in a pocket at the top right that is open only on its
+    // right side, so the rising ball has to pass the pocket and be turned back left by a third line at the right edge.
+    // The pocket's ceiling (y = 140) is as high as the ball can get at all after the teleport (A is 160 px below B, the
+    // ball's bounce peak is y 300), so it cannot hop over or along the roof onto the flag. Its floor runs on to x = 1200,
+    // so the only way to the mouth is up through the 80 px gap at the right edge and then back left (TASK-149 precheck:
+    // with a shorter floor and a 40 px higher B, single long lines through the well and out under B won).
+    ballX: 580,
+    ballY: 300,
+    flagX: 1060,
+    flagY: 140,
+    flagRotate: Math.PI,
+    lineK: 3,
+    lines: [
+        new Line(520, 260, 520, 740, dotRadius, levelLineColor, 'line'),
+        new Line(640, 260, 640, 740, dotRadius, levelLineColor, 'line'),
+        new Line(520, 740, 640, 740, dotRadius, levelLineColor, 'line'),
+        new Line(820, 420, 940, 420, dotRadius, levelLineColor, 'line'),
+        new Line(980, 140, 1140, 140, dotRadius, levelLineColor, 'line'),
+        new Line(980, 140, 980, 310, dotRadius, levelLineColor, 'line'),
+        new Line(980, 310, 1200, 310, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (520, 580) on the well's left wall facing
+    // right (1, 0), B at (880, 420) on the underside of the floating pad facing down (0, 1)
+    portals: [
+        { line: 0, u: 0.66667, side: -1, h: 45, name: 'A' },
+        { line: 3, u: 0.5, side: 1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
