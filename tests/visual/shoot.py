@@ -428,6 +428,15 @@ LEVEL27_MAX_FRAMES = 1500
 # artifacts/TASK-151/search_ref.json); keep these exact integer coordinates.
 LEVEL28_LINES = [((550, 255), (40, 570)), ((850, 660), (950, 560))]
 LEVEL28_MAX_FRAMES = 1500
+# Level 29 ('echo', TASK-153, lineK 3; reference solution): line 1 knocks the ball, which bounces in place on its pad,
+# to the left over tower A's top (through the flag's shadow). Line 2 left of tower A turns it back to the right into
+# portal A. A and B face the same way, so the ball comes out of B replaying its path backwards, moved by (560, -200).
+# Line 3 is line 2 moved by (560, -200) (its twin): the replayed path bounces off it and flies over tower B's top
+# into the flag. Found by a three-stage scan (artifacts/TASK-153/search/probe.py: 8 kicks x 2806 turn-around lines,
+# 937 runs reach A; then each with the exact twin, 487/921 win; then +-10 px twin offsets, 9/9 win for this one;
+# artifacts/TASK-153/search_ref.json); keep these exact integer coordinates.
+LEVEL29_LINES = [((520, 400), (600, 340)), ((180, 560), (300, 720)), ((740, 360), (860, 520))]
+LEVEL29_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -564,6 +573,10 @@ def sc_level28(page, info):
     play_solution(page, info, 27, LEVEL28_LINES, LEVEL28_MAX_FRAMES, 'level28')
 
 
+def sc_level29(page, info):
+    play_solution(page, info, 28, LEVEL29_LINES, LEVEL29_MAX_FRAMES, 'level29')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -598,6 +611,7 @@ SCENARIOS = {
     'level26': sc_level26,
     'level27': sc_level27,
     'level28': sc_level28,
+    'level29': sc_level29,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
