@@ -409,7 +409,7 @@ LEVEL25_MAX_FRAMES = 1500
 # Found with exploration scans (artifacts/TASK-147/search/scan.py, same handleClick placement as
 # tools/level_search.py): a lattice of ramps x backboards with a fixed release line, then reflectors at the left edge
 # (artifacts/TASK-147/search_ref.json); keep these exact integer coordinates.
-LEVEL26_LINES = [((230, 286), (90, 300)), ((20, 480), (700, 580)), ((876, 580), (886, 700)), ((15, 240), (15, 390))]
+LEVEL26_LINES = [((230, 286), (90, 300)), ((20, 480), (700, 580)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
 LEVEL26_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.

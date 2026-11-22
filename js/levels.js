@@ -577,7 +577,8 @@ levels.push(
     // on the right (facing left), 360 px higher, so only an A -> B teleport gives the ball the height the flag
     // needs. The trip has five jobs and the player has four lines: (1) tip the ball off the pad to the left,
     // (2) a long ramp under the pad's open side that carries the falling ball right to the shaft, (3) a
-    // backboard at the shaft (its right wall is too low to catch it) that drops it steeply into A, (4) a
+    // backboard right of the shaft (TASK-148: the shaft has a roof and only a side window on its right, above
+    // a short right wall, so a ball arcing in from the left cannot drop into A; it must be bounced back), (4) a
     // lift for B's almost flat exit stream, which flies back left over the field and would fall off its left
     // edge, and (5) a reflector at the left edge that turns the rising ball right into the pocket. B's stream
     // comes back over the ramp of job 2 in the opposite direction, so the same line can do job 4: a ball that
@@ -592,12 +593,13 @@ levels.push(
         new Line(100, 300, 240, 300, dotRadius, levelLineColor, 'line'),
         new Line(240, 130, 240, 300, dotRadius, levelLineColor, 'line'),
         new Line(60, 130, 260, 130, dotRadius, levelLineColor, 'line'),
-        new Line(770, 760, 890, 760, dotRadius, levelLineColor, 'line'),
+        new Line(690, 760, 810, 760, dotRadius, levelLineColor, 'line'),
         new Line(1060, 340, 1060, 460, dotRadius, levelLineColor, 'line'),
-        new Line(770, 640, 770, 760, dotRadius, levelLineColor, 'line'),
-        new Line(890, 680, 890, 760, dotRadius, levelLineColor, 'line')
+        new Line(690, 600, 690, 760, dotRadius, levelLineColor, 'line'),
+        new Line(810, 720, 810, 760, dotRadius, levelLineColor, 'line'),
+        new Line(690, 600, 810, 600, dotRadius, levelLineColor, 'line')
     ],
-    // wall portals {line, u, side, h, name} (see portalResolve): A at (830, 760) in the shaft floor facing up
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (750, 760) in the shaft floor facing up
     // (0, -1), B at (1060, 400) on the short right wall facing left (-1, 0)
     portals: [
         { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
