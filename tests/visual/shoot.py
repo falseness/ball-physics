@@ -415,10 +415,9 @@ LEVEL26_MAX_FRAMES = 1500
 # portal A. The ball bouncing straight up and down bounces off it sideways and, on its way up, drifts into the left
 # wall at A's depth, so A takes it. Out of B (floating pad, facing down) it heads down and to the right, line 2 lifts it
 # up-right through the gap right of the flag pocket's floor, and line 3 at the right edge turns it back left into the pocket
-# (won on physics frame 154, one teleport A->B). Found with a two-stage grid (artifacts/TASK-149/search/probe.py, same
-# handleClick placement as tools/level_search.py): lift lines after a fixed kicker, filtered for passing the pocket mouth moving right,
-# then right-edge reflectors (artifacts/TASK-149/search_ref.json); keep these exact integer coordinates.
-LEVEL27_LINES = [((530, 720), (630, 740)), ((1001, 540), (1119, 520)), ((1265, 250), (1265, 330))]
+# (won on physics frame 193 on the TASK-150 layout, one teleport A->B). Lines 2 and 3 were re-searched in TASK-150 for the
+# reworked walls (artifacts/TASK-150/iterations.md, reference R3); keep these exact integer coordinates.
+LEVEL27_LINES = [((530, 720), (630, 740)), ((1000, 660), (1213, 603)), ((1265, 290), (1265, 370))]
 LEVEL27_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
