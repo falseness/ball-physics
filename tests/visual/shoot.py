@@ -390,6 +390,17 @@ LEVEL23_MAX_FRAMES = 1500
 LEVEL24_LINES = [((170, 476), (620, 513)), ((790, 610), (730, 714)), ((1000, 140), (1024, 278))]
 LEVEL24_MAX_FRAMES = 1500
 
+# Level 25 ('skim, don't drop', levels[24], lineK 2): line 1, an almost flat kicker in the well under the start slope,
+# throws the falling ball up and over the crest wall (x = 840, top y = 450) into A's pocket; line 2, a ~42 deg
+# converter slope in the pocket, turns its steep (~75 deg) fall into a flat skim (0.041, 0.010 px/cycle) into floor
+# portal A, so B on the right-edge wall lets it out going straight up the chimney to the flag (won on physics frame
+# 153, one teleport A->B). Found with a hand-aimed scan (3 kickers x 60 converters at 38..50 deg around the kicker's
+# landing point; artifacts/TASK-145/search/cv21.json re-evaluated with tools/level_search.py's evaluate() on the
+# committed levels[24]: 19 of 180 win, artifacts/TASK-145/search_ref.json); 13 of the 17 local +-2 px variants win.
+# Keep these exact integer coordinates.
+LEVEL25_LINES = [((535, 597), (635, 603)), ((920, 693), (980, 747))]
+LEVEL25_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -509,6 +520,10 @@ def sc_level24(page, info):
     play_solution(page, info, 23, LEVEL24_LINES, LEVEL24_MAX_FRAMES, 'level24')
 
 
+def sc_level25(page, info):
+    play_solution(page, info, 24, LEVEL25_LINES, LEVEL25_MAX_FRAMES, 'level25')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -539,6 +554,7 @@ SCENARIOS = {
     'level22': sc_level22,
     'level23': sc_level23,
     'level24': sc_level24,
+    'level25': sc_level25,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

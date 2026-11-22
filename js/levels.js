@@ -534,6 +534,41 @@ levels.push(
         { line: 0, u: 0.5, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 25, 'skim, don't drop' (TASK-145, lineK 2): portal A lies in the floor of a pocket at the bottom right
+    // (facing up), portal B on a wall at the right edge (facing right), 240 px higher, at the foot of a narrow chimney
+    // whose top holds the flag, higher than the ball's start. A floor portal and a wall portal are a quarter turn
+    // apart, so the ball's speed ALONG A's floor comes out of B going straight up the wall, and only its speed INTO
+    // the floor comes out sideways. A ball dropped into A shoots out of B sideways, under the chimney and straight off
+    // the right edge; only a ball that skims into A fast and flat climbs the chimney to the flag. A tall crest wall
+    // (x = 840, top y = 450) closes A's pocket off from the well the ball drops into from its start slope: one line in
+    // the well has to lift the ball over the crest, and a second line inside the pocket has to turn its steep fall
+    // into a flat skim into A. Over the crest the ball is too slow and, on any line ridden over it, enters A too
+    // steeply, so one line cannot do both jobs.
+    ballX: 440,
+    ballY: 300,
+    flagX: 1225,
+    flagY: 140,
+    flagRotate: Math.PI,
+    lineK: 2,
+    lines: [
+        new Line(400, 250, 400, 310, dotRadius, levelLineColor, 'line'),
+        new Line(400, 310, 490, 335, dotRadius, levelLineColor, 'line'),
+        new Line(1180, 140, 1180, 600, dotRadius, levelLineColor, 'line'),
+        new Line(1270, 140, 1270, 380, dotRadius, levelLineColor, 'line'),
+        new Line(1180, 140, 1270, 140, dotRadius, levelLineColor, 'line'),
+        new Line(840, 760, 1240, 760, dotRadius, levelLineColor, 'line'),
+        new Line(840, 450, 840, 760, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (1080, 760) in the pocket floor facing up
+    // (0, -1), B at (1180, 520) on the right-edge wall facing right (1, 0), below the chimney (x = 1180 wall + x = 1270
+    // wall under the y = 140 ceiling)
+    portals: [
+        { line: 5, u: 0.6, side: -1, h: 45, name: 'A' },
+        { line: 2, u: 0.82609, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still
