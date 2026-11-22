@@ -652,6 +652,39 @@ levels.push(
         { line: 3, u: 0.5, side: 1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 28, 'wrap-around' (TASK-151, lineK 2): the field wraps sideways. Portal A is cut into a wall at the
+    // LEFT edge (facing right) and portal B into a wall at the RIGHT edge (facing left), at the same height, so the
+    // pair maps velocity unchanged: a ball that flies out through the left edge comes back in through the right edge
+    // still moving left, on the same arc. A wall in the middle (x = 760, y 200..790) stands higher than the ball can
+    // ever reach (it starts bouncing in place on a pad at y 300, peak y 260), so the flag's half of the field is
+    // reachable only by sending the ball AWAY from it: off the left edge into A. The flag sits in a pocket at the
+    // top right that is open only on its left side, so the ball coming back in moving left has to be turned around
+    // by a second line and thrown up-right into the pocket.
+    ballX: 520,
+    ballY: 260,
+    flagX: 1190,
+    flagY: 450,
+    flagRotate: 0,
+    lineK: 2,
+    lines: [
+        new Line(20, 470, 20, 730, dotRadius, levelLineColor, 'line'),
+        new Line(1260, 470, 1260, 730, dotRadius, levelLineColor, 'line'),
+        new Line(460, 300, 580, 300, dotRadius, levelLineColor, 'line'),
+        new Line(760, 200, 760, 790, dotRadius, levelLineColor, 'line'),
+        new Line(1100, 330, 1270, 330, dotRadius, levelLineColor, 'line'),
+        new Line(1100, 450, 1270, 450, dotRadius, levelLineColor, 'line'),
+        new Line(1270, 330, 1270, 450, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (20, 600) on the left-edge wall facing right
+    // (1, 0), B at (1260, 600) on the right-edge wall facing left (-1, 0); same height, so a teleport keeps the
+    // velocity as it is (a horizontal wrap-around)
+    portals: [
+        { line: 0, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 1, u: 0.5, side: 1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

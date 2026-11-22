@@ -419,6 +419,15 @@ LEVEL26_MAX_FRAMES = 1500
 # reworked walls (artifacts/TASK-150/iterations.md, reference R3); keep these exact integer coordinates.
 LEVEL27_LINES = [((530, 720), (630, 740)), ((1000, 660), (1213, 603)), ((1265, 290), (1265, 370))]
 LEVEL27_MAX_FRAMES = 1500
+# Level 28 ('wrap-around', TASK-151, lineK 2; reference solution): line 1 is a long ramp from the ball's pad down to
+# the left edge; the bouncing ball lands on it, rolls down-left and flies off the left edge into portal A. A and B
+# face each other across the whole field at the same height, so the ball comes back in through B on the right edge
+# still moving left. Line 2 in the right half turns it around and throws it up-right into the flag's pocket, which is
+# open only on its left side (won on physics frame 225, one teleport A->B). Found with a two-stage scan
+# (artifacts/TASK-151/search/probe.py: 2240 ramps, then line 2 on a 50 px lattice for 4 of the 146 ramps that reach A;
+# artifacts/TASK-151/search_ref.json); keep these exact integer coordinates.
+LEVEL28_LINES = [((550, 255), (40, 570)), ((850, 660), (950, 560))]
+LEVEL28_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -551,6 +560,10 @@ def sc_level27(page, info):
     play_solution(page, info, 26, LEVEL27_LINES, LEVEL27_MAX_FRAMES, 'level27')
 
 
+def sc_level28(page, info):
+    play_solution(page, info, 27, LEVEL28_LINES, LEVEL28_MAX_FRAMES, 'level28')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -584,6 +597,7 @@ SCENARIOS = {
     'level25': sc_level25,
     'level26': sc_level26,
     'level27': sc_level27,
+    'level28': sc_level28,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
