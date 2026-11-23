@@ -480,6 +480,25 @@ def play_solution(page, info, index, segments, max_frames, key, via=('A', 'B')):
     # input: draw each line (click, move, click), press start (unless the last allowed line already
     # started physics), and wait until the level is completed
     # (at most max_frames physics frames) with at least one via[0] -> via[1] teleport.
+    place_and_start(page, info, index, segments, key)
+    page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % max_frames,
+                           timeout=180000, polling=100)
+    r = page.evaluate("""i => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
+        frames: window.__l11Frames, unlock: levels[i].unlock, ball: [ball.posX, ball.posY],
+        teleports: portalState.teleports.map(t => ({step: t.step, from: t.from, to: t.to,
+            before: t.before, after: t.after}))})""", index)
+    info['play'] = r
+    ab = [t for t in r['teleports'] if t['from'] == via[0] and t['to'] == via[1]]
+    if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= max_frames and ab):
+        raise RuntimeError('%s not won with a %s->%s teleport: %s' % (key, via[0], via[1], {k: r[k] for k in (
+            'levelCompleted', 'winFrame', 'frames', 'ball')}))
+    # a fresh draw after the win so the screenshot shows the completed-level panel
+    frames(page)
+
+
+def place_and_start(page, info, index, segments, key, before_draw_js=None):
+    # play_solution's input part: menu -> level, draw the lines with real clicks, start physics.
+    # before_draw_js runs right after the frame counter is installed (before any line is drawn).
     frames(page)
     open_menu(page)
     x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", index)
@@ -492,6 +511,8 @@ def play_solution(page, info, index, segments, max_frames, key, via=('A', 'B')):
     # installed before drawing: physics is off until the start (or the last allowed line), so the
     # counter starts with the first physics frame either way
     page.evaluate(LEVEL11_COUNTER_JS)
+    if before_draw_js:
+        page.evaluate(before_draw_js)
     for (x1, y1), (x2, y2) in segments:
         click(page, x1, y1)
         move(page, x2, y2)
@@ -514,19 +535,6 @@ def play_solution(page, info, index, segments, max_frames, key, via=('A', 'B')):
         x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
         click(page, x, y)
         info['startPressed'] = page.evaluate("({physics, levelStarted})")
-    page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % max_frames,
-                           timeout=180000, polling=100)
-    r = page.evaluate("""i => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
-        frames: window.__l11Frames, unlock: levels[i].unlock, ball: [ball.posX, ball.posY],
-        teleports: portalState.teleports.map(t => ({step: t.step, from: t.from, to: t.to,
-            before: t.before, after: t.after}))})""", index)
-    info['play'] = r
-    ab = [t for t in r['teleports'] if t['from'] == via[0] and t['to'] == via[1]]
-    if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= max_frames and ab):
-        raise RuntimeError('%s not won with a %s->%s teleport: %s' % (key, via[0], via[1], {k: r[k] for k in (
-            'levelCompleted', 'winFrame', 'frames', 'ball')}))
-    # a fresh draw after the win so the screenshot shows the completed-level panel
-    frames(page)
 
 
 def sc_level11(page, info):
@@ -617,6 +625,77 @@ def sc_level32(page, info):
     play_solution(page, info, 31, LEVEL32_LINES, LEVEL32_MAX_FRAMES, 'level32')
 
 
+# TASK-164 rim trap: the level 19 lines from the bug video (artifacts/ball-physics-bug.mp4). Before the fix the ball
+# landed on the BACK of portal A's host line (the shelf y=450) next to a rim and shuttled between the rims forever.
+# The ball must not be trapped within L19_RIM_FRAMES game frames (it may win or lose; this is not a solution).
+L19_RIM_LINES = [((40, 400), (295, 750)), ((295, 750), (980, 240))]
+L19_RIM_FRAMES = 900
+# Per-frame hook on the real game loop: the shared rim-trap detector (tests/portal/rimtrap.py TRAP_JS) and the
+# ball path (one point per physics frame) for the path strip.
+L19_RIM_WATCH_JS = """() => { window.__rt = null; window.__rtPath = [];
+    const g = gameMechanics;
+    gameMechanics = function() { const on = physics && !editorMode; const n0 = portalState.teleports.length;
+        const r = g();
+        if (on) { if (!window.__rt) window.__rt = window.__rimtrap.detector(currentPortals() || []);
+            const tp = portalState.teleports.length > n0;
+            window.__rt.frame(tp, window.__l11Frames);
+            window.__rtPath.push([Math.round(ball.posX * 10) / 10, Math.round(ball.posY * 10) / 10, tp ? 1 : 0]) }
+        return r } }"""
+
+
+def path_strip(png, path, portals, out):
+    # The screenshot with the ball path (blue -> red over time, teleports as yellow dots) and a strip below it:
+    # x (blue) and y (orange) of the ball per frame, plus each portal's centre band (grey, +-h+r+2 around it in x).
+    from PIL import Image, ImageDraw
+    im = Image.open(png).convert('RGB')
+    W, H = im.size
+    sx, sy = W / 1280.0, H / 800.0
+    sh = 200
+    out_im = Image.new('RGB', (W, H + sh), (16, 20, 34))
+    out_im.paste(im, (0, 0))
+    d = ImageDraw.Draw(out_im)
+    n = max(1, len(path) - 1)
+    for i in range(1, len(path)):
+        a, b = path[i - 1], path[i]
+        if abs(a[0] - b[0]) + abs(a[1] - b[1]) > 200:
+            continue  # teleport / restart jump
+        c = (int(255 * i / n), 80, int(255 * (1 - i / n)))
+        d.line([(a[0] * sx, a[1] * sy), (b[0] * sx, b[1] * sy)], fill=c, width=2)
+    for p in path:
+        if p[2]:
+            d.ellipse([p[0] * sx - 5, p[1] * sy - 5, p[0] * sx + 5, p[1] * sy + 5], outline=(255, 230, 0), width=2)
+    y0 = H + 10
+    for P in portals:  # x band of each portal around its centre
+        for v in (P['x'] - P['h'] - 12, P['x'] + P['h'] + 12):
+            yy = y0 + (sh - 20) * (1 - v / 1280.0)
+            d.line([(0, yy), (W, yy)], fill=(90, 90, 90), width=1)
+    for k, col, scale in ((0, (80, 160, 255), 1280.0), (1, (255, 160, 60), 800.0)):
+        pts = [(W * i / n, y0 + (sh - 20) * (1 - p[k] / scale)) for i, p in enumerate(path)]
+        if len(pts) > 1:
+            d.line(pts, fill=col, width=2)
+    d.text((6, H + 2), 'x (blue) / y (orange) per frame, %d frames; grey: portal x bands' % len(path), fill=(220, 220, 220))
+    out_im.save(out)
+
+
+def sc_l19_rim_backside(page, info, out_dir=None):
+    sys.path.insert(0, os.path.join(ROOT, 'tests', 'portal'))
+    from rimtrap import install
+    install(page)
+    place_and_start(page, info, 18, L19_RIM_LINES, 'l19_rim_backside', before_draw_js=L19_RIM_WATCH_JS)
+    page.wait_for_function("levelCompletedWindow || (window.__rt && window.__rt.trapped) || window.__l11Frames >= %d"
+                           % L19_RIM_FRAMES, timeout=180000, polling=100)
+    r = page.evaluate("""() => ({trapped: window.__rt.trapped, trapFrame: window.__rt.trapFrame,
+        trapPortal: window.__rt.trapPortal, frames: window.__l11Frames, levelCompleted: levelCompletedWindow,
+        winFrame: window.__l11Win, teleports: portalState.teleports.map(t => t.from + '->' + t.to),
+        hostHits: portalState.hostHits, rimHits: portalState.rimHits, ball: [ball.posX, ball.posY],
+        portals: (currentPortals() || []).map(P => ({name: P.name, x: P.x, y: P.y, h: P.h}))})""")
+    info['rimtrap'] = r
+    info['_path'] = page.evaluate("window.__rtPath")
+    frames(page)
+    if r['trapped']:
+        raise RuntimeError('l19_rim_backside: ball TRAPPED at frame %s near portal %s' % (r['trapFrame'], r['trapPortal']))
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -655,6 +734,7 @@ SCENARIOS = {
     'level30': sc_level30,
     'level31': sc_level31,
     'level32': sc_level32,
+    'l19_rim_backside': sc_l19_rim_backside,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
@@ -681,6 +761,9 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             frames(page)
         entry['state'] = page.evaluate(STATE_JS)
         page.screenshot(path=os.path.join(out_dir, name + '.png'))
+        if '_path' in info:  # path strip next to the screenshot (TASK-164)
+            path_strip(os.path.join(out_dir, name + '.png'), info.pop('_path'), info['rimtrap']['portals'],
+                       os.path.join(out_dir, name + '_path.png'))
     except Exception as e:  # recorded as an error -> non-zero exit
         errors.append('exception: %s: %s' % (type(e).__name__, str(e).splitlines()[0] if str(e) else ''))
     finally:
@@ -724,6 +807,11 @@ def main():
                 print('    play levelCompleted=%s winFrame=%s frames=%s teleports=%s' % (
                     pl['levelCompleted'], pl['winFrame'], pl['frames'],
                     ','.join(t['from'] + '->' + t['to'] for t in pl['teleports']) or '-'))
+            if 'rimtrap' in entry:  # l19_rim_backside: rim-trap detector on the real game loop
+                rt = entry['rimtrap']
+                print('    rimtrap trapped=%s trapFrame=%s frames=%s levelCompleted=%s teleports=%s hostHits=%s rimHits=%s' % (
+                    str(rt['trapped']).lower(), rt['trapFrame'], rt['frames'], rt['levelCompleted'],
+                    ','.join(rt['teleports']) or '-', rt['hostHits'], rt['rimHits']))
             for e in entry['errors']:
                 print('   ', e)
         browser.close()

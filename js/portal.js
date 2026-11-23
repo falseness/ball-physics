@@ -13,8 +13,9 @@
 // also back -> front); it maps (s, d) -> (-s, -d).
 // Both rotate the velocity by (angleExit - angleEntry + PI), so a ball entering a front leaves
 // through the other portal's front, moving away from it.
-// The rims (c ± h·t) are solid points for balls that are not being captured (behind the plane or
-// moving away); the portal body is not a collider. A wall portal's host line collides as the
+// The rims (c ± h·t) are solid points for balls that are not being captured (moving away, or behind
+// a legacy free-standing portal); behind a wall portal (d <= 0) the rims are skipped because the
+// whole host line already collides there (TASK-164); the portal body is not a collider. A wall portal's host line collides as the
 // pieces outside the opening while the ball centre is in front of the portal (d > 0) and as the
 // whole line from behind (portalHostCollision). A ball being captured (front, v·n < 0) ignores a
 // piece / line end whose contact point is within h + ball.radius of the portal centre along t
@@ -231,7 +232,8 @@ function portalHosts()
 // Ball b against host line l carrying the resolved portals `list`: every portal whose front
 // the ball centre is on (d > 0) opens its gap u ± h/len, the line collides as the remaining
 // pieces (lineGapPieces); from behind (no open gap) the whole line collides. The rims are
-// solid points handled in portalStep.
+// solid points handled in portalStep, only while the ball is in front of the portal (d > 0):
+// from behind, the whole line is the only collider (TASK-164).
 // The pieces only reflect a ball that is not moving away from the front (v·n <= 0): a ball that
 // leaves the exit portal near a rim overlaps the piece next to the opening without having
 // travelled into it, and the original reflect-on-overlap code would send it straight back
@@ -557,10 +559,17 @@ function portalStep()
             break
         }
     }
-    // rims: solid points, reflect about the contact normal when moving towards them
+    // rims: solid points, reflect about the contact normal when moving towards them.
+    // A wall portal's rims lie on its host line, which is solid as a whole while the ball centre
+    // is behind the portal (d <= 0, portalHostCollision): there the rims are skipped, otherwise a
+    // ball resting on the back of the line is reflected twice per step (line + rim point, normals
+    // a few degrees apart), its velocity turns along the line and it shuttles between the two
+    // rims forever (TASK-163/164 rim trap). Legacy free-standing portals keep rims on both sides.
     for (let i = 0; i < P.length; ++i)
     {
         const Q = P[i], f = portalFrame(Q)
+        if (typeof Q.line == 'number' && (ball.posX - Q.x) * f.nx + (ball.posY - Q.y) * f.ny <= 0)
+            continue
         for (let k = 0; k < 2; ++k)
         {
             // portalRims(Q)[k] inline

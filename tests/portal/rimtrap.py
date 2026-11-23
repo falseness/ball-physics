@@ -2,8 +2,9 @@
 """Rim-trap (livelock) regression test for wall portals (TASK-163, Playwright, index.html via file://).
 
   python3 tests/portal/rimtrap.py --task TASK-NNN [--out rimtrap.json] [--jobs N] [--preview]
-      -> artifacts/TASK-NNN/<out> (compact JSON), exit 1 when the level 19 repro is trapped or the
-         back-side sweep finds a trap.
+      -> artifacts/TASK-NNN/<out> (compact JSON), exit 1 when the level 19 repro is trapped, the
+         back-side sweep finds a trap, or (TASK-164) a front-side outcome differs from --baseline
+         (default artifacts/TASK-163/baseline.json, the unfixed code; front_diff in the log).
   python3 tests/portal/rimtrap.py --task TASK-NNN --controls [--out detector_controls.json]
       -> detector false-positive controls; exit 1 if any control is reported trapped.
 
@@ -64,8 +65,7 @@ window.__rimtrap = {
       linesK = S.lines.length
     } else window.__portalTest.setup(S.cfg)
     const P = currentPortals() || [], rd = v => Math.round(v * 1e6) / 1e6
-    const ring = new Float64Array(this.TRAP_FRAMES)
-    let near = -1, run = 0, sum = 0, trapped = false, trapFrame = null, trapPortal = null
+    const det = this.detector(P)
     let end = 'frames', f = 0, first = null, state = null
     const bp = o.box != null ? P[o.boxPortal || 0] : null
     for (; f < o.frames; ++f) {
@@ -78,34 +78,47 @@ window.__rimtrap = {
       }
       const tp = portalState.teleports.length > n0
       if (tp && first === null) first = f + 1
-      // detector: nearest portal within h + r + margin, no teleport in the window, mean speed
-      let k = -1
-      for (let i = 0; i < P.length; ++i)
-        if (Math.hypot(ball.posX - P[i].x, ball.posY - P[i].y) <= P[i].h + ball.radius + this.MARGIN) { k = i; break }
-      // speed ALONG the portal's opening (|v . t|): a ball bouncing in place on the host line (elastic
-      // physics, it never settles) moves only along n and is not a trap; the rim shuttle moves along t
-      const fk = k >= 0 ? portalFrame(P[k]) : null
-      const sp = fk ? Math.abs(ball.speedX * fk.tx + ball.speedY * fk.ty) * this.SPF : 0
-      if (tp || k < 0 || k !== near) { run = 0; sum = 0 }
-      near = tp ? -1 : k
-      if (near >= 0) {
-        if (run >= this.TRAP_FRAMES) sum -= ring[run % this.TRAP_FRAMES]
-        ring[run % this.TRAP_FRAMES] = sp; sum += sp; ++run
-        if (!trapped && run >= this.TRAP_FRAMES && sum / this.TRAP_FRAMES > this.MIN_SPEED) {
-          trapped = true; trapFrame = f + 1; trapPortal = P[near].name
-        }
-      }
+      det.frame(tp, f + 1)
+      const trapped = det.trapped
       if (o.stateAt && f + 1 === o.stateAt) state = [ball.posX, ball.posY, ball.speedX, ball.speedY].map(rd)
       if (stop) { end = stop; ++f; break }
       if (trapped && o.stopOnTrap) { end = 'trapped'; ++f; break }
       if (bp && Math.hypot(ball.posX - bp.x, ball.posY - bp.y) > o.box) { end = 'box'; ++f; break }
     }
     if (o.stateAt && state === null) state = [ball.posX, ball.posY, ball.speedX, ball.speedY].map(rd)
-    return {trapped, trapFrame, trapPortal, frames: f, end, teleports: portalState.teleports.length,
+    return {trapped: det.trapped, trapFrame: det.trapFrame, trapPortal: det.trapPortal, frames: f, end, teleports: portalState.teleports.length,
             firstTeleport: first, state, hostHits: portalState.hostHits, rimHits: portalState.rimHits,
             ball: [rd(ball.posX), rd(ball.posY), rd(ball.speedX * this.SPF), rd(ball.speedY * this.SPF)]}
   },
-  batch(list) { return list.map(o => this.run(o)) }
+  batch(list) { return list.map(o => this.run(o)) },
+  // the detector alone, for runs driven elsewhere (e.g. the real game loop in tests/visual/shoot.py):
+  // call frame(teleportedThisFrame, frameNo) once after each frame of SPF gamePhysics steps
+  detector(P) {
+    const T = this, ring = new Float64Array(T.TRAP_FRAMES)
+    let near = -1, run = 0, sum = 0
+    return {
+      trapped: false, trapFrame: null, trapPortal: null,
+      frame(tp, fno) {
+        // nearest portal within h + r + margin, no teleport in the window, mean speed
+        let k = -1
+        for (let i = 0; i < P.length; ++i)
+          if (Math.hypot(ball.posX - P[i].x, ball.posY - P[i].y) <= P[i].h + ball.radius + T.MARGIN) { k = i; break }
+        // speed ALONG the portal's opening (|v . t|): a ball bouncing in place on the host line (elastic
+        // physics, it never settles) moves only along n and is not a trap; the rim shuttle moves along t
+        const fk = k >= 0 ? portalFrame(P[k]) : null
+        const sp = fk ? Math.abs(ball.speedX * fk.tx + ball.speedY * fk.ty) * T.SPF : 0
+        if (tp || k < 0 || k !== near) { run = 0; sum = 0 }
+        near = tp ? -1 : k
+        if (near >= 0) {
+          if (run >= T.TRAP_FRAMES) sum -= ring[run % T.TRAP_FRAMES]
+          ring[run % T.TRAP_FRAMES] = sp; sum += sp; ++run
+          if (!this.trapped && run >= T.TRAP_FRAMES && sum / T.TRAP_FRAMES > T.MIN_SPEED) {
+            this.trapped = true; this.trapFrame = fno; this.trapPortal = P[near].name
+          }
+        }
+      }
+    }
+  }
 }
 """.replace('@TF@', str(TRAP_FRAMES)).replace('@MG@', str(TRAP_MARGIN)) \
     .replace('@MS@', repr(TRAP_MIN_SPEED)).replace('@SPF@', str(STEPS_PER_FRAME))
@@ -250,6 +263,9 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 6 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-163', 'baseline.json'),
+                    help='rimtrap.json of the unfixed code: front outcomes must match it case by case '
+                         '(front_diff, exit 1 when > 0); "" = no comparison')
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'detector_controls.json')
@@ -278,7 +294,19 @@ def main():
                  'h': H, 'r': R, 'gap': GAP},
         'pageErrors': errs + e1 + e2,
     }
-    fail = rep['trapped'] or len(traps) > 0
+    front_diff = None
+    if a.baseline and os.path.exists(a.baseline):
+        with open(a.baseline) as fh:
+            base = json.load(fh)['front']
+        bmap = {tuple(k): o for k, o in zip(base['keys'], base['outcomes'])}
+        diffs = [list(c) for c, o in zip(doc['front']['keys'], doc['front']['outcomes']) if tuple(c) not in bmap or bmap[tuple(c)] != o]
+        front_diff = len(diffs)
+        doc['front']['baseline'] = os.path.relpath(a.baseline, ROOT)
+        doc['front']['baselineCases'] = len(base['keys'])
+        doc['front']['diffCases'] = diffs[:50]
+    doc['front']['front_diff'] = front_diff
+    print('front_diff=%s baseline=%s' % (front_diff, a.baseline or '-'))
+    fail = rep['trapped'] or len(traps) > 0 or bool(front_diff)
     doc['fail'] = fail
     with open(out_path(a.task, a.out or 'rimtrap.json'), 'w') as fh:
         json.dump(doc, fh, separators=(',', ':'))
