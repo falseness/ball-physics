@@ -451,9 +451,10 @@ LEVEL30_MAX_FRAMES = 1500
 # the upper part only gives y >= 240, short of the flag). Line 3 throws the ball, which rises out of B into the roof,
 # out to the right under the roof's wall, and line 4 turns it straight up into the bell. Found by a staged scan
 # (artifacts/TASK-157/search/probe.py: kick x deflector, 375/2432 reach A, 235 low; then line 3 under B's roof, then
-# line 4 under the bell, 64/3780 wins; the +-2 px neighbourhood of this one wins 19/32;
-# artifacts/TASK-157/search_ref.json); keep these exact integer coordinates.
-LEVEL31_LINES = [((1140, 430), (1220, 380)), ((735, 777), (785, 743)), ((99, 566), (141, 524)), ((521, 591), (561, 549))]
+# line 4 under the bell, 64/3780 wins; artifacts/TASK-157/search_ref.json). TASK-158 lengthened line 3 by 3 px at
+# each end (was (99,566)->(141,524)): tools/level_search.py --mode local then wins 17/32 single-coordinate +-2 px
+# variants instead of 15/32 (artifacts/TASK-158/g3_local.json); keep these exact integer coordinates.
+LEVEL31_LINES = [((1140, 430), (1220, 380)), ((735, 777), (785, 743)), ((96, 569), (144, 521)), ((521, 591), (561, 549))]
 LEVEL31_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
