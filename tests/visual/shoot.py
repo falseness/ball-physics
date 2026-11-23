@@ -696,6 +696,62 @@ def sc_l19_rim_backside(page, info, out_dir=None):
         raise RuntimeError('l19_rim_backside: ball TRAPPED at frame %s near portal %s' % (r['trapFrame'], r['trapPortal']))
 
 
+# TASK-172 exit overlap: on level 24 the shelf (60,360)->(1240,360) starts at portal B's centre. A ball entering A
+# within ~r of A's centre would leave B with its centre on the shelf and slide inside it ('stuck in textures').
+# These real-input lines send the ball into A within 5 px of its centre; the exit must be refused (blocked,
+# reason 'overlap') and the shared embedded detector (tests/portal/embed.py EMBED_JS) must not fire within
+# L24_CENTER_FRAMES game frames (the ball may win, lose or bounce; this is not a solution).
+L24_CENTER_LINES = [((170, 476), (620, 513)), ((748, 595), (678, 726))]
+L24_CENTER_FRAMES = 600
+# Per-frame hook on the real game loop: the embedded detector and the ball path (one point per physics frame,
+# blocked exits marked like teleports) for the path strip.
+# Blocked records are collected per frame (an off-map ball restarts the level: physics off, portalState cleared).
+L24_CENTER_WATCH_JS = """() => { window.__em = null; window.__emPath = []; window.__emBlocked = []; window.__emTeleports = [];
+    const g = gameMechanics;
+    gameMechanics = function() { const on = physics && !editorMode;
+        const t0 = portalState.teleports.length, b0 = portalState.blockedExits;
+        const r = g();
+        if (on) { if (!window.__em) window.__em = window.__embed.detector();
+            const kept = portalState.blockedExits >= b0 && portalState.teleports.length >= t0;   // no restart this frame
+            if (kept) { for (const b of portalState.blocked.slice(b0)) window.__emBlocked.push(b);
+                        for (const t of portalState.teleports.slice(t0)) window.__emTeleports.push(t) }
+            const tp = kept && portalState.teleports.length + portalState.blockedExits > t0 + b0;
+            window.__em.frame(window.__l11Frames);
+            window.__emPath.push([Math.round(ball.posX * 10) / 10, Math.round(ball.posY * 10) / 10, tp ? 1 : 0]) }
+        return r } }"""
+
+
+def sc_l24_center_entry(page, info):
+    sys.path.insert(0, os.path.join(ROOT, 'tests', 'portal'))
+    from embed import install
+    install(page)
+    place_and_start(page, info, 23, L24_CENTER_LINES, 'l24_center_entry', before_draw_js=L24_CENTER_WATCH_JS)
+    # ends on the win, after L24_CENTER_FRAMES frames, or when the ball left the map (the level restarted, physics off)
+    page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d || (window.__l11Frames > 0 && !physics)"
+                           % L24_CENTER_FRAMES, timeout=180000, polling=100)
+    r = page.evaluate("""() => ({embedded: window.__em.embedded, embedFrame: window.__em.embedFrame,
+        embedFrames: window.__em.count, maxRun: window.__em.maxRun, frames: window.__l11Frames,
+        levelCompleted: levelCompletedWindow, winFrame: window.__l11Win, physics,
+        end: levelCompletedWindow ? 'won' : physics ? 'frames' : 'offmap',
+        blockedExits: window.__emBlocked.length,
+        blocked: window.__emBlocked.map(b => ({step: b.step, from: b.from, to: b.to, s: b.s, kind: b.kind,
+            reason: b.reason, before: b.before, after: b.after})),
+        teleports: window.__emTeleports.map(t => ({step: t.step, from: t.from, to: t.to, s: t.s, after: t.after})),
+        ball: [ball.posX, ball.posY],
+        portals: (currentPortals() || []).map(P => ({name: P.name, x: P.x, y: P.y, h: P.h}))})""")
+    info['embed'] = r
+    info['_path'] = page.evaluate("window.__emPath")
+    frames(page)
+    first = r['blocked'][0] if r['blocked'] else None
+    ok_block = r['blockedExits'] >= 1 and any(b['reason'] == 'overlap' for b in r['blocked'])
+    centre = first is not None and first['from'] == 'A' and abs(first['s']) < 5
+    if not (ok_block and centre):
+        raise RuntimeError('l24_center_entry: no overlap-blocked A entry within 5 px of the centre: blockedExits=%s first=%s'
+                           % (r['blockedExits'], first))
+    if r['embedded']:
+        raise RuntimeError('l24_center_entry: ball EMBEDDED at frame %s (%s frames)' % (r['embedFrame'], r['embedFrames']))
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -735,6 +791,7 @@ SCENARIOS = {
     'level31': sc_level31,
     'level32': sc_level32,
     'l19_rim_backside': sc_l19_rim_backside,
+    'l24_center_entry': sc_l24_center_entry,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
@@ -762,7 +819,7 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
         entry['state'] = page.evaluate(STATE_JS)
         page.screenshot(path=os.path.join(out_dir, name + '.png'))
         if '_path' in info:  # path strip next to the screenshot (TASK-164)
-            path_strip(os.path.join(out_dir, name + '.png'), info.pop('_path'), info['rimtrap']['portals'],
+            path_strip(os.path.join(out_dir, name + '.png'), info.pop('_path'), (info.get('rimtrap') or info['embed'])['portals'],
                        os.path.join(out_dir, name + '_path.png'))
     except Exception as e:  # recorded as an error -> non-zero exit
         errors.append('exception: %s: %s' % (type(e).__name__, str(e).splitlines()[0] if str(e) else ''))
@@ -812,6 +869,12 @@ def main():
                 print('    rimtrap trapped=%s trapFrame=%s frames=%s levelCompleted=%s teleports=%s hostHits=%s rimHits=%s' % (
                     str(rt['trapped']).lower(), rt['trapFrame'], rt['frames'], rt['levelCompleted'],
                     ','.join(rt['teleports']) or '-', rt['hostHits'], rt['rimHits']))
+            if 'embed' in entry:  # l24_center_entry: blocked exit (reason) + embedded detector on the real game loop
+                em = entry['embed']
+                print('    embed embedded=%s embedFrame=%s maxRun=%s frames=%s end=%s blockedExits=%s blocked=%s teleports=%s' % (
+                    str(em['embedded']).lower(), em['embedFrame'], em['maxRun'], em['frames'], em['end'],
+                    em['blockedExits'], ','.join('%s->%s:%s:s=%.2f' % (b['from'], b['to'], b['reason'], b['s']) for b in em['blocked']) or '-',
+                    ','.join(t['from'] + '->' + t['to'] for t in em['teleports']) or '-'))
             for e in entry['errors']:
                 print('   ', e)
         browser.close()

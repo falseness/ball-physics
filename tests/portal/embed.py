@@ -4,6 +4,8 @@
   python3 tests/portal/embed.py --task TASK-NNN [--out embed.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON); exit 1 when the level 24 repro (a) or the synthetic
          sweep (b) has an embedded run.
+      --baseline (default artifacts/TASK-171/baseline.json, '' = off; TASK-172): every case whose baseline
+         exitOverlap was false must keep its outcome (diffNonOverlap == 0 in the log, else exit 1).
   python3 tests/portal/embed.py --task TASK-NNN --controls [--out controls.json]
       -> detector false-positive controls (c); exit 1 if any control is embedded (or level 24 is not won).
 
@@ -256,6 +258,8 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 5 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-171', 'baseline.json'),
+                    help="diff outcomes of cases whose baseline exitOverlap was false ('' = no diff)")
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'controls.json')
@@ -285,6 +289,22 @@ def main():
         'pageErrors': errs + e1,
     }
     fail = any(r['embedded'] for r in repro) or len(emb) > 0
+    if a.baseline and os.path.exists(a.baseline):
+        # TASK-172: the exit-overlap block may only change runs whose pre-fix exit overlapped a line
+        with open(a.baseline) as fh:
+            base = json.load(fh)['outcomes']
+        common = [k for k in base if k in doc['outcomes']]     # --preview runs a subset of the grid
+        nonov = [k for k in common if not base[k]['exitOverlap']]
+        diff = [k for k in nonov if doc['outcomes'][k] != base[k]]
+        ov = [k for k in common if base[k]['exitOverlap']]
+        doc['baselineDiff'] = {'baseline': os.path.relpath(a.baseline, ROOT), 'commonCases': len(common),
+                               'nonOverlapCases': len(nonov),
+                               'diffNonOverlap': len(diff), 'diffNonOverlapCases': diff[:50],
+                               'overlapCases': len(ov),
+                               'overlapChanged': sum(1 for k in ov if doc['outcomes'].get(k) != base[k])}
+        print('baseline=%s nonOverlapCases=%d diffNonOverlap=%d overlapCases=%d overlapChanged=%d'
+              % (doc['baselineDiff']['baseline'], len(nonov), len(diff), len(ov), doc['baselineDiff']['overlapChanged']))
+        fail = fail or len(diff) > 0
     doc['fail'] = fail
     with open(out_path(a.task, a.out or 'embed.json'), 'w') as fh:
         json.dump(doc, fh, separators=(',', ':'))

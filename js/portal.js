@@ -424,6 +424,25 @@ function portalPathBlocked(x0, y0, x1, y1, P)
     return best
 }
 
+// TASK-172: true when a ball centred at (x, y) would overlap a line of the play field other than
+// portal P's host line (point-segment distance below the ball radius). Lines farther than the radius
+// from (x, y) along either axis are skipped.
+function portalExitOverlaps(x, y, P)
+{
+    const host = typeof P.line == 'number' ? curLevel().lines[P.line] : null
+    const r = ball.radius
+    for (let i = 0; i < lines.length; ++i)
+    {
+        const l = lines[i]
+        if (l === host || Math.max(l.posX, l.posX2) <= x - r || Math.min(l.posX, l.posX2) >= x + r ||
+            Math.max(l.posY, l.posY2) <= y - r || Math.min(l.posY, l.posY2) >= y + r)
+            continue
+        if (pointSegDist(x, y, l.posX, l.posY, l.posX2, l.posY2) < r)
+            return true
+    }
+    return false
+}
+
 function currentPortals()
 {
     return portalRefresh()
@@ -484,12 +503,19 @@ function portalTeleport(A, B, s, d, kind)
     // up to one step behind A's plane, is mirrored back in front of it). For a line parallel to B's
     // opening this is 'teleport, bounce off the line, teleport back' in one step. (Clipping the exit to
     // the line instead left the centre on the line, where the reflect-on-overlap collision kept the ball
-    // stuck.) An exit that only overlaps a line from O's side teleports as before (S11): the next
-    // collision() bounces the ball off that line.
-    if (portalPathBlocked(ox, oy, ex, ey, B) < Infinity)
+    // stuck.) record.reason = 'path'.
+    // TASK-172: an exit centre closer than the ball radius to a line other than B's host line (the exit
+    // legitimately sits PORTAL_EXIT_MIN_D in front of that one) is blocked the same way, record.reason =
+    // 'overlap'. Before, such an exit teleported and the reflect-on-overlap collision could not push a
+    // centre that sat on (or within r/2 of) the line back out: on level 24 the shelf starts at B's centre,
+    // a ball entering A near its centre came out on the shelf and slid inside it ('stuck in textures').
+    const reason = portalPathBlocked(ox, oy, ex, ey, B) < Infinity ? 'path'
+                 : portalExitOverlaps(ex, ey, B) ? 'overlap' : null
+    if (reason)
     {
         const fa = portalFrame(A), vn = vx * fa.nx + vy * fa.ny
         record.blocked = true
+        record.reason = reason
         if (kind === 'cross')
         {
             ball.posX -= 2 * d * fa.nx

@@ -351,6 +351,7 @@ TRACE_JS = """([frames, per]) => { const f = []
   }
   const steps_ = portalState.teleports.map(t => t.step)
   return {frames: f, maxE: maxE, twoInStep: twoInStep, teleportSteps: steps_, rimHits: portalState.rimHits,
+          blockedExits: portalState.blockedExits, blockedReasons: portalState.blocked.map(b => b.reason),
           finite: f.every(r => r.every(Number.isFinite))} }"""
 
 
@@ -441,7 +442,9 @@ def s10(page):
 
 
 def s11(page):
-    """Exit 12 px from a level line parallel to B in front of it: not stuck, <= 4 velocity sign flips."""
+    """Exit 12 px from a level line parallel to B in front of it (closer than the ball radius): since TASK-172 the
+    exit is refused (blocked, reason 'overlap', no teleport; before, it teleported onto the line); not stuck,
+    <= 4 velocity sign flips."""
     A = portal(300, 400, 0, 'A')                 # wall facing right; ball comes in from the right
     B = portal(900, 500, -90, 'B')               # floor facing up; line 12 px above it
     line = [850, 488, 950, 488]
@@ -449,8 +452,9 @@ def s11(page):
     fr = tr['frames']
     disp = math.hypot(fr[-1][0] - 400, fr[-1][1] - 400)
     out = {'teleports': fr[-1][4], 'displacement': disp, 'flips': flips(fr), 'rimHits': tr['rimHits'],
-           'final': fr[-1][:4]}
-    out['ok_used_portal'] = out['teleports'] >= 1
+           'blockedExits': tr.get('blockedExits'), 'blockedReasons': tr.get('blockedReasons'), 'final': fr[-1][:4]}
+    out['ok_overlap_exit_blocked'] = (out['teleports'] == 0 and (out['blockedExits'] or 0) >= 1
+                                      and set(out['blockedReasons'] or []) == {'overlap'})
     out['ok_not_stuck'] = disp > 5
     out['ok_flips'] = out['flips'] <= 4
     out['ok_finite'] = tr['finite']
@@ -1022,7 +1026,7 @@ W_X_JS = r"""([cfg, maxSteps]) => {
   return {steps: step, end, nan, teleports: tps.length, teleportList: tps.slice(0, 12), bounces, crossings, crossLog,
           maxTeleportsIn2000: maxIn2000, teleportPathsBlocked: blocked, exitIntoLine, hostHits: portalState.hostHits, rimHits: portalState.rimHits,
           blockedExits: portalState.blockedExits, blockedList: portalState.blocked.slice(0, 4).map(b => ({step: b.step, from: b.from, to: b.to,
-            kind: b.kind, s: b.s, d: b.d, before: b.before, after: b.after})),
+            kind: b.kind, reason: b.reason, s: b.s, d: b.d, before: b.before, after: b.after})),
           exitWindows: wins.map(w => ({step: w.step, steps: w.steps, behindSteps: w.behindSteps, wrongSideSteps: w.wrongSideSteps, bounced: w.bounced})),
           final: [ball.posX, ball.posY, ball.speedX, ball.speedY]} }"""
 
@@ -1142,11 +1146,12 @@ def w10(page):
 def w11(page):
     """Extra line at 45 deg through B's front zone touching B's lower rim: (1040, 295) up-right to (1110, 225).
     Drops at A's s = 0 / -35 / -40 / -44 would leave B at y = 250 / 285 / 290 / 294 (s_B = -s_A), exit centre
-    x = 1050. s = 0: 24.7 px from the line, the ball is teleported, runs into the line and bounces off it.
-    s = -35: the exit centre is just on the opening's side of the line (overlapping it, as in S11): teleported,
-    bounced off the line. Both stay on B's front side without crossing it. s = -40 / -44: the exit centre
-    would be on the far side of the line: blocked, no teleport, the ball bounces off A and never crosses
-    the line. All: no NaN, <= 4 teleports in any 2000 steps."""
+    x = 1050. s = 0: 24.7 px from the line, the ball is teleported, runs into the line and bounces off it and
+    stays on B's front side without crossing it. s = -35: the exit centre is just on the opening's side of the
+    line but overlapping it (as in S11): since TASK-172 blocked (reason 'overlap'), no teleport, the ball bounces
+    off A (before, it was teleported onto the line). s = -40 / -44: the exit centre would be on the far side of
+    the line: blocked (reason 'path'), no teleport, the ball bounces off A and never crosses the line.
+    All: no NaN, <= 4 teleports in any 2000 steps."""
     extra = [1040, 295, 1110, 225]
     out = {'extra': extra}
     keys = []
@@ -1154,18 +1159,21 @@ def w11(page):
         k = 's%d' % sA
         keys.append(k)
         out[k] = wx_exit_case(page, {'x': 600 + sA, 'y': 450, 'vx': 0, 'vy': 0}, extra, 60000)
-    tp, bl = keys[:2], keys[2:]
+    tp, ov, bl = keys[:1], keys[1:2], keys[2:]
     wx_windows(out, [out[k] for k in tp])
-    for k in bl:
+    for k in ov + bl:
         out[k].pop('allExitWindows')
     cases = [out[k] for k in keys]
     out['teleports'] = [c['teleports'] for c in cases]
     out['blockedExits'] = [c['blockedExits'] for c in cases]
     out['bounces'] = [c['bounces'] for c in cases]
     out['ok_teleported_to_B'] = all(out[k]['teleports'] >= 1 and out[k]['teleportList'][0]['to'] == 'B' for k in tp)
-    out['ok_bounced_off_extra_after_exit'] = out['exitWindows'] >= 2 and out['exitWindowsWithoutBounce'] == 0
+    out['ok_bounced_off_extra_after_exit'] = out['exitWindows'] >= 1 and out['exitWindowsWithoutBounce'] == 0
+    out['ok_overlap_exit_blocked'] = all(out[k]['teleports'] == 0 and blocked_away_from_A(out[k]) and
+                                         all(b['reason'] == 'overlap' for b in out[k]['blockedList']) for k in ov)
     out['ok_stays_on_B_front_side'] = out['exitWindowStepsBehindB'] == 0 and out['exitWindowStepsWrongSide'] == 0
-    out['ok_far_side_exits_blocked'] = all(out[k]['teleports'] == 0 and blocked_away_from_A(out[k]) for k in bl)
+    out['ok_far_side_exits_blocked'] = all(out[k]['teleports'] == 0 and blocked_away_from_A(out[k]) and
+                                           all(b['reason'] == 'path' for b in out[k]['blockedList']) for k in bl)
     out['ok_invariants'] = all(wx_common(c) for c in cases)
     return out
 

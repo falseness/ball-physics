@@ -38,7 +38,7 @@ exits, blockedExits, the ball bounces off the entry instead) and 'pingPongCases'
 each <= 2 steps after the previous one: the ball thrown back and forth between the portals; a ball
 rattling in a small pocket and bouncing off a line through the exit each time, 2 teleports per bounce,
 is counted only in casesOver4In2000Steps). 'exitOverlapsLine' (exit centre within r of such a line, from the opening's
-side) is only counted: like S11's line 12 px in front of B, the next collision bounces the ball off it.
+side) is only counted; since TASK-172 js/portal.js refuses such exits too (blocked, reason 'overlap'), so it stays 0.
 
 Rim-trap (livelock) detector (TASK-165, always on in every mode): the shared detector of tests/portal/rimtrap.py
 (window.__rimtrap.detector, TASK-163/164) is fed after every frame. A case is TRAPPED when the ball centre
@@ -395,7 +395,7 @@ def main():
                     case_bad.append(('speed', t['step'], e))
                 ex, ey, evx, evy = mapped(A, B, *t['before'], kind=kind)
                 if a.crossing:
-                    # informational: exits overlapping a line from the opening's side (allowed, see S11)
+                    # informational: exits overlapping a line from the opening's side (refused since TASK-172, see S11)
                     if any(seg_dist(t['after'][:2], l[:2], l[2:]) < R for i, l in enumerate(cfg['lines']) if i != B['line']):
                         c['exitOverlapsLine'] += 1
                     if t['to'] in [n for _, n in cfg['extraLines']] or t['from'] in [n for _, n in cfg['extraLines']]:
