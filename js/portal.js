@@ -307,7 +307,8 @@ function portalHostPiece(b, l, list, dx, dy, a, c)
     // (segClosestPoint inline)
     const ex = x2 - x1, ey = y2 - y1, L2 = ex * ex + ey * ey
     const k = L2 > 0 ? Math.max(0, Math.min(1, ((b.posX - x1) * ex + (b.posY - y1) * ey) / L2)) : 0
-    if (portalCaptureZone(b, list, x1 + k * ex, y1 + k * ey))
+    // end: the contact is an end point of the host line itself (not a gap edge), TASK-173
+    if (portalCaptureZone(b, list, x1 + k * ex, y1 + k * ey, (k === 0 && a === 0) || (k === 1 && c === 1)))
         return false
     return b.collisionWithSegment(x1, y1, x2, y2)
 }
@@ -316,7 +317,13 @@ function portalHostPiece(b, l, list, dx, dy, a, c)
 // and the contact point (qx, qy) lies within h + ball.radius of that portal's centre along t:
 // such a contact (the piece next to the opening, its rim end, a host line end) must not bounce
 // the ball, which touches the opening and teleports instead (TASK-074).
-function portalCaptureZone(b, list, qx, qy)
+// end (TASK-173): (qx, qy) is an end point of the host line. Such a contact is in the zone only while the
+// ball centre is within h + radius / 2 of P's centre along t: that ball touches the opening before it gets
+// closer than the radius to an end at |s| <= h + radius (the clamped host line end), while a centre farther
+// out reaches the end long before the opening (or never does), so the end stays solid for it. It used to be
+// let into the line end and then held there by the reflect-on-overlap collision (embedded: fuzz --touching,
+// --crossing case 518). Contacts inside the line (the pieces, TASK-074 edge capture) are unchanged.
+function portalCaptureZone(b, list, qx, qy, end)
 {
     for (let i = 0; i < list.length; ++i)
     {
@@ -324,7 +331,8 @@ function portalCaptureZone(b, list, qx, qy)
         const P = list[i], f = portalFrame(P)
         if ((b.posX - P.x) * f.nx + (b.posY - P.y) * f.ny <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
             continue
-        if (Math.abs((qx - P.x) * f.tx + (qy - P.y) * f.ty) <= P.h + b.radius && !portalTouchExitBlocked(P, b, f))
+        if (Math.abs((qx - P.x) * f.tx + (qy - P.y) * f.ty) <= P.h + b.radius &&
+            (!end || Math.abs((b.posX - P.x) * f.tx + (b.posY - P.y) * f.ty) <= P.h + 0.5 * b.radius) && !portalTouchExitBlocked(P, b, f))
             return true
     }
     return false
@@ -354,7 +362,12 @@ function portalTouchExitBlocked(P, b, fp)
         const fq = portalFrame(Q), se = Math.max(-Q.h, Math.min(Q.h, dx * f.tx + dy * f.ty))
         const de = Math.max(dx * f.nx + dy * f.ny, PORTAL_EXIT_MIN_D)
         const ox = Q.x - se * fq.tx, oy = Q.y - se * fq.ty
-        r = portalPathBlocked(ox, oy, ox + de * fq.nx, oy + de * fq.ny, Q) < Infinity
+        // TASK-173: also refused when a ball centre anywhere on the exit segment O + [MIN_D, radius] * n
+        // would overlap a line (portalTeleport's TASK-172 'overlap' reason, for every exit depth a touch
+        // can produce). The verdict does not depend on the ball's current depth d, so it cannot flip
+        // while a captured ball penetrates the plane (which used to drop the capture inside a line end).
+        r = portalPathBlocked(ox, oy, ox + de * fq.nx, oy + de * fq.ny, Q) < Infinity ||
+            portalExitSweepOverlaps(ox, oy, fq.nx, fq.ny, Q)
     }
     if (portalFrozen)
     {
@@ -438,6 +451,38 @@ function portalExitOverlaps(x, y, P)
             Math.max(l.posY, l.posY2) <= y - r || Math.min(l.posY, l.posY2) >= y + r)
             continue
         if (pointSegDist(x, y, l.posX, l.posY, l.posX2, l.posY2) < r)
+            return true
+    }
+    return false
+}
+
+// TASK-173: true when a ball centred anywhere on the segment O + k * n, k in [PORTAL_EXIT_MIN_D, ball.radius]
+// (the touch-teleport exit centres in front of portal P's opening point O), would overlap a line of the
+// play field other than P's host line: segment-segment distance below the ball radius.
+function portalExitSweepOverlaps(ox, oy, nx, ny, P)
+{
+    const host = typeof P.line == 'number' ? curLevel().lines[P.line] : null
+    const r = ball.radius
+    const x0 = ox + PORTAL_EXIT_MIN_D * nx, y0 = oy + PORTAL_EXIT_MIN_D * ny, x1 = ox + r * nx, y1 = oy + r * ny
+    const bx0 = Math.min(x0, x1) - r, bx1 = Math.max(x0, x1) + r, by0 = Math.min(y0, y1) - r, by1 = Math.max(y0, y1) + r
+    const ex = x1 - x0, ey = y1 - y0
+    for (let i = 0; i < lines.length; ++i)
+    {
+        const l = lines[i]
+        if (l === host || Math.max(l.posX, l.posX2) <= bx0 || Math.min(l.posX, l.posX2) >= bx1 ||
+            Math.max(l.posY, l.posY2) <= by0 || Math.min(l.posY, l.posY2) >= by1)
+            continue
+        // the two segments intersect: distance 0
+        const fx = l.posX2 - l.posX, fy = l.posY2 - l.posY, den = ex * fy - ey * fx
+        if (den !== 0)
+        {
+            const qx = l.posX - x0, qy = l.posY - y0
+            const k = (qx * fy - qy * fx) / den, m = (qx * ey - qy * ex) / den
+            if (k >= 0 && k <= 1 && m >= 0 && m <= 1)
+                return true
+        }
+        if (pointSegDist(x0, y0, l.posX, l.posY, l.posX2, l.posY2) < r || pointSegDist(x1, y1, l.posX, l.posY, l.posX2, l.posY2) < r ||
+            pointSegDist(l.posX, l.posY, x0, y0, x1, y1) < r || pointSegDist(l.posX2, l.posY2, x0, y0, x1, y1) < r)
             return true
     }
     return false

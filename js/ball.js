@@ -128,10 +128,10 @@ class Ball extends Sprite
                     y0 < (l.posY < l.posY2 ? l.posY : l.posY2) - m || y0 > (l.posY > l.posY2 ? l.posY : l.posY2) + m)
                     continue
             }
-            // a ball being captured by a portal on this line ignores a line end next to the opening (TASK-074)
+            // a ball being captured by a portal on this line ignores a line end next to the opening (TASK-074; true: a line end, TASK-173)
             // (dotHit first: when it is false collisionWithDot would do nothing, so the capture zone is not needed)
-            if (host ? (this.dotHit(lines[i].posX, lines[i].posY) && !portalCaptureZone(this, host, lines[i].posX, lines[i].posY) && this.collisionWithDot(lines[i].posX, lines[i].posY)) ||
-                       (this.dotHit(lines[i].posX2, lines[i].posY2) && !portalCaptureZone(this, host, lines[i].posX2, lines[i].posY2) && this.collisionWithDot(lines[i].posX2, lines[i].posY2))
+            if (host ? (this.dotHit(lines[i].posX, lines[i].posY) && !portalCaptureZone(this, host, lines[i].posX, lines[i].posY, true) && this.collisionWithDot(lines[i].posX, lines[i].posY)) ||
+                       (this.dotHit(lines[i].posX2, lines[i].posY2) && !portalCaptureZone(this, host, lines[i].posX2, lines[i].posY2, true) && this.collisionWithDot(lines[i].posX2, lines[i].posY2))
                      : this.collisionWithDot(lines[i].posX, lines[i].posY) || this.collisionWithDot(lines[i].posX2, lines[i].posY2))
                 break
             /*
