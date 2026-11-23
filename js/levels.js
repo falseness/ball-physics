@@ -691,26 +691,29 @@ levels.push(
     // with a wall portal on its LEFT face. Both portals face the same way, so a teleport reverses the velocity
     // completely (rotation PI) and the exit point is the entry point moved by A->B: after B the ball replays its
     // approach to A backwards, shifted by (560, -200). The flag stands on top of tower B, so its 'shadow' stands
-    // on top of tower A. The ball bounces in place on a pad right of tower A (peak y 300, below the flag), so
+    // on top of tower A. The ball bounces in place on a pad right of tower A (peak y 300, 70 px below the flag), so
     // line 1 knocks it left over tower A's top (through the flag's shadow), line 2 turns it back into A, and
     // line 3 is line 2's twin moved by (560, -200): the replayed path bounces off it and flies over tower B's
     // top into the flag.
     ballX: 560,
     ballY: 300,
     flagX: 980,
-    flagY: 250,
+    flagY: 230,
     flagRotate: 0,
     lineK: 3,
     lines: [
-        new Line(420, 450, 420, 790, dotRadius, levelLineColor, 'line'),
-        new Line(980, 250, 980, 590, dotRadius, levelLineColor, 'line'),
+        new Line(420, 430, 420, 790, dotRadius, levelLineColor, 'line'),
+        new Line(980, 230, 980, 590, dotRadius, levelLineColor, 'line'),
         new Line(500, 560, 620, 560, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (420, 640) on tower A facing left (-1, 0),
     // B at (980, 440) on tower B facing left (-1, 0); same facing, so a teleport reverses the velocity
+    // TASK-154: a same-facing pair also mirrors the offset along the opening (s -> -s), so a B->A->B round trip
+    // can gain up to 4h of height; h 15 (4h = 60) and towers 20 px taller (flag 70 px above the ball's peak)
+    // keep that pump from reaching the flag without the intended A->B
     portals: [
-        { line: 0, u: 0.55882, side: 1, h: 45, name: 'A' },
-        { line: 1, u: 0.55882, side: 1, h: 45, name: 'B' }
+        { line: 0, u: 0.58333, side: 1, h: 15, name: 'A' },
+        { line: 1, u: 0.58333, side: 1, h: 15, name: 'B' }
     ],
     unlock: 0
 }
