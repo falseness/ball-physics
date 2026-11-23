@@ -716,6 +716,38 @@ levels.push(
         { line: 1, u: 0.58333, side: 1, h: 15, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 30, 'sky is lava' (TASK-155, lineK 2): the ball bounces in place on a pad at the left (peak y 420). Portal
+    // A lies in the floor of a shaft (y 780), portal B in a floating plate high up (y 260), both facing up: a ball that
+    // falls into A comes out of B rising at the same speed (the velocity is reversed), 520 px higher. That is more
+    // energy than the field holds: B's stream would climb to y = -100 and leave through the top edge, which ends the
+    // run. So line 1 knocks the ball off its pad into the shaft, and line 2 is a roof under the sky: the rising ball
+    // hits its underside and is turned down onto the flag tower (top y 300, 120 px above the ball's peak, so the flag
+    // needs the teleport).
+    ballX: 200,
+    ballY: 420,
+    flagX: 1150,
+    flagY: 300,
+    flagRotate: 0,
+    lineK: 2,
+    lines: [
+        new Line(140, 560, 260, 560, dotRadius, levelLineColor, 'line'),
+        new Line(500, 640, 500, 780, dotRadius, levelLineColor, 'line'),
+        new Line(700, 640, 700, 780, dotRadius, levelLineColor, 'line'),
+        new Line(500, 780, 700, 780, dotRadius, levelLineColor, 'line'),
+        new Line(840, 260, 960, 260, dotRadius, levelLineColor, 'line'),
+        new Line(1100, 300, 1200, 300, dotRadius, levelLineColor, 'line'),
+        new Line(1100, 300, 1100, 790, dotRadius, levelLineColor, 'line'),
+        new Line(1200, 300, 1200, 790, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 780) in the shaft floor facing up
+    // (0, -1), B at (900, 260) in the floating plate facing up (0, -1); same facing, so a teleport reverses the velocity
+    portals: [
+        { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
+        { line: 4, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

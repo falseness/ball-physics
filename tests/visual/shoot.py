@@ -437,6 +437,14 @@ LEVEL28_MAX_FRAMES = 1500
 # artifacts/TASK-153/search_ref.json); keep these exact integer coordinates.
 LEVEL29_LINES = [((520, 400), (600, 340)), ((180, 560), (300, 720)), ((740, 360), (860, 520))]
 LEVEL29_MAX_FRAMES = 1500
+# Level 30 ('sky is lava', TASK-155, lineK 2; reference solution): line 1 knocks the ball, which bounces in place on its
+# pad, right over the shaft wall so it drops into floor portal A. A -> B lifts it 520 px, more energy than the field
+# holds: B's exit stream would fly off the top edge, so line 2 is a roof under the sky that turns the rising ball down
+# to the flag tower. Found by a two-stage scan (artifacts/TASK-155/search/probe.py: 1020 kick lines, 8 reach A, all
+# leave through the top; then 8 kicks x 1944 roof lines, 365 wins, 53 for this kick; artifacts/TASK-155/search_ref.json);
+# keep these exact integer coordinates.
+LEVEL30_LINES = [((193, 463), (287, 497)), ((780, 174), (860, 36))]
+LEVEL30_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -577,6 +585,10 @@ def sc_level29(page, info):
     play_solution(page, info, 28, LEVEL29_LINES, LEVEL29_MAX_FRAMES, 'level29')
 
 
+def sc_level30(page, info):
+    play_solution(page, info, 29, LEVEL30_LINES, LEVEL30_MAX_FRAMES, 'level30')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -612,6 +624,7 @@ SCENARIOS = {
     'level27': sc_level27,
     'level28': sc_level28,
     'level29': sc_level29,
+    'level30': sc_level30,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
