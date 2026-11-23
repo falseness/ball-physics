@@ -18,6 +18,10 @@ live game loop (requestAnimationFrame) and evaluates candidate player-line sets 
              after every frame: TRAPPED = ball centre within h + r + 2 px of one portal centre for >= 240 consecutive
              frames, no teleport in that window, mean speed along the portal tangent > 1 px/frame (a resting or
              in-place bouncing ball is not a trap). A trapped run stops early with end 'trapped'.
+  embedded   (TASK-173) the shared embedded-ball detector of tests/portal/embed.py (window.__embed.detector) is fed
+             after every frame: EMBEDDED = ball centre closer than r/2 to any line segment (player lines included) for
+             >= 30 consecutive frames (a ball resting on a line sits ~r - 0.5 px from it). An embedded run stops early
+             with end 'embedded'.
 
 Level input: --level INDEX (levels[INDEX], 0-based: --level 16 is level 17), optionally with --level-json FILE,
 an editor export ({version 2, ballX, ballY, flagX, flagY, flagRotate, lineK, lines, portals}) injected in-page
@@ -43,10 +47,11 @@ Modes (--lines k = player lines per candidate):
 --shard i/n keeps candidates i, i+n, ... (run shards in the background, then --mode merge).
 
 Output: --out PATH.json (summary, compact JSON) and PATH.jsonl (one compact row per candidate:
-{c: requested lines, valid, lines: placed lines, win: frame or -1, end: win|off|still|max|trapped, frames,
- teleports: [from+to, ...], minFlagDist, trapped: bool (+ trapFrame, trapPortal, ball when trapped)}).
+{c: requested lines, valid, lines: placed lines, win: frame or -1, end: win|off|still|max|trapped|embedded, frames,
+ teleports: [from+to, ...], minFlagDist, trapped: bool (+ trapFrame, trapPortal, ball when trapped),
+ embedded: bool (+ embedFrame, ball when embedded)}).
  Summary: {mode, level, lines, candidates, valid, wins, winLines (<= 50), winsWithoutTeleport, trapped (count),
- trappedLines (<= 20), elapsed_s, workers, ...}; local/necessity summaries also list every row (results).
+ trappedLines (<= 20), embedded (count), embeddedLines (<= 20), elapsed_s, workers, ...}; local/necessity summaries also list every row (results).
 
 Examples:
   python3 tools/level_search.py --level 16 --lines 1 --mode local --solution 320,280,1060,620 --out /tmp/l17.json
@@ -66,6 +71,7 @@ from multiprocessing import Pool
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tests', 'portal'))
 from rimtrap import install as install_trap  # noqa: E402  shared livelock detector (TASK-163..165)
+from embed import install as install_embed  # noqa: E402  shared embedded-ball detector (TASK-171/173)
 URL = 'file://' + os.path.join(ROOT, 'index.html')
 FIELD = (1280, 800)
 
@@ -91,6 +97,7 @@ for (const c of cands) {
   const lv = curLevel()
   let win = -1, f = 0, end = 'max', tps = [], fd = 1e9, st = 0, px = ball.posX, py = ball.posY
   const det = window.__rimtrap.detector(currentPortals() || [])   // shared rim-trap (livelock) detector
+  const emb = window.__embed.detector()                          // shared embedded-ball detector (TASK-173)
   for (; f < maxF; ++f) {
     const n0 = portalState.teleports.length
     gameMechanics()
@@ -100,11 +107,14 @@ for (const c of cands) {
     if (!levelStarted) { end = 'off'; ++f; break }
     det.frame(portalState.teleports.length > n0, f + 1)
     if (det.trapped) { end = 'trapped'; ++f; break }
+    emb.frame(f + 1)
+    if (emb.embedded) { end = 'embedded'; ++f; break }
     if (Math.abs(ball.posX - px) < 0.01 && Math.abs(ball.posY - py) < 0.01) { if (++st >= still) { end = 'still'; ++f; break } } else st = 0
     px = ball.posX; py = ball.posY
   }
   out.push({c, valid: 1, lines: placed, win, end, frames: f, teleports: tps, minFlagDist: Math.round(fd * 10) / 10,
-           trapped: det.trapped, ...(det.trapped ? {trapFrame: det.trapFrame, trapPortal: det.trapPortal, ball: [r2(ball.posX), r2(ball.posY)]} : {})})
+           trapped: det.trapped, ...(det.trapped ? {trapFrame: det.trapFrame, trapPortal: det.trapPortal, ball: [r2(ball.posX), r2(ball.posY)]} : {}),
+           embedded: emb.embedded, ...(emb.embedded ? {embedFrame: emb.embedFrame, ball: [r2(ball.posX), r2(ball.posY)]} : {})})
 }
 editorMode = false; playtestLevel = null; physics = false; levelStarted = false; levelCompletedWindow = false; line = false
 levelChoosed(idx)
@@ -133,6 +143,7 @@ def open_page(pw, args):
     pg.evaluate("new Promise(r => requestAnimationFrame(() => r()))")
     pg.evaluate("() => { window.requestAnimationFrame = () => 0 }")  # stop the live loop; frames are stepped here
     install_trap(pg)  # window.__rimtrap (shared rim-trap detector, tests/portal/rimtrap.py)
+    install_embed(pg)  # window.__embed (shared embedded-ball detector, tests/portal/embed.py)
     if args['level_json']:
         res = pg.evaluate(INJECT_JS, [args['level'], args['level_json']])
         if res != 'ok':
@@ -281,6 +292,9 @@ def summarize(rows, args, extra):
          'trappedLines': [{'lines': r['lines'], 'trapFrame': r.get('trapFrame'), 'trapPortal': r.get('trapPortal'),
                            'ball': r.get('ball'), 'teleports': ','.join(r['teleports']) or '-'}
                           for r in sim if r.get('trapped')][:20],
+         'embedded': sum(1 for r in sim if r.get('embedded')),
+         'embeddedLines': [{'lines': r['lines'], 'embedFrame': r.get('embedFrame'), 'ball': r.get('ball'),
+                            'teleports': ','.join(r['teleports']) or '-'} for r in sim if r.get('embedded')][:20],
          'winLines': [{'lines': r['lines'], 'win': r['win'], 'teleports': ','.join(r['teleports']) or '-'} for r in wins[:50]],
          'ends': dict(ends), 'routes': dict(routes.most_common(20)),
          'bestNonWin': nonwin and {'lines': nonwin[0]['lines'], 'minFlagDist': nonwin[0]['minFlagDist'],

@@ -46,6 +46,24 @@ stays within h + r + 2 px of one portal centre for >= 240 consecutive frames wit
 while its mean speed along the portal's tangent over the window is > 1 px/frame (a ball resting or bouncing
 in place is not a trap). Any TRAPPED case fails the run (counters.traps, failingCases issue 'trapped').
 
+Embedded-ball detector (TASK-173, always on in every mode): the shared detector of tests/portal/embed.py
+(window.__embed.detector, TASK-171) is fed after every frame. A case is EMBEDDED when the ball centre stays
+closer than r/2 (5 px) to any level line segment for >= 30 consecutive frames (a ball resting on a line sits
+~r - 0.5 px from it and is not embedded). Any EMBEDDED case fails the run (counters.embedded, issue 'embedded').
+
+--touching (TASK-173; default --cases 2000 --frames 300, --out fuzz_touching.json): the default random portal
+pair plus 1-2 extra plain lines at ONE random opening (A's or B's): 'start' (one end at q, running into the
+front at 20..160 deg to the opening), 'end' (coming from the front, at 20..160 deg, ending at q) or 'cross'
+(through q at 20..160 deg, 15..85 % of its length on each side), q = opening point c + s t + e n with
+|s| <= h and 0 <= e < r (within r of the opening). Extra lines keep >= 2r + 10 px from every other line
+except that opening's host line. The ball is aimed at the PARTNER opening (as the default 'aimed' cases,
+|v| 0.02..0.1 px/step); in 70 % of the cases at entry offset -s +- r/2 of the first extra line, so a touch
+teleport exits ON that line (the level 24 "stuck in textures" bug, TASK-171/172: the pre-fix portalTeleport
+lets such an exit through and the ball slides inside the line). The --crossing checks also apply.
+
+--root DIR: load DIR/index.html instead of this checkout's (e.g. a pre-fix git worktree); output still goes
+to this checkout's artifacts/<task>/<out>.
+
 --backside (TASK-165; default --cases 2000 --frames 300, --out fuzz_backside.json): two random host lines with
 portals as in the default mode (plus the optional plain line), but the ball starts BEHIND a random portal,
 aimed to land on the back of its host line next to a random rim: contact offset s = rim +- (r + 5) px along
@@ -64,6 +82,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sim import ROOT, open_page, mapped, local, rel  # noqa: E402
 from rimtrap import install as install_trap  # noqa: E402
+from embed import install as install_embed  # noqa: E402  shared embedded-ball detector (TASK-171)
 
 FRAMES, PER, H, R, VMAX = 300, 500, 45, 10, 0.1
 TASK = None
@@ -74,6 +93,7 @@ CASE_JS = """([cfg, frames, per]) => {
   const P = (currentPortals() || []).map(q => ({x: q.x, y: q.y, angle: q.angle, h: q.h, name: q.name, line: q.line}))
   const L = curLevel().lines.map(l => [l.posX, l.posY, l.posX2, l.posY2])
   const det = window.__rimtrap.detector(currentPortals() || [])
+  const emb = window.__embed.detector()
   const f = new Float64Array(frames * 4)
   let nan = 0, two = 0, firstNan = -1, tunnels = 0
   const tunnelLog = []
@@ -105,12 +125,13 @@ CASE_JS = """([cfg, frames, per]) => {
       }
     }
     det.frame(portalState.teleports.length > nf, i + 1)
+    emb.frame(i + 1)
     f[4 * i] = ball.posX; f[4 * i + 1] = ball.posY; f[4 * i + 2] = ball.speedX; f[4 * i + 3] = ball.speedY
   }
   return { frames: Array.from(f), nan, firstNan, two, tunnels, tunnelLog, portals: P, steps: portalState.steps,
            rimHits: portalState.rimHits, hostHits: portalState.hostHits, teleports: portalState.teleports,
            blockedExits: portalState.blockedExits, trapped: det.trapped, trapFrame: det.trapFrame,
-           trapPortal: det.trapPortal } }"""
+           trapPortal: det.trapPortal, embedded: emb.embedded, embedFrame: emb.embedFrame, embedMaxRun: emb.maxRun } }"""
 
 
 def seg_dist(p, a, b):
@@ -269,6 +290,60 @@ def make_crossing_case(rng, aimed):
         return cfg
 
 
+def touching_line(rng, P, s, e):
+    """TASK-173: one extra line that starts / ends at / crosses q = c + s t + e n (resolved opening P)."""
+    nx, ny = math.cos(P['angle']), math.sin(P['angle'])
+    tx, ty = -ny, nx
+    kind = rng.choice(('start', 'end', 'cross'))
+    a = rng.uniform(20, 160) * math.pi / 180          # angle to the opening, measured from t toward n
+    ux, uy = tx * math.cos(a) + nx * math.sin(a), ty * math.cos(a) + ny * math.sin(a)
+    q = (P['x'] + s * tx + e * nx, P['y'] + s * ty + e * ny)
+    ln = rng.uniform(40, 250)
+    f = {'start': 0.0, 'end': 1.0, 'cross': rng.uniform(0.15, 0.85)}[kind]
+    return kind, [q[0] - f * ln * ux, q[1] - f * ln * uy, q[0] + (1 - f) * ln * ux, q[1] + (1 - f) * ln * uy]
+
+
+def make_touching_case(rng):
+    """TASK-173: 1-2 lines within r of one opening, the ball aimed at the partner opening."""
+    while True:
+        cfg = make_case(rng, False)
+        lines, portals = cfg['lines'], cfg['portals']
+        P = [resolve(lines[q['line']], q['u'], q['side']) for q in portals]
+        k = rng.randrange(2)
+        kinds, n, s0 = [], rng.randint(1, 2), None
+        for _ in range(20):
+            if len(kinds) == n:
+                break
+            s, e = rng.uniform(-H, H), rng.uniform(0, R)
+            kind, l = touching_line(rng, P[k], s, e)
+            if not all(30 <= v <= lim for v, lim in zip(l, (1250, 770, 1250, 770))):
+                continue
+            if any(segseg(l, m) < 2 * R + 10 for i, m in enumerate(lines) if i != portals[k]['line']):
+                continue
+            lines.append(l)
+            kinds.append([kind, 'AB'[k], round(s, 6), round(e, 6)])
+            s0 = s if s0 is None else s0
+        if not kinds:
+            continue
+        # the ball: aimed at the partner opening Q (a touch at offset se exits at -se on P[k])
+        Q = P[1 - k]
+        nx, ny = math.cos(Q['angle']), math.sin(Q['angle'])
+        tx, ty = -ny, nx
+        se = max(-H, min(H, -s0 + rng.uniform(-R / 2, R / 2))) if rng.random() < 0.7 else rng.uniform(-H, H)
+        th = rng.uniform(-math.pi / 3, math.pi / 3)
+        dist, sp = rng.uniform(20, 200), rng.uniform(0.02, VMAX)
+        c, sn = math.cos(th), math.sin(th)
+        vx, vy = -nx * c + tx * sn, -ny * c + ty * sn
+        tgt = (Q['x'] + se * tx, Q['y'] + se * ty)
+        ball = {'x': tgt[0] - vx * dist, 'y': tgt[1] - vy * dist, 'vx': sp * vx, 'vy': sp * vy, 'r': R}
+        if not (0 < ball['x'] < 1280 and 0 < ball['y'] < 800):
+            continue
+        if any(seg_dist((ball['x'], ball['y']), l[:2], l[2:]) < R + 2 for l in lines):
+            continue
+        cfg.update({'ball': ball, 'mode': 'touching', 'extraLines': kinds, 'aim': ['AB'[1 - k], round(se, 6)]})
+        return cfg
+
+
 def pack(vals):
     return struct.pack('<%dd' % len(vals), *vals)
 
@@ -282,17 +357,23 @@ def main():
     ap.add_argument('--out')
     ap.add_argument('--crossing', action='store_true', help='TASK-104: 1-3 extra lines across random openings')
     ap.add_argument('--backside', action='store_true', help='TASK-165: ball lands on the back of a host line by a rim')
+    ap.add_argument('--touching', action='store_true', help='TASK-173: 1-2 lines within r of an opening, ball aimed at the partner')
+    ap.add_argument('--root', default=ROOT, help='directory whose index.html is tested (default: this checkout)')
     a = ap.parse_args()
-    if a.crossing and a.backside:
-        ap.error('--crossing and --backside are exclusive')
-    mode = 'crossing' if a.crossing else 'backside' if a.backside else 'default'
+    if a.crossing + a.backside + a.touching > 1:
+        ap.error('--crossing, --backside and --touching are exclusive')
+    mode = 'crossing' if a.crossing else 'backside' if a.backside else 'touching' if a.touching else 'default'
     a.cases = a.cases or (500 if mode == 'default' else 2000)
     frames = a.frames or (100 if a.crossing else FRAMES)
-    a.out = a.out or {'crossing': 'fuzz_crossing.json', 'backside': 'fuzz_backside.json', 'default': 'fuzz.json'}[mode]
+    a.out = a.out or {'crossing': 'fuzz_crossing.json', 'backside': 'fuzz_backside.json', 'touching': 'fuzz_touching.json',
+                      'default': 'fuzz.json'}[mode]
+    extra = a.crossing or a.touching   # extra lines at the openings: the --crossing checks apply
 
     rng = random.Random(a.seed)
     if a.backside:
         cases = [make_backside_case(rng) for i in range(a.cases)]
+    elif a.touching:
+        cases = [make_touching_case(rng) for i in range(a.cases)]
     else:
         cases = [(make_crossing_case if a.crossing else make_case)(rng, i % 2 == 0) for i in range(a.cases)]
     hsh = hashlib.sha256()
@@ -304,23 +385,28 @@ def main():
          'sOverH': 0, 'maxAbsSOverH': 0.0, 'notFrontToBack': 0, 'exitNotFront': 0,
          'maxSpeedRelErr': 0.0, 'speedErrOver1e9': 0, 'maxMapPosErr': 0.0, 'maxMapVelErr': 0.0,
          'mapErrOver1e9': 0, 'portalOffHostLine': 0, 'rimHits': 0, 'casesWithRimHits': 0,
-         'hostHits': 0, 'casesWithHostHits': 0, 'maxTeleportsInCase': 0, 'kinds': {}, 'traps': 0}
+         'hostHits': 0, 'casesWithHostHits': 0, 'maxTeleportsInCase': 0, 'kinds': {}, 'traps': 0,
+         'embedded': 0, 'maxEmbedRun': 0}
     if a.backside:
         c.update({'mode': 'backside', 'backsideCases': sum(1 for x in cases if x['mode'] == 'backside')})
-    if a.crossing:
-        c.update({'mode': 'crossing', 'extraLines': 0, 'extraLineKinds': {}, 'casesWithTeleportThroughCrossedOpening': 0,
+    if a.touching:
+        c.update({'touchingCases': sum(1 for x in cases if x['mode'] == 'touching'),
+                  'aimedAtLine': sum(1 for x in cases if abs(x['aim'][1] + x['extraLines'][0][2]) <= R / 2 + 1e-6)})
+    if extra:
+        c.update({'mode': mode, 'extraLines': 0, 'extraLineKinds': {}, 'casesWithTeleportThroughCrossedOpening': 0,
                   'blockedExits': 0, 'casesWithBlockedExits': 0, 'exitOverlapsLine': 0, 'teleportPathsBlocked': 0,
                   'pingPongCases': 0, 'longestTeleportRun': 0, 'maxTeleportsIn2000Steps': 0, 'casesOver4In2000Steps': 0})
         for x in cases:
             c['extraLines'] += len(x['extraLines'])
-            for k, _ in x['extraLines']:
+            for k, *_ in x['extraLines']:
                 c['extraLineKinds'][k] = c['extraLineKinds'].get(k, 0) + 1
     bad = []
 
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        browser, page, errors = open_page(p, ROOT)
+        browser, page, errors = open_page(p, a.root)
         install_trap(page)
+        install_embed(page)
         for ci, cfg in enumerate(cases):
             r = page.evaluate(CASE_JS, [cfg, frames, PER])
             P = {q['name']: q for q in r['portals']}
@@ -344,6 +430,10 @@ def main():
             if r['trapped']:
                 c['traps'] += 1
                 case_bad.append(('trapped', r['trapFrame'], r['trapPortal']))
+            c['maxEmbedRun'] = max(c['maxEmbedRun'], r['embedMaxRun'])
+            if r['embedded']:
+                c['embedded'] += 1
+                case_bad.append(('embedded', r['embedFrame']))
             c['rimHits'] += r['rimHits']
             c['casesWithRimHits'] += r['rimHits'] > 0
             c['hostHits'] += r['hostHits']
@@ -394,11 +484,11 @@ def main():
                     c['speedErrOver1e9'] += 1
                     case_bad.append(('speed', t['step'], e))
                 ex, ey, evx, evy = mapped(A, B, *t['before'], kind=kind)
-                if a.crossing:
+                if extra:
                     # informational: exits overlapping a line from the opening's side (refused since TASK-172, see S11)
                     if any(seg_dist(t['after'][:2], l[:2], l[2:]) < R for i, l in enumerate(cfg['lines']) if i != B['line']):
                         c['exitOverlapsLine'] += 1
-                    if t['to'] in [n for _, n in cfg['extraLines']] or t['from'] in [n for _, n in cfg['extraLines']]:
+                    if t['to'] in [x[1] for x in cfg['extraLines']] or t['from'] in [x[1] for x in cfg['extraLines']]:
                         crossed_tp = True
                     # entry path: centre -> touched opening point; exit path: exit opening point -> exit centre
                     fa, fb = math.cos(A['angle']), math.sin(A['angle'])
@@ -419,9 +509,9 @@ def main():
                 if pe > 1e-9 or ve > 1e-9:
                     c['mapErrOver1e9'] += 1
                     case_bad.append(('map', t['step'], pe, ve))
-            if a.crossing and crossed_tp:
+            if extra and crossed_tp:
                 c['casesWithTeleportThroughCrossedOpening'] += 1
-            if a.crossing:
+            if extra:
                 c['blockedExits'] += r['blockedExits']
                 c['casesWithBlockedExits'] += r['blockedExits'] > 0
                 # informational: most teleports within 2000 consecutive steps
@@ -447,9 +537,9 @@ def main():
                 bad.append({'case': ci, 'cfg': cfg, 'nan': r['nan'], 'firstNan': r['firstNan'], 'two': r['two'],
                             'tunnels': r['tunnels'], 'tunnelLog': r['tunnelLog'], 'issues': case_bad[:10]})
             if (ci + 1) % 50 == 0:
-                print('cases %d/%d teleports=%d nan=%d two=%d tunnels=%d traps=%d bad=%d' % (
+                print('cases %d/%d teleports=%d nan=%d two=%d tunnels=%d traps=%d embedded=%d bad=%d' % (
                     ci + 1, a.cases, c['teleports'], c['nanCount'], c['stepsWithTwoTeleports'], c['tunnels'],
-                    c['traps'], len(bad)),
+                    c['traps'], c['embedded'], len(bad)),
                     flush=True)
         browser.close()
 
@@ -459,6 +549,7 @@ def main():
         'ok_teleports': c['teleports'] > 0 or a.backside,
         'ok_no_tunnelling': c['tunnels'] == 0,
         'ok_no_trap': c['traps'] == 0,
+        'ok_no_embedded': c['embedded'] == 0,
         'ok_s_within_h': c['sOverH'] == 0,
         'ok_front_to_back': c['notFrontToBack'] == 0 and c['exitNotFront'] == 0,
         'ok_speed': c['speedErrOver1e9'] == 0 and c['maxSpeedRelErr'] <= 1e-9,
@@ -468,13 +559,22 @@ def main():
         'ok_steps': c['totalSteps'] == a.cases * frames * PER,
         'ok_errors': not errors,
     }
-    if a.crossing:
+    if extra:
         checks['ok_no_blocked_teleport_path'] = c['teleportPathsBlocked'] == 0
         checks['ok_extra_lines'] = c['extraLines'] >= a.cases
         checks['ok_no_ping_pong'] = c['pingPongCases'] == 0
+    if a.touching:
+        checks['ok_touching_cases'] = c['touchingCases'] == a.cases
     if a.backside:
         checks['ok_backside_cases'] = c['backsideCases'] == a.cases
-    res = {'seed': a.seed, 'mode': mode, 'counters': c, 'checks': checks, 'failingCases': bad[:20],
+    import subprocess
+
+    def sha(d):
+        try:
+            return subprocess.run(['git', '-C', d, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+        except OSError:
+            return None
+    res = {'seed': a.seed, 'mode': mode, 'root': a.root, 'rootHead': sha(a.root), 'head': sha(ROOT), 'counters': c, 'checks': checks, 'failingCases': bad[:20],
            'failingCaseCount': len(bad), 'invariantViolations': len(bad), 'errors': errors,
            'pass': all(checks.values())}
     out_dir = os.path.join(ROOT, 'artifacts', a.task)
