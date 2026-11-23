@@ -748,6 +748,44 @@ levels.push(
         { line: 4, u: 0.5, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 31, 'low door' (TASK-157, lineK 4): portal A is a tall door (h 120, y 520..760) facing right in the
+    // divider wall x = 600, and a thick porch slab (y 680..700) splits it into an upper and a lower part. A
+    // teleport keeps the ball's speed, and the ball is faster the lower it goes into the door, so the entry height
+    // is an energy dial: B (a small floor portal facing up, far left, under a roof) throws a ball from the upper part
+    // only to an energy level of y >= 240, one from the lower part to y 146..200. The flag hangs in a bell under the
+    // top edge that is open only at the bottom, and it needs y <= ~219. So the ball, which bounces in place on a pad at
+    // the top right, has to be (1) kicked off the pad and (2) turned into the low tunnel under the porch (a kick alone
+    // cannot get that low before the tunnel), then after B (3) thrown out under B's roof towards the bell and
+    // (4) turned straight up into the bell.
+    ballX: 1180,
+    ballY: 300,
+    flagX: 520,
+    flagY: 110,
+    flagRotate: Math.PI,
+    lineK: 4,
+    lines: [
+        new Line(1120, 440, 1240, 440, dotRadius, levelLineColor, 'line'),
+        new Line(600, 780, 680, 780, dotRadius, levelLineColor, 'line'),
+        new Line(600, 680, 680, 680, dotRadius, levelLineColor, 'line'),
+        new Line(600, 700, 680, 700, dotRadius, levelLineColor, 'line'),
+        new Line(680, 680, 680, 700, dotRadius, levelLineColor, 'line'),
+        new Line(600, 240, 600, 780, dotRadius, levelLineColor, 'line'),
+        new Line(100, 620, 220, 620, dotRadius, levelLineColor, 'line'),
+        new Line(60, 470, 260, 470, dotRadius, levelLineColor, 'line'),
+        new Line(260, 470, 260, 560, dotRadius, levelLineColor, 'line'),
+        new Line(440, 110, 600, 110, dotRadius, levelLineColor, 'line'),
+        new Line(440, 110, 440, 220, dotRadius, levelLineColor, 'line'),
+        new Line(600, 110, 600, 220, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 640) on the divider wall facing right
+    // (1, 0), h 120; B at (160, 620) in the small floor plate facing up (0, -1), h 45
+    portals: [
+        { line: 5, u: 0.740741, side: -1, h: 120, name: 'A' },
+        { line: 6, u: 0.5, side: -1, h: 45, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

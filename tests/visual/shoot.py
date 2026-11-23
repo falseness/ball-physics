@@ -445,6 +445,16 @@ LEVEL29_MAX_FRAMES = 1500
 # keep these exact integer coordinates.
 LEVEL30_LINES = [((193, 463), (287, 497)), ((780, 174), (860, 36))]
 LEVEL30_MAX_FRAMES = 1500
+# Level 31 ('low door', TASK-157, lineK 4; reference solution): line 1 kicks the ball, which bounces in place on its pad,
+# off to the left; line 2 is a low deflector right of the porch that turns the falling ball left into the tunnel, so
+# it goes into the tall door A under the porch (the lower part: B then throws it to an energy level of ~y 150, while
+# the upper part only gives y >= 240, short of the flag). Line 3 throws the ball, which rises out of B into the roof,
+# out to the right under the roof's wall, and line 4 turns it straight up into the bell. Found by a staged scan
+# (artifacts/TASK-157/search/probe.py: kick x deflector, 375/2432 reach A, 235 low; then line 3 under B's roof, then
+# line 4 under the bell, 64/3780 wins; the +-2 px neighbourhood of this one wins 19/32;
+# artifacts/TASK-157/search_ref.json); keep these exact integer coordinates.
+LEVEL31_LINES = [((1140, 430), (1220, 380)), ((735, 777), (785, 743)), ((99, 566), (141, 524)), ((521, 591), (561, 549))]
+LEVEL31_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -589,6 +599,10 @@ def sc_level30(page, info):
     play_solution(page, info, 29, LEVEL30_LINES, LEVEL30_MAX_FRAMES, 'level30')
 
 
+def sc_level31(page, info):
+    play_solution(page, info, 30, LEVEL31_LINES, LEVEL31_MAX_FRAMES, 'level31')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -625,6 +639,7 @@ SCENARIOS = {
     'level28': sc_level28,
     'level29': sc_level29,
     'level30': sc_level30,
+    'level31': sc_level31,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
