@@ -786,6 +786,40 @@ levels.push(
         { line: 6, u: 0.5, side: -1, h: 45, name: 'B' }
     ],
     unlock: 0
+},
+{
+    // Level 32, 'under the wall' (TASK-159, lineK 3): a wall stands on floor portal A (centre (560, 720), h 50,
+    // facing up), so A's left half opens into the start side and its right half into a closed shaft that holds the
+    // flag. B is a wall portal (x 760, centre y 650, h 50) facing right over open ground. A teleport mirrors the
+    // offset along the opening, so a ball that goes down A's left half comes out of B's lower half, and a ball sent
+    // back in through B comes out of A on the side that matches the half of B it went in through: back through the
+    // lower half -> out of A's left half again (the start side); back through the UPPER half -> out of A's right half,
+    // under the wall, into the flag shaft. So the ball, which bounces in place on a pad at the top left, has to be
+    // (1) kicked off the pad, (2) turned flat into the low tunnel under the lid, so it drops into A's left half (the
+    // tunnel has no floor before A, a kick alone falls into the pit), and (3) after B, turned back up into B's upper
+    // half.
+    ballX: 160,
+    ballY: 300,
+    flagX: 630,
+    flagY: 400,
+    flagRotate: Math.PI,
+    lineK: 3,
+    lines: [
+        new Line(100, 440, 220, 440, dotRadius, levelLineColor, 'line'),
+        new Line(490, 720, 680, 720, dotRadius, levelLineColor, 'line'),
+        new Line(560, 240, 560, 720, dotRadius, levelLineColor, 'line'),
+        new Line(420, 620, 560, 620, dotRadius, levelLineColor, 'line'),
+        new Line(640, 240, 640, 720, dotRadius, levelLineColor, 'line'),
+        new Line(560, 400, 640, 400, dotRadius, levelLineColor, 'line'),
+        new Line(760, 240, 760, 720, dotRadius, levelLineColor, 'line')
+    ],
+    // wall portals {line, u, side, h, name} (see portalResolve): A at (560, 720) in the floor facing up (0, -1),
+    // h 50, the wall x = 560 standing on its centre; B at (760, 650) on the wall x = 760 facing right (1, 0), h 50
+    portals: [
+        { line: 1, u: 0.368421, side: -1, h: 50, name: 'A' },
+        { line: 6, u: 0.854167, side: -1, h: 50, name: 'B' }
+    ],
+    unlock: 0
 }
 )
 // Every level is open from the start (no need to win the previous one); a win still

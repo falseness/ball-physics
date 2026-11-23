@@ -456,6 +456,15 @@ LEVEL30_MAX_FRAMES = 1500
 # variants instead of 15/32 (artifacts/TASK-158/g3_local.json); keep these exact integer coordinates.
 LEVEL31_LINES = [((1140, 430), (1220, 380)), ((735, 777), (785, 743)), ((96, 569), (144, 521)), ((521, 591), (561, 549))]
 LEVEL31_MAX_FRAMES = 1500
+# Level 32 ('under the wall', TASK-159, lineK 3; reference solution): line 1 kicks the ball, which bounces in place on its
+# pad, off to the right; line 2 turns the falling ball flat into the low tunnel under the lid, so it drops into the left
+# half of floor portal A (the wall x = 560 stands on A's centre). B (on the wall x = 760, facing right) throws it out of
+# its lower half, and line 3 turns it back up into B's UPPER half, so it comes out of A's right half, under the wall, into
+# the flag shaft (AB, BA). Found by a staged scan (artifacts/TASK-159/search/probe.py: 8 kicks x 1838 feed lines, 60
+# reach A; then line 3 right of B, 54/3459 wins; this one's +-2 px neighbourhood wins 24/24;
+# artifacts/TASK-159/search_ref.json); keep these exact integer coordinates.
+LEVEL32_LINES = [((154, 360), (217, 390)), ((326, 645), (420, 670)), ((893, 682), (863, 598))]
+LEVEL32_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
@@ -604,6 +613,10 @@ def sc_level31(page, info):
     play_solution(page, info, 30, LEVEL31_LINES, LEVEL31_MAX_FRAMES, 'level31')
 
 
+def sc_level32(page, info):
+    play_solution(page, info, 31, LEVEL32_LINES, LEVEL32_MAX_FRAMES, 'level32')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -641,6 +654,7 @@ SCENARIOS = {
     'level29': sc_level29,
     'level30': sc_level30,
     'level31': sc_level31,
+    'level32': sc_level32,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
