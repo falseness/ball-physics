@@ -39,6 +39,18 @@ each <= 2 steps after the previous one: the ball thrown back and forth between t
 rattling in a small pocket and bouncing off a line through the exit each time, 2 teleports per bounce,
 is counted only in casesOver4In2000Steps). 'exitOverlapsLine' (exit centre within r of such a line, from the opening's
 side) is only counted: like S11's line 12 px in front of B, the next collision bounces the ball off it.
+
+Rim-trap (livelock) detector (TASK-165, always on in every mode): the shared detector of tests/portal/rimtrap.py
+(window.__rimtrap.detector, TASK-163/164) is fed after every frame. A case is TRAPPED when the ball centre
+stays within h + r + 2 px of one portal centre for >= 240 consecutive frames with no teleport in that window
+while its mean speed along the portal's tangent over the window is > 1 px/frame (a ball resting or bouncing
+in place is not a trap). Any TRAPPED case fails the run (counters.traps, failingCases issue 'trapped').
+
+--backside (TASK-165; default --cases 2000 --frames 300, --out fuzz_backside.json): two random host lines with
+portals as in the default mode (plus the optional plain line), but the ball starts BEHIND a random portal,
+aimed to land on the back of its host line next to a random rim: contact offset s = rim +- (r + 5) px along
+the opening (|s| <= h + r + 5), 3..40 px away, |v| 0.005..0.05 px/step, within +-70 deg of the line normal.
+This is the level 19 rim-trap bug (TASK-163/164): the unfixed portalStep traps such balls between the rims.
 """
 import argparse
 import hashlib
@@ -51,6 +63,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sim import ROOT, open_page, mapped, local, rel  # noqa: E402
+from rimtrap import install as install_trap  # noqa: E402
 
 FRAMES, PER, H, R, VMAX = 300, 500, 45, 10, 0.1
 TASK = None
@@ -60,11 +73,13 @@ CASE_JS = """([cfg, frames, per]) => {
   T.setup(cfg)
   const P = (currentPortals() || []).map(q => ({x: q.x, y: q.y, angle: q.angle, h: q.h, name: q.name, line: q.line}))
   const L = curLevel().lines.map(l => [l.posX, l.posY, l.posX2, l.posY2])
+  const det = window.__rimtrap.detector(currentPortals() || [])
   const f = new Float64Array(frames * 4)
   let nan = 0, two = 0, firstNan = -1, tunnels = 0
   const tunnelLog = []
   const side = (l, x, y) => (l[2] - l[0]) * (y - l[1]) - (l[3] - l[1]) * (x - l[0])
   for (let i = 0; i < frames; ++i) {
+    const nf = portalState.teleports.length
     for (let k = 0; k < per; ++k) {
       const n0 = portalState.teleports.length, x0 = ball.posX, y0 = ball.posY
       gamePhysics()
@@ -89,11 +104,13 @@ CASE_JS = """([cfg, frames, per]) => {
         }
       }
     }
+    det.frame(portalState.teleports.length > nf, i + 1)
     f[4 * i] = ball.posX; f[4 * i + 1] = ball.posY; f[4 * i + 2] = ball.speedX; f[4 * i + 3] = ball.speedY
   }
   return { frames: Array.from(f), nan, firstNan, two, tunnels, tunnelLog, portals: P, steps: portalState.steps,
            rimHits: portalState.rimHits, hostHits: portalState.hostHits, teleports: portalState.teleports,
-           blockedExits: portalState.blockedExits } }"""
+           blockedExits: portalState.blockedExits, trapped: det.trapped, trapFrame: det.trapFrame,
+           trapPortal: det.trapPortal } }"""
 
 
 def seg_dist(p, a, b):
@@ -199,6 +216,33 @@ def extra_line(rng, P):
     return kind, [q[0] - f * ln * ux, q[1] - f * ln * uy, q[0] + (1 - f) * ln * ux, q[1] + (1 - f) * ln * uy]
 
 
+def make_backside_case(rng):
+    """TASK-165: the ball lands on the BACK of a random portal's host line next to a random rim."""
+    while True:
+        cfg = make_case(rng, True)
+        lines, portals = cfg['lines'], cfg['portals']
+        k = rng.randrange(2)
+        P = resolve(lines[k], portals[k]['u'], portals[k]['side'])
+        nx, ny = math.cos(P['angle']), math.sin(P['angle'])
+        tx, ty = -ny, nx
+        rim = rng.choice((-H, H))
+        s = rim + rng.uniform(-(R + 5), R + 5)
+        th = rng.uniform(-70, 70) * math.pi / 180
+        dist = rng.uniform(3, 40)
+        sp = rng.uniform(0.005, 0.05)
+        # direction into the BACK of the line: +n rotated by th; centre at contact = P + s t - r n
+        c, sn = math.cos(th), math.sin(th)
+        vx, vy = nx * c + tx * sn, ny * c + ty * sn
+        cx, cy = P['x'] + s * tx - R * nx, P['y'] + s * ty - R * ny
+        ball = {'x': cx - vx * dist, 'y': cy - vy * dist, 'vx': sp * vx, 'vy': sp * vy, 'r': R}
+        if not (0 < ball['x'] < 1280 and 0 < ball['y'] < 800):
+            continue
+        if any(seg_dist((ball['x'], ball['y']), l[:2], l[2:]) < R + 2 for l in lines):
+            continue
+        cfg.update({'ball': ball, 'mode': 'backside', 'backside': ['AB'[k], round(s, 6), round(th * 180 / math.pi, 6)]})
+        return cfg
+
+
 def make_crossing_case(rng, aimed):
     while True:
         cfg = make_case(rng, aimed)
@@ -237,13 +281,20 @@ def main():
     ap.add_argument('--task', default='TASK-065')
     ap.add_argument('--out')
     ap.add_argument('--crossing', action='store_true', help='TASK-104: 1-3 extra lines across random openings')
+    ap.add_argument('--backside', action='store_true', help='TASK-165: ball lands on the back of a host line by a rim')
     a = ap.parse_args()
-    a.cases = a.cases or (2000 if a.crossing else 500)
+    if a.crossing and a.backside:
+        ap.error('--crossing and --backside are exclusive')
+    mode = 'crossing' if a.crossing else 'backside' if a.backside else 'default'
+    a.cases = a.cases or (500 if mode == 'default' else 2000)
     frames = a.frames or (100 if a.crossing else FRAMES)
-    a.out = a.out or ('fuzz_crossing.json' if a.crossing else 'fuzz.json')
+    a.out = a.out or {'crossing': 'fuzz_crossing.json', 'backside': 'fuzz_backside.json', 'default': 'fuzz.json'}[mode]
 
     rng = random.Random(a.seed)
-    cases = [(make_crossing_case if a.crossing else make_case)(rng, i % 2 == 0) for i in range(a.cases)]
+    if a.backside:
+        cases = [make_backside_case(rng) for i in range(a.cases)]
+    else:
+        cases = [(make_crossing_case if a.crossing else make_case)(rng, i % 2 == 0) for i in range(a.cases)]
     hsh = hashlib.sha256()
     c = {'cases': a.cases, 'aimedCases': sum(1 for x in cases if x['mode'] == 'aimed'),
          'casesWithPlainLine': sum(1 for x in cases if len(x['lines']) == 3),
@@ -253,7 +304,9 @@ def main():
          'sOverH': 0, 'maxAbsSOverH': 0.0, 'notFrontToBack': 0, 'exitNotFront': 0,
          'maxSpeedRelErr': 0.0, 'speedErrOver1e9': 0, 'maxMapPosErr': 0.0, 'maxMapVelErr': 0.0,
          'mapErrOver1e9': 0, 'portalOffHostLine': 0, 'rimHits': 0, 'casesWithRimHits': 0,
-         'hostHits': 0, 'casesWithHostHits': 0, 'maxTeleportsInCase': 0, 'kinds': {}}
+         'hostHits': 0, 'casesWithHostHits': 0, 'maxTeleportsInCase': 0, 'kinds': {}, 'traps': 0}
+    if a.backside:
+        c.update({'mode': 'backside', 'backsideCases': sum(1 for x in cases if x['mode'] == 'backside')})
     if a.crossing:
         c.update({'mode': 'crossing', 'extraLines': 0, 'extraLineKinds': {}, 'casesWithTeleportThroughCrossedOpening': 0,
                   'blockedExits': 0, 'casesWithBlockedExits': 0, 'exitOverlapsLine': 0, 'teleportPathsBlocked': 0,
@@ -267,6 +320,7 @@ def main():
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser, page, errors = open_page(p, ROOT)
+        install_trap(page)
         for ci, cfg in enumerate(cases):
             r = page.evaluate(CASE_JS, [cfg, frames, PER])
             P = {q['name']: q for q in r['portals']}
@@ -287,6 +341,9 @@ def main():
             c['stepsWithTwoTeleports'] += r['two']
             c['tunnels'] += r['tunnels']
             c['casesWithTunnels'] += r['tunnels'] > 0
+            if r['trapped']:
+                c['traps'] += 1
+                case_bad.append(('trapped', r['trapFrame'], r['trapPortal']))
             c['rimHits'] += r['rimHits']
             c['casesWithRimHits'] += r['rimHits'] > 0
             c['hostHits'] += r['hostHits']
@@ -390,16 +447,18 @@ def main():
                 bad.append({'case': ci, 'cfg': cfg, 'nan': r['nan'], 'firstNan': r['firstNan'], 'two': r['two'],
                             'tunnels': r['tunnels'], 'tunnelLog': r['tunnelLog'], 'issues': case_bad[:10]})
             if (ci + 1) % 50 == 0:
-                print('cases %d/%d teleports=%d nan=%d two=%d tunnels=%d bad=%d' % (
-                    ci + 1, a.cases, c['teleports'], c['nanCount'], c['stepsWithTwoTeleports'], c['tunnels'], len(bad)),
+                print('cases %d/%d teleports=%d nan=%d two=%d tunnels=%d traps=%d bad=%d' % (
+                    ci + 1, a.cases, c['teleports'], c['nanCount'], c['stepsWithTwoTeleports'], c['tunnels'],
+                    c['traps'], len(bad)),
                     flush=True)
         browser.close()
 
     c['traceHash'] = hsh.hexdigest()
     checks = {
         'ok_nan': c['nanCount'] == 0,
-        'ok_teleports': c['teleports'] > 0,
+        'ok_teleports': c['teleports'] > 0 or a.backside,
         'ok_no_tunnelling': c['tunnels'] == 0,
+        'ok_no_trap': c['traps'] == 0,
         'ok_s_within_h': c['sOverH'] == 0,
         'ok_front_to_back': c['notFrontToBack'] == 0 and c['exitNotFront'] == 0,
         'ok_speed': c['speedErrOver1e9'] == 0 and c['maxSpeedRelErr'] <= 1e-9,
@@ -413,7 +472,9 @@ def main():
         checks['ok_no_blocked_teleport_path'] = c['teleportPathsBlocked'] == 0
         checks['ok_extra_lines'] = c['extraLines'] >= a.cases
         checks['ok_no_ping_pong'] = c['pingPongCases'] == 0
-    res = {'seed': a.seed, 'mode': 'crossing' if a.crossing else 'default', 'counters': c, 'checks': checks, 'failingCases': bad[:20],
+    if a.backside:
+        checks['ok_backside_cases'] = c['backsideCases'] == a.cases
+    res = {'seed': a.seed, 'mode': mode, 'counters': c, 'checks': checks, 'failingCases': bad[:20],
            'failingCaseCount': len(bad), 'invariantViolations': len(bad), 'errors': errors,
            'pass': all(checks.values())}
     out_dir = os.path.join(ROOT, 'artifacts', a.task)
