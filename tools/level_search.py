@@ -32,13 +32,14 @@ Modes (--lines k = player lines per candidate):
   sample     k lines: --random N uniformly random VALID k-line candidates (endpoints uniform over --bounds,
              length >= --min-len) from --seed (placement is validated first, cheaply, and the first N valid in
              generation order are simulated, so the set does not depend on --workers), plus, with --around FILE,
-             every seed solution and its single-coordinate +-step variants.
+             every seed solution and its single-coordinate +-step variants (--step 0: the seeds only).
   local      a given --solution and all its single-coordinate +-delta variants (--delta, default 2 px).
   necessity  a given --solution and each variant with one line removed.
   merge      no simulation: merges the jsonl files given with --inputs (e.g. background shards) into one summary.
 
 --solution: comma separated numbers, 4 per line (x1,y1,x2,y2,...); ';' may separate lines.
 --around FILE: json list of solutions (each a list of [x1,y1,x2,y2]) or jsonl rows with a "lines" or "c" key.
+  With --step 0 only the solutions themselves are run (no +-step variants): re-runs a given candidate list.
 --shard i/n keeps candidates i, i+n, ... (run shards in the background, then --mode merge).
 
 Output: --out PATH.json (summary, compact JSON) and PATH.jsonl (one compact row per candidate:
@@ -383,7 +384,8 @@ def main():
                 if len(sol) != k:
                     continue
                 cands.append(sol)
-                cands += single_coord_variants(sol, [-ns.step, ns.step])
+                if ns.step:  # --step 0: the seed solutions only (targeted re-runs of old rows, TASK-167)
+                    cands += single_coord_variants(sol, [-ns.step, ns.step])
         if ns.random:
             R = random.Random(ns.seed)
             chosen, generated, rounds = [], 0, 0
