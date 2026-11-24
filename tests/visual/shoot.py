@@ -17,8 +17,10 @@ and the screenshot); its JSON-serialisable result is stored under "eval".
 Exit code is non-zero if any scenario throws or logs a console error.
 """
 import argparse
+import contextlib
 import json
 import os
+import re
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -1620,7 +1622,7 @@ def sc_speed_reload(page, info):
 # local http server whose index.html has the GameAnalytics SDK tag dropped and the gameanalytics backend tag swapped for
 # analytics/backends/none.js (tests/platform/test_analytics.py), plays the script in tests/visual/telemetry_expected_levels.json
 # with real input, compares the filtered ANALYTICS.debugLog with the expected list, reloads and reads bp.stats.v1.
-# Writes sequence.json and counters.json (compact) next to the screenshots.
+# Writes sequence_levels.json (TASK-192; was sequence.json) and counters.json (compact) next to the screenshots.
 TELEMETRY_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_levels.json')
 TELEMETRY_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addProgressionEvent'
     || (e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('level:')))
@@ -1648,24 +1650,28 @@ def telemetry_run(p):
         raise RuntimeError('run did not start')
 
 
-def sc_telemetry_levels(page, info):
+# Full ANALYTICS.debugLog of each telemetry scenario ([fn, ...args]); telemetry_ui computes coverage.json from both
+TELEMETRY_LOGS = {}
+FULL_LOG_JS = "() => ANALYTICS.debugLog.map(e => [e.fn, ...e.args.map(a => a === undefined ? null : a)])"
+
+
+@contextlib.contextmanager
+def telemetry_page(page, errors, **ctx_options):
+    # own context on a local http server; index.html with the GA SDK tag dropped and the none backend swapped in
     sys.path.insert(0, os.path.join(ROOT, 'tests', 'platform'))
     import test_analytics as ta
     from functools import partial
     from http.server import ThreadingHTTPServer
     from threading import Thread
-    with open(TELEMETRY_EXPECTED) as f:
-        want = json.load(f)
     server = ThreadingHTTPServer(('127.0.0.1', 0), partial(ta.QuietHandler, directory=ROOT))
     Thread(target=server.serve_forever, daemon=True).start()
     url = 'http://127.0.0.1:%d/index.html' % server.server_port
-    errors, steps = [], []
 
     def rewrite(route):
         resp = route.fetch()
         body = resp.text().replace(ta.SDK_TAG + '\n', '').replace(ta.GA_TAG, ta.NONE_TAG)
         route.fulfill(response=resp, body=body)
-    ctx = page.context.browser.new_context(viewport=VIEWPORT)
+    ctx = page.context.browser.new_context(viewport=VIEWPORT, **ctx_options)
     try:
         ctx.route('**/index.html', rewrite)
         p = ctx.new_page()
@@ -1674,6 +1680,18 @@ def sc_telemetry_levels(page, info):
         p.goto(url)
         p.wait_for_function(BOOT_JS, timeout=15000)
         frames(p)
+        yield p
+    finally:
+        ctx.close()
+        server.shutdown()
+        server.server_close()
+
+
+def sc_telemetry_levels(page, info):
+    with open(TELEMETRY_EXPECTED) as f:
+        want = json.load(f)
+    errors, steps = [], []
+    with telemetry_page(page, errors) as p:
         backend = p.evaluate("ANALYTICS_BACKEND.backendId")
 
         def step(name):
@@ -1706,16 +1724,15 @@ def sc_telemetry_levels(page, info):
         open_map(p)
         step('map')
         actual = p.evaluate(TELEMETRY_LOG_JS)
+        full = p.evaluate(FULL_LOG_JS)
         stats_before = p.evaluate("JSON.parse(JSON.stringify(TELEMETRY.stats()))")
         reload_page(p)
         after = p.evaluate(TELEMETRY_LOG_JS)
         stored = p.evaluate("async () => (await PLATFORM.storage.getMany([STATS_STORE]))[STATS_STORE]")
         mem = p.evaluate("JSON.parse(JSON.stringify(TELEMETRY.stats()))")
         backend_after = p.evaluate("ANALYTICS_BACKEND.backendId")
-    finally:
-        ctx.close()
-        server.shutdown()
-        server.server_close()
+        full_after = p.evaluate(FULL_LOG_JS)
+    TELEMETRY_LOGS['telemetry_levels'] = full + full_after
     seq = {'backend': [backend, backend_after], 'steps': steps, 'expected': want['events'], 'debugLog': actual,
            'expectedAfterReload': want['afterReload'], 'debugLogAfterReload': after, 'consoleErrors': len(errors), 'errors': errors}
     seq['matchExpected'] = telemetry_match(actual, want['events'])
@@ -1730,15 +1747,206 @@ def sc_telemetry_levels(page, info):
     cnt = {'key': 'bp.stats.v1', 'storedRaw': stored, 'statsBeforeReload': stats_before, 'inMemoryAfterReload': mem,
            'note': 'read after the reload; the reload boot opens level 1 again (attempt 5 of srcId 1)', 'rows': rows}
     cnt['pass'] = bool(parsed is not None and all(r['match'] and r['secondsPositive'] for r in rows.values()))
-    with open(os.path.join(OUT_DIR, 'sequence.json'), 'w') as f:
+    seq['fullLog'] = full
+    seq['fullLogAfterReload'] = full_after
+    # TASK-192: sequence.json is telemetry_ui's file now
+    with open(os.path.join(OUT_DIR, 'sequence_levels.json'), 'w') as f:
         json.dump(seq, f, separators=(',', ':'))
     with open(os.path.join(OUT_DIR, 'counters.json'), 'w') as f:
         json.dump(cnt, f, separators=(',', ':'))
     info['telemetry'] = {'sequencePass': seq['pass'], 'countersPass': cnt['pass'], 'events': len(actual)}
     if not seq['pass']:
-        raise RuntimeError('telemetry sequence mismatch (sequence.json)')
+        raise RuntimeError('telemetry sequence mismatch (sequence_levels.json)')
     if not cnt['pass']:
         raise RuntimeError('telemetry counters mismatch (counters.json)')
+
+
+# TASK-192: UI, line and session telemetry. Same page setup as telemetry_levels (none backend, own context, touch on).
+# Real input for every button (mouse, plus one touch tap on the HUD menu icon); the play-time milestones are driven with
+# TELEMETRY.tick (the game loop's own per-frame call, here with large steps), page hide with a visibilitychange to
+# hidden and a pagehide event. ui:/lines:/session: events of ANALYTICS.debugLog must equal
+# tests/visual/telemetry_expected_ui.json. Writes sequence.json; coverage.json (every event id of docs/telemetry.md
+# seen in the telemetry_levels + telemetry_ui logs) when telemetry_levels ran first in the same shoot.py run.
+TELEMETRY_UI_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_ui.json')
+TELEMETRY_DOC = os.path.join(ROOT, 'docs', 'telemetry.md')
+TELEMETRY_UI_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && /^(ui|lines|session):/.test(String(e.args[0])))
+    .map(e => [e.fn, e.args[0], e.args[1] ?? null])"""
+MENU_ICON_JS = "[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"
+MENU_BUTTON_JS = """i => [menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+    menuCoords[1] + 300 + i * 85 + menuTextRect[1] / 2]"""
+WIN_NEXT_JS = """[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2, menuCoords[1] + blocks[1] + menuTextRect[1] / 2]"""
+EDITOR_BUTTON_JS = "(() => { const r = editorButtonRect(); return [r[0] + r[2] / 2, r[1] + r[3] / 2] })()"
+REJECT_POINT = (200, 400)
+
+
+def box_centre(p, rect_js):
+    r = p.evaluate(rect_js)
+    return r[0] + r[2] / 2, r[1] + r[3] / 2
+
+
+def telemetry_doc_ids():
+    # first cell of every catalogue row: progression `S`, `L<srcId>` | facade `fn` | `design:id:<srcId>:<ctx>`
+    rows = []
+    with open(TELEMETRY_DOC) as f:
+        for line in f:
+            if not line.startswith('| ') or line.startswith('| event id') or line.startswith('|--'):
+                continue
+            cell = line.split('|')[1].strip()
+            toks = re.findall(r'`([^`]+)`', cell)
+            if not toks:
+                continue
+            if cell.startswith('progression'):
+                rows.append({'row': cell, 'kind': 'progression', 'status': toks[0]})
+            elif cell.startswith('facade'):
+                rows.append({'row': cell, 'kind': 'facade', 'fn': toks[0]})
+            elif ':' in toks[0]:
+                pat = re.escape(toks[0]).replace(re.escape('<srcId>'), r'\d+').replace(re.escape('<ctx>'), r'(L\d+|map)')
+                rows.append({'row': cell, 'kind': 'design', 'regex': '^' + pat + '$'})
+    return rows
+
+
+def telemetry_coverage(logs):
+    rows = telemetry_doc_ids()
+    out = []
+    for r in rows:
+        hits = 0
+        for name, log in logs.items():
+            for e in log:
+                if r['kind'] == 'progression':
+                    ok = e[0] == 'addProgressionEvent' and e[1] == r['status']
+                elif r['kind'] == 'facade':
+                    ok = e[0] == r['fn']
+                else:
+                    ok = e[0] == 'addDesignEvent' and re.match(r['regex'], str(e[1])) is not None
+                hits += ok
+        out.append({'id': r['row'], 'hits': hits})
+    uncovered = [r['id'] for r in out if r['hits'] == 0]
+    return {'doc': 'docs/telemetry.md', 'logs': {k: len(v) for k, v in logs.items()}, 'rows': out,
+            'catalogueRows': len(out), 'uncovered': uncovered, 'pass': bool(out and not uncovered)}
+
+
+def sc_telemetry_ui(page, info):
+    with open(TELEMETRY_UI_EXPECTED) as f:
+        want = json.load(f)
+    errors, steps = [], []
+    with telemetry_page(page, errors, has_touch=True) as p:
+        backend = p.evaluate("ANALYTICS_BACKEND.backendId")
+        p.evaluate("() => { window.__inputs = {click: 0, touchend: 0}; document.addEventListener('click', () => ++__inputs.click, true);"
+                   " canvas.addEventListener('touchend', () => ++__inputs.touchend, true) }")
+
+        def step(name):
+            n = p.evaluate("ANALYTICS.debugLog.length")
+            steps.append({'step': name, 'srcId': p.evaluate("levels[thisLevel].srcId"), 'logLength': n})
+        if p.evaluate("levels[thisLevel].srcId") != 1 or p.evaluate("curLevel().lineK") != 1:
+            raise RuntimeError('boot did not open srcId 1 (lineK 1)')
+        step('boot')
+        draw_seg(p, LINE_X)  # the last line (lineK 1) starts the run
+        click(p, *p.evaluate(PLAY_ICON_JS))  # pause
+        if p.evaluate("physics") or not p.evaluate("speedIconVisible()"):
+            raise RuntimeError('run not paused / speed box hidden')
+        step('place+pause')
+        click(p, *box_centre(p, "speedIconRect()"))
+        click(p, *box_centre(p, "speedIconRect()"))
+        step('speed on/off')
+        click(p, *p.evaluate(PLAY_ICON_JS))  # run again
+        click(p, *box_centre(p, "restartIconRect()"))
+        if p.evaluate("levelStarted"):
+            raise RuntimeError('HUD restart did not reset the run')
+        step('run+restart')
+        if p.evaluate("p => playerLineAt(p[0], p[1])", list(REJECT_POINT)) is not None:
+            raise RuntimeError('reject point hits a player line')
+        click(p, *REJECT_POINT)  # lineK reached: nothing starts
+        if p.evaluate("!!line"):
+            raise RuntimeError('a line started over the limit')
+        step('reject_limit')
+        end = p.evaluate("(() => { const l = lines.find(l => l.type == 'player'); return [l.posX2, l.posY2] })()")
+        p.mouse.move(*to_client(p, *end))
+        p.mouse.down()
+        for k in range(1, 6):
+            p.mouse.move(*to_client(p, end[0] + 10 * k, end[1] - 8 * k))
+        p.mouse.up()
+        frames(p)
+        moved = p.evaluate("(() => { const l = lines.find(l => l.type == 'player'); return [l.posX2, l.posY2] })()")
+        if moved == end:
+            raise RuntimeError('drag did not move the end')
+        step('drag')
+        bin_click(p)
+        if p.evaluate("lines.filter(l => l.type == 'player').length") != 0:
+            raise RuntimeError('bin did not delete the line')
+        step('bin')
+        draw_seg(p, LINE_X)  # placed again (index 1 of this attempt), the run starts
+        p.touchscreen.tap(*to_client(p, *p.evaluate(MENU_ICON_JS)))  # the touch tap
+        frames(p)
+        if not p.evaluate("drawMenu"):
+            raise RuntimeError('touch tap on the menu icon did not open the menu')
+        step('touch menu_open')
+        click(p, *p.evaluate(MENU_BUTTON_JS, 0))  # resume
+        step('resume')
+        open_map(p)
+        click(p, *p.evaluate(MENU_ICON_JS))  # map -> back to the pause menu
+        if p.evaluate("drawMap") or not p.evaluate("drawMenu"):
+            raise RuntimeError('map menu icon did not go back to the pause menu')
+        step('map_close')
+        click(p, *p.evaluate(LEVELS_BUTTON_JS))
+        pt = p.evaluate(LEVEL_POINT_JS, 1)
+        click(p, *pt)  # select level 2: card shown
+        play = p.evaluate("mapCardLayout(1).play")
+        move(p, play[0], play[1])
+        frames(p)
+        click(p, play[0], play[1])  # the card's play button
+        if p.evaluate("levels[thisLevel].srcId") != 2 or p.evaluate("drawMap"):
+            raise RuntimeError('preview play did not start level 2')
+        step('map_level+preview_play')
+        telemetry_run(p)  # play box, no lines
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0 }")
+        p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+        click(p, *p.evaluate(WIN_NEXT_JS))
+        if p.evaluate("thisLevel") != 2 or p.evaluate("levels[thisLevel].srcId") != 11:
+            raise RuntimeError('next level did not open play-order level 3 (srcId 11)')
+        step('next_level')
+        before = p.evaluate("TELEMETRY.playSeconds()")
+        if before >= 25:
+            raise RuntimeError('real active play already %.1f s (milestone order not deterministic)' % before)
+        for m in (30, 60, 120, 300, 600):
+            p.evaluate("m => TELEMETRY.tick((m - TELEMETRY.playSeconds()) * 1000 + 500)", m)
+        step('play_seconds')
+        p.evaluate("() => { Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
+                   " Object.defineProperty(document, 'hidden', {configurable: true, get: () => true});"
+                   " document.dispatchEvent(new Event('visibilitychange'));"
+                   " delete document.visibilityState; delete document.hidden;"
+                   " document.dispatchEvent(new Event('visibilitychange')) }")
+        step('hide')
+        open_menu(p)
+        click(p, *p.evaluate(EDITOR_BUTTON_JS))
+        if not p.evaluate("editorMode"):
+            raise RuntimeError('editor button did not open the editor')
+        step('editor_open')
+        p.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}))")
+        step('pagehide')
+        actual = p.evaluate(TELEMETRY_UI_LOG_JS)
+        full = p.evaluate(FULL_LOG_JS)
+        inputs = p.evaluate("window.__inputs")
+        play_secs = p.evaluate("TELEMETRY.playSeconds()")
+    TELEMETRY_LOGS['telemetry_ui'] = full
+    seq = {'backend': backend, 'steps': steps, 'expected': want['events'], 'debugLog': actual,
+           'playSecondsBeforeTicks': before, 'playSecondsEnd': play_secs, 'inputs': inputs,
+           'consoleErrors': len(errors), 'errors': errors, 'fullLog': full}
+    seq['matchExpected'] = telemetry_match(actual, want['events'])
+    seq['touchTap'] = bool(inputs['touchend'] >= 1)
+    seq['pass'] = bool(seq['matchExpected'] and backend == 'none' and not errors and seq['touchTap'])
+    with open(os.path.join(OUT_DIR, 'sequence.json'), 'w') as f:
+        json.dump(seq, f, separators=(',', ':'))
+    cov = None
+    if 'telemetry_levels' in TELEMETRY_LOGS:
+        cov = telemetry_coverage(TELEMETRY_LOGS)
+        with open(os.path.join(OUT_DIR, 'coverage.json'), 'w') as f:
+            json.dump(cov, f, separators=(',', ':'))
+    info['telemetry'] = {'sequencePass': seq['pass'], 'events': len(actual),
+                         'coverage': None if cov is None else {'pass': cov['pass'], 'uncovered': cov['uncovered']}}
+    if not seq['pass']:
+        raise RuntimeError('telemetry ui sequence mismatch (sequence.json)')
+    if cov is not None and not cov['pass']:
+        raise RuntimeError('telemetry coverage: uncovered %s (coverage.json)' % cov['uncovered'])
 
 
 SPEED_CONCEPT = os.path.join(ROOT, 'artifacts', 'concepts', 'speed', '14-arrow-centre-big3x-v2.png')
@@ -1867,6 +2075,7 @@ SCENARIOS = {
     'speed_hidden': sc_speed_hidden,
     'speed_reload': sc_speed_reload,
     'telemetry_levels': sc_telemetry_levels,
+    'telemetry_ui': sc_telemetry_ui,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

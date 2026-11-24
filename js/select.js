@@ -78,6 +78,8 @@ function inBin(coords)
 // remove the selected player line; the player may draw a line again
 function deleteSelectedLine()
 {
+    TELEMETRY.ui('line_delete_bin') // TASK-192
+    TELEMETRY.lineDeleted()
     lines.splice(playerSel, 1)
     linesK -= 1
     playerSel = null
@@ -277,6 +279,7 @@ function dragDrop(coords)
     }
     else
         endSet(l, d.end, c[0], c[1])
+    TELEMETRY.lineDragged(!err) // TASK-192: lines:<srcId>:drag, 1 accepted / 0 rejected
     // the idle trail (js/bounce.js) is recomputed from the final lines (state signature changes)
     playerSel = d.li
     linesSaveDraft() // TASK-185 (js/linestore.js)

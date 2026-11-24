@@ -21,6 +21,18 @@
 //          level:<srcId>:restart      the player pressed a restart button
 //          level:<srcId>:abandon      left an unwon attempt (map, next level, page hide)
 //
+// TASK-192: UI, line and session events (same facade, catalogue in docs/telemetry.md):
+//   ui:<name>:<ctx>            a button; ctx = 'L<srcId>' inside a level, 'map' on the route map; value: see ui()
+//   lines:<srcId>:place        value = the line's index in this attempt (1, 2, ...)
+//   lines:<srcId>:delete       the bin removed a player line
+//   lines:<srcId>:drag         a player line end was dragged and dropped; value 1 = accepted, 0 = rejected
+//   lines:<srcId>:reject_limit a click on the field while the level's lineK limit is reached
+//   lines:<srcId>:used         value = player lines on the field, on every run start (run / resume)
+//   session:play_seconds       value = milestone (30, 60, 120, 300, 600) of active play time
+//   session:hide               the page became hidden (visibilitychange)
+//   session:levels_seen        value = distinct srcIds that had an attempt this session (on pagehide)
+// Nothing is sampled or rate-limited; touch input goes through the same handlers as the mouse.
+//
 // Per-user counters: PLATFORM.storage key STATS_STORE ('bp.stats.v1'), JSON
 //   {[srcId]: {attempts, wins, restarts, offmap, abandons, seconds}}; seconds = time inside attempts (wall clock).
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
@@ -29,7 +41,11 @@ const STATS_STORE = 'bp.stats.v1'
 const TELEMETRY = (function()
 {
     let stats = {}
-    let attempt = null // {srcId, n, t0, runAt, won, ended}
+    let attempt = null // {srcId, n, t0, runAt, won, ended, placed}
+    const PLAY_MILESTONES = [30, 60, 120, 300, 600]
+    let playMs = 0        // active play time this session (tick)
+    let milestone = 0     // index of the next PLAY_MILESTONES entry
+    const seen = new Set() // srcIds with an attempt this session
 
     function now()
     {
@@ -107,10 +123,31 @@ const TELEMETRY = (function()
         leave()
         const id = srcId(), e = entry(id)
         const n = ++e.attempts
-        attempt = {srcId: id, n, t0: now(), runAt: null, won: false, ended: false, reason}
+        attempt = {srcId: id, n, t0: now(), runAt: null, won: false, ended: false, reason, placed: 0}
+        seen.add(id)
         ANALYTICS.progression('Start', 'L' + id)
         design(id, 'attempt', n)
         save()
+    }
+
+    // a button outside the editor and outside play-tests (the route map counts even after a play-test)
+    function uiActive()
+    {
+        return typeof editorMode !== 'undefined' && !editorMode && (drawMap || !playtestLevel) && levels[thisLevel] !== undefined
+    }
+    function ctxSegment()
+    {
+        return drawMap ? 'map' : 'L' + srcId()
+    }
+    function lineEvent(name, value)
+    {
+        if (active())
+            ANALYTICS.design('lines:' + srcId() + ':' + name, value)
+    }
+    // active play: a level on screen (no map, menu, completion window, editor or play-test) in a visible page
+    function playing()
+    {
+        return active() && !drawMap && !drawMenu && !levelCompletedWindow && !document.hidden
     }
 
     return {
@@ -133,11 +170,47 @@ const TELEMETRY = (function()
         {
             start(reason)
         },
-        // the run starts (last line placed or the play box); an attempt without a run yet records the time
-        run()
+        // a button. name: run, pause, restart, menu_open, menu_close, resume, map_open, map_close, map_level,
+        // preview_play, next_level, speed_on, speed_off, editor_open, line_delete_bin; value: srcId for map_level
+        // and preview_play, else none
+        ui(name, value)
+        {
+            if (uiActive())
+                ANALYTICS.design('ui:' + name + ':' + ctxSegment(), value)
+        },
+        // line events (see the header); place() numbers the lines placed in the open attempt
+        linePlaced()
         {
             if (!active())
                 return
+            const a = attempt && attempt.srcId === srcId() ? attempt : null
+            lineEvent('place', a ? ++a.placed : 1)
+        },
+        lineDeleted() { lineEvent('delete') },
+        lineDragged(accepted) { lineEvent('drag', accepted ? 1 : 0) },
+        lineRejectLimit() { lineEvent('reject_limit') },
+        // frame time (ms, capped by the caller); counts only while playing(); sends every milestone crossed
+        tick(ms)
+        {
+            if (!(ms > 0) || !playing())
+                return
+            playMs += ms
+            while (milestone < PLAY_MILESTONES.length && playMs >= PLAY_MILESTONES[milestone] * 1000)
+                ANALYTICS.design('session:play_seconds', PLAY_MILESTONES[milestone++])
+        },
+        playSeconds() { return playMs / 1000 },
+        // visibilitychange to hidden
+        hidden() { ANALYTICS.design('session:hide') },
+        // pagehide: distinct levels with an attempt this session
+        pageHide() { ANALYTICS.design('session:levels_seen', seen.size) },
+        // the run starts (last line placed or the play box); an attempt without a run yet records the time.
+        // players = player lines on the field -> lines:<srcId>:used
+        run(players)
+        {
+            if (!active())
+                return
+            if (typeof players == 'number')
+                lineEvent('used', players)
             if (!open() || open().srcId !== srcId())
                 start('resume')
             const a = open()

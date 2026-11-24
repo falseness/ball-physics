@@ -144,6 +144,10 @@
             
             return true
         }
+        function playerLineCount()
+        {
+            return lines.filter(function(l) { return l.type == 'player' }).length
+        }
         function unfastenLastLine()
         {
             lines.pop()
@@ -272,6 +276,7 @@
             }
             if (levelCompletedWindow && !playtestLevel && inEditorButton(coords))
             {
+                TELEMETRY.ui('editor_open') // TASK-192
                 levelCompletedWindow = false
                 TELEMETRY.close()
                 editorOpen() // edit the level just won
@@ -291,6 +296,7 @@
                         editorEndPlaytest() // play-test: 'editor' instead of 'next level'
                         return
                     }
+                    TELEMETRY.ui('next_level') // TASK-192
                     levelChoosed(++thisLevel)
                     levelCompletedWindow = false
                     TELEMETRY.levelStart('next') // TASK-191 (js/telemetry.js)
@@ -302,6 +308,7 @@
                         menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0], 
                         menuCoords[1] + blocks[2] + menuTextRect[1]))
                 {
+                    TELEMETRY.ui('restart') // TASK-192
                     levelCompletedWindow = false
                     restartKeepLines() // restart: ball back to the start, the player's lines kept
                     TELEMETRY.restart()
@@ -315,6 +322,8 @@
                         editorEndPlaytest() // back to the same working copy
                     else
                     {
+                        TELEMETRY.ui('editor_open') // TASK-192
+                        TELEMETRY.ui('menu_close')
                         TELEMETRY.close() // the attempt ends without an event
                         editorOpen()
                     }
@@ -331,10 +340,14 @@
                         {
                             if (menuButtons[i] == 'Levels')
                             {
+                                TELEMETRY.ui('map_open') // TASK-192
+                                TELEMETRY.ui('menu_close')
                                 TELEMETRY.leave() // an unwon attempt is abandoned (js/telemetry.js)
                                 mapOpen() // full-screen route map replaces the old level grid
                                 return
                             }
+                            TELEMETRY.ui(menuButtons[i]) // TASK-192: 'resume' / 'restart', then menu_close
+                            TELEMETRY.ui('menu_close')
                             drawMenu = false
                             drawMenuIcon = true
                             if (menuButtons[i] == 'restart')
@@ -350,10 +363,12 @@
                 if (speedIconVisible() && inSpeedIcon(coords))
                 {
                     speedToggle() // 1x <-> 3x; lines and selection untouched
+                    TELEMETRY.ui(speedMul == 3 ? 'speed_on' : 'speed_off') // TASK-192
                     return
                 }
                 if (restartIconVisible() && inRestartIcon(coords))
                 {
+                    TELEMETRY.ui('restart') // TASK-192
                     selectionClear()
                     restartKeepLines() // ball back to the start, lines kept and editable again
                     TELEMETRY.restart()
@@ -364,6 +379,7 @@
                     if (!addNewLine(coords))
                         return
                     line = false
+                    TELEMETRY.linePlaced() // TASK-192
                     linesSaveDraft() // TASK-185: this level's draft lines (js/linestore.js)
                     bounce.cancel() // an unfinished preview job is dropped
                     if (linesK >= curLevel().lineK)
@@ -372,7 +388,7 @@
                         bounce.setDrawEnable(false)
                         physics = true
                         levelStarted = true
-                        TELEMETRY.run()
+                        TELEMETRY.run(playerLineCount())
                     }
                 }
                 else
@@ -383,6 +399,7 @@
                     }
                     else if (!line && inMenuIcon(coords))
                     {
+                        TELEMETRY.ui('menu_open') // TASK-192
                         selectionClear()
                         drawMenu = true
                         drawMenuIcon = false
@@ -393,7 +410,9 @@
                         selectionClear()
                         physics = !physics
                         levelStarted = true
-                        TELEMETRY.run()
+                        TELEMETRY.ui(physics ? 'run' : 'pause') // TASK-192
+                        if (physics)
+                            TELEMETRY.run(playerLineCount())
                     }
                     else if (levelStarted)
                     {
@@ -424,6 +443,8 @@
                             line = new Line(coords[0], coords[1], coords[0], coords[1], dotRadius, '#0000ff', 'line')
                             linesK++
                         }
+                        else
+                            TELEMETRY.lineRejectLimit() // TASK-192: a click on the field with no lines left
                     }
                 }
             }
@@ -663,8 +684,16 @@
                 }
             }
         }
+        let telemetryFrameAt = null
         function gameLoop()
         {
+            // TASK-192: active play time (TELEMETRY.tick counts only while a level is played in a visible page);
+            // one frame counts at most 1 s (a throttled background tab adds nothing)
+            const tNow = performance.now()
+            if (telemetryFrameAt !== null)
+                TELEMETRY.tick(Math.min(1000, tNow - telemetryFrameAt))
+            telemetryFrameAt = tNow
+
             bounce.update(6) // progressive path preview: at most ~6 ms of physics per frame
             editorPreviewUpdate(6) // editor: live path preview of the working copy (same budget)
 
@@ -707,8 +736,14 @@
             window.addEventListener('pagehide', function()
             {
                 TELEMETRY.leave() // TASK-191: an unwon attempt is abandoned before the flush
+                TELEMETRY.pageHide() // TASK-192: session:levels_seen
                 ANALYTICS.flush()
                 ANALYTICS.sessionEnd()
+            })
+            document.addEventListener('visibilitychange', function()
+            {
+                if (document.visibilityState === 'hidden')
+                    TELEMETRY.hidden() // TASK-192: session:hide
             })
             // A page restored from the back/forward cache opens a new session
             window.addEventListener('pageshow', function(e)

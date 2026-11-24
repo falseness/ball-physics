@@ -561,6 +561,7 @@ function mapStart(i)
     mapSel = mapHover = -1
     mapPlayHot = false
     mapCursor('')
+    TELEMETRY.ui('map_close') // TASK-192: the map closes for the level
     levelPick(i)
 }
 
@@ -571,6 +572,7 @@ function mapClick(coords)
 {
     if (inMenuIcon(coords))
     {
+        TELEMETRY.ui('map_close') // TASK-192
         drawMap = false
         drawMenu = true
         drawMenuIcon = false
@@ -580,10 +582,15 @@ function mapClick(coords)
     }
     const ci = mapCardLevel(), c = ci >= 0 ? mapCardLayout(ci) : null
     if (c && mapRectHit(mapCardPlayBox(c), coords[0], coords[1]))
+    {
+        TELEMETRY.ui('preview_play', levels[c.i].srcId) // TASK-192
         return mapStart(c.i)
+    }
     if (c && mapRectHit(c.all, coords[0], coords[1]))
         return
     const i = routeLevelAt(levels, coords[0], coords[1])
+    if (i >= 0)
+        TELEMETRY.ui('map_level', levels[i].srcId) // TASK-192: select or (selected already) start
     if (i >= 0 && i === mapSel)
         return mapStart(i)
     mapSel = i

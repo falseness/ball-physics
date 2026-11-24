@@ -88,10 +88,13 @@ def check(browser, url, backend, build):
                     initialized: s.isInitialized ? s.isInitialized() : null,
                     hostName: gameanalytics.http.GAHTTPApi.instance.hostName} }''')
         if backend == 'none':
-            # a pagehide (synthetic: the page stays readable) calls flush() then sessionEnd()
-            res['pagehideLog'] = page.evaluate('''() => { const n = ANALYTICS.debugLog.length;
+            # a pagehide (synthetic: the page stays readable) calls flush() then sessionEnd(); the game's own design /
+            # progression events sent first (TASK-191 abandon, TASK-192 session:levels_seen) are listed apart
+            ph = page.evaluate('''() => { const n = ANALYTICS.debugLog.length;
                 window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}));
-                return ANALYTICS.debugLog.slice(n).map(e => e.fn) }''')
+                return ANALYTICS.debugLog.slice(n).map(e => e.fn == 'addDesignEvent' ? 'design:' + e.args[0] : e.fn) }''')
+            res['pagehideGameEvents'] = [f for f in ph if f.startswith('design:') or f == 'addProgressionEvent']
+            res['pagehideLog'] = [f for f in ph if f not in res['pagehideGameEvents']]
     except Exception as e:
         problems.append('exception: %s: %s' % (type(e).__name__, str(e).splitlines()[0] if str(e) else ''))
     finally:
