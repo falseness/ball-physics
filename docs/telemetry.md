@@ -5,6 +5,43 @@ backends in `analytics/backends/`). Game code never calls the backend directly. 
 `js/telemetry.js` (`TELEMETRY`, TASK-191; UI, line and session events TASK-192). Builds from automated browsers start with `test-` (see
 `analyticsBuild()` in `index.html`) so reports can leave them out.
 
+## Where the data goes
+
+```
+game (TELEMETRY -> ANALYTICS facade -> gameanalytics backend + GA SDK v5.0.0)
+  -> relay https://stats.playdiplomacy.online  (first-party host, so ad blockers do not drop it)
+       -> tap ga_tap.py -> GameAnalytics api.gameanalytics.com -> game "ball-physics" (dashboards)
+                        -> raw copy of every request body, user id kept, one file per game key and UTC day
+            /var/lib/ga-tap/events-<game key>-<YYYY-MM-DD>.jsonl
+```
+
+- **GameAnalytics game**: "ball-physics". Its keys are `GA_KEYS` in `analytics/backends/gameanalytics.js` (copy in
+  `/root/credentials/ball-physics/gameanalytics.json`). `GA_COLLECTOR_HOST` points the SDK at the relay; the browser
+  never talks to `gameanalytics.com`.
+- **Relay**: Caddy on `stats.playdiplomacy.online` (`/etc/caddy/Caddyfile`) reverse-proxies to the tap
+  (`/usr/local/bin/ga_tap.py`, systemd unit `ga-tap`, 127.0.0.1:8790), which saves each request and forwards it
+  unchanged to `https://api.gameanalytics.com` (`/v2/<key>/init`, `/v2/<key>/events`). The relay is shared with
+  grapnelninja; the per-key files keep the two games apart.
+- **Raw files**: `/var/lib/ga-tap/events-<game key>-<day>.jsonl` (since TASK-194, 2026-11-24 03:11 UTC). Older days
+  are in the combined `events-<day>.jsonl` (all games; the request path holds the key). Requests without a key go to
+  `events-unknown-<day>.jsonl`. Each line is one request record (`ts`, `test`, `ip`, `ua`, `path`, `status`, `body`: GA event list with
+  `user_id`, `session_id`, `build`, `event_id`, `value`, `event_uuid`). This is the source of `tools/stats_report.py`;
+  GameAnalytics keeps aggregated dashboards only.
+- **Backend `none`** (`analytics/backends/none.js`): sends nothing, only fills `ANALYTICS.debugLog`; the regression
+  scenarios use it.
+
+## Test builds
+
+The GA build name is `<build id>` from `js/buildinfo.js` (`BUILD_CONFIG.build`). The repo keeps it empty: a page
+served straight from the repo reports `dev-<YYYYMMDD>`; a release copy is stamped with
+`python3 tools/stamp_build.py --root DIR` -> `<git short sha>-<YYYYMMDD>` (with a portal source:
+`<portal>-<build id>`). Any automated browser (`navigator.webdriver`, i.e. playwright: shoot.py, sim.py, the
+platform checks) or a page opened with `?gaTest=1` gets the prefix `test-` (`test-dev-20261124`,
+`test-live-20261124`). The backend adds the prefix itself, so `BUILD_CONFIG.build` must never carry it. Test
+records are also flagged `test: true` by the tap. `tools/stats_report.py` drops both unless `--include-test`;
+in GameAnalytics filter out builds starting with `test-`. Live checks use a new build name per run
+(`--build <name>-<day>`) so their counts are not mixed with an earlier run.
+
 ## Level attempts (TASK-191)
 
 Each level start is one **attempt** of that level. Levels are identified by `srcId` (`levels[thisLevel].srcId`),
@@ -145,3 +182,16 @@ Writes `DIR/report.json` and `DIR/report.md`:
 Check: `python3 tools/stats_report.py --root tests/stats/fixture --out DIR && python3 tests/stats/check_fixture.py
 DIR/report.json` (fixture written by `tests/stats/make_fixture.py`, expected report hand-written in
 `tests/stats/fixture_expected.json`).
+
+Typical use on the relay host: `python3 tools/stats_report.py --since 2026-11-25 --out /tmp/bp-stats` and read
+`report.md` (per user: levels tried, attempts, wins, restarts, buttons, lines, play time; per level totals).
+
+## Regression (TASK-196)
+
+The telemetry rows of the full regression: `shoot.py` (all scenarios, includes `telemetry_levels` and
+`telemetry_ui`, whose debug logs must equal `tests/visual/telemetry_expected_levels.json` /
+`telemetry_expected_ui.json`, and `coverage.json` `uncovered: []`), `tests/platform/test_backends.py`
+(`pageErrors=0` on all five platform backends) and the stats fixture check above. The two telemetry scenarios use
+the `none` backend; the other shoot / sim scenarios load the committed `gameanalytics` backend and send `test-`
+builds to the relay (left out of reports). `test_analytics.py`, `live_check.py` and `tap_split_check.py` send
+real requests to the relay and are run on purpose, not in every regression.
