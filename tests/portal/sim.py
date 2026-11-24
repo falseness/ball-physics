@@ -532,19 +532,19 @@ def s12(page):
 
 S13_JS = """([A, B, hosts, frames, cutAt]) => {
   playtestLevel = null
-  thisLevel = 0
-  const lv = levels[0], keep = lv.portals, n0 = lv.lines.length
+  thisLevel = levelBySrc(1)                    // level 1 by source id (TASK-177)
+  const L1 = thisLevel, lv = levels[L1], keep = lv.portals, n0 = lv.lines.length
   // wall portals cut into two host lines appended to level 1 (removed again at the end)
   for (const l of hosts) lv.lines.push(new Line(l[0], l[1], l[2], l[3], dotRadius, levelLineColor, 'line'))
   lv.portals = [{line: n0, u: 0.5, side: -1, h: 45, name: 'A'}, {line: n0 + 1, u: 0.5, side: -1, h: 45, name: 'B'}]
   const traceRun = (n) => { const out = []
     for (let f = 0; f < n; ++f) { for (let k = 0; k < cyclesPerTact; ++k) gamePhysics(); out.push([ball.posX, ball.posY, ball.speedX, ball.speedY]) }
     return out }
-  levelChoosed(0)
+  levelChoosed(L1)
   const first = traceRun(frames)
   const firstTeleports = portalState.teleports.map(t => t.step)
   // second attempt: run until the ball is mid-transit (within ball.radius of a portal plane, just after a teleport)
-  levelChoosed(0)
+  levelChoosed(L1)
   let midTransit = null
   for (let i = 0; i < cutAt && !midTransit; ++i) {
     gamePhysics()
@@ -556,13 +556,13 @@ S13_JS = """([A, B, hosts, frames, cutAt]) => {
   const second = traceRun(frames)
   const secondTeleports = portalState.teleports.map(t => t.step)
   // also via levelChoosed mid-transit (menu level pick path)
-  levelChoosed(0)
+  levelChoosed(L1)
   for (let i = 0; i < (midTransit ? midTransit.step : 0); ++i) gamePhysics()
-  levelChoosed(0)
+  levelChoosed(L1)
   const third = traceRun(frames)
   if (keep === undefined) delete lv.portals; else lv.portals = keep
   lv.lines.length = n0
-  levelChoosed(0)
+  levelChoosed(L1)
   let same2 = 0, same3 = 0
   for (let i = 0; i < frames; ++i) {
     if (first[i].every((v, k) => v === second[i][k])) ++same2
@@ -609,10 +609,10 @@ S14_JS = """(frames) => {
       if (absent.out[f][0] !== none.out[f][0] || absent.out[f][1] !== none.out[f][1]) ++diffAbsent
       if (empty.out[f][0] !== none.out[f][0] || empty.out[f][1] !== none.out[f][1]) ++diffEmpty
     }
-    res.push({level: i + 1, hadPortals: had, teleports: absent.teleports + empty.teleports, portalSteps: absent.steps + empty.steps, diffAbsent, diffEmpty})
+    res.push({level: lv.srcId, index: i, hadPortals: had, teleports: absent.teleports + empty.teleports, portalSteps: absent.steps + empty.steps, diffAbsent, diffEmpty})
   }
   thisLevel = 0; levelChoosed(0)
-  return res }"""
+  return res.sort((a, b) => a.level - b.level) }"""
 
 
 def s14(page):
@@ -1184,14 +1184,17 @@ SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S6': s6, 'S7': s7, 'S8': s
              'W8': w8, 'W9': w9, 'W10': w10, 'W11': w11}
 
 TRAJ_JS = """([frames, nLevels]) => { const out = []
-  for (let i = 0; i < Math.min(levels.length, nLevels || levels.length); ++i) {
+  // levels in source-id order (TASK-177: play order != definition order), so --levels N and --compare
+  // address the first N definition levels
+  for (let n = 1; n <= Math.min(levels.length, nLevels || levels.length); ++n) {
+    const i = levelBySrc(n)
     thisLevel = i; levelChoosed(i)
     const xs = [], ys = []
     for (let f = 0; f < frames; ++f) {
       for (let k = 0; k < cyclesPerTact; ++k) gamePhysics()
       xs.push(ball.posX); ys.push(ball.posY)
     }
-    out.push({level: i + 1, nLines: lines.length, x: xs, y: ys})
+    out.push({level: n, nLines: lines.length, x: xs, y: ys})
   }
   return out }"""
 

@@ -822,6 +822,20 @@ levels.push(
     unlock: 0
 }
 )
+// TASK-177: stable source ids and play order. srcId = the level's definition number (1-based, the
+// order above, never renumbered). Play order: level 1, level 2, then every level with a non-empty
+// `portals` list, then every remaining level (both groups in definition order). Tools and tests
+// address a level by srcId through levelBySrc(n) (index into the reordered levels).
+levels.forEach((l, i) => { l.srcId = i + 1 })
+{
+    const hasPortals = l => !!(l.portals && l.portals.length)
+    const head = levels.slice(0, 2), rest = levels.slice(2)
+    levels = head.concat(rest.filter(hasPortals), rest.filter(l => !hasPortals(l)))
+}
+function levelBySrc(n)
+{
+    return levels.findIndex(l => l.srcId === n)
+}
 // Every level is open from the start (no need to win the previous one); a win still
 // marks it completed (unlock 2, coral in the level grid).
 for (const l of levels) l.unlock = Math.max(l.unlock || 0, 1)

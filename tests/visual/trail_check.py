@@ -157,7 +157,8 @@ def check_c(browser, url, errors):
 
 def check_d(browser, url, errors):
     page = new_page(browser, url, errors)
-    page.evaluate("() => { thisLevel = 10; levelChoosed(10) }")
+    # level 11 by source id (TASK-177; a --root tree without levelBySrc is in definition order)
+    page.evaluate("() => { thisLevel = typeof levelBySrc === 'function' ? levelBySrc(11) : 10; levelChoosed(thisLevel) }")
     shoot.frames(page)
     (x1, y1), (x2, y2) = shoot.LEVEL11_LINE
     shoot.click(page, x1, y1)

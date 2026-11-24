@@ -35,6 +35,9 @@ from playwright.sync_api import sync_playwright
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 PORTAL_LEVELS = range(10, 17)
+# TASK-177: 'level' numbers here are DEFINITION indices (srcId - 1), in both trees; a tree with levelBySrc maps them
+# to its play-order index, an older tree (definition order) uses them as is.
+SRC_FN = """const SRC = d => typeof levelBySrc === 'function' ? levelBySrc(d + 1) : d"""
 
 IDENTITY = """() => {
     const CANDS = [[[200, 400], [500, 450]], [[600, 600], [900, 550]], [[300, 650], [700, 700]], [[150, 300], [450, 350]],
@@ -43,8 +46,10 @@ IDENTITY = """() => {
     const st = () => [ball.posX, ball.posY, ball.speedX, ball.speedY]
     const pts = a => a.map(p => [p.x, p.y])
     const out = []
-    for (let i = 0; i < levels.length; ++i) {
-        const rec = {level: i, pairs: [], calc: [], play: []}
+    """ + SRC_FN + """
+    for (let d = 0; d < levels.length; ++d) {
+        const i = SRC(d)
+        const rec = {level: d, pairs: [], calc: [], play: []}
         thisLevel = i; levelChoosed(i); bounce.cancel()
         rec.idle = pts(bounce.calcSyncIdle())
         for (const [a, b] of CANDS) {
@@ -78,13 +83,14 @@ IDENTITY = """() => {
     return out
 }"""
 
-TIME = """([i, n]) => { thisLevel = i; levelChoosed(i); bounce.cancel(); bounce.setDrawEnable(false); const t = [];
+TIME = """([d, n]) => { """ + SRC_FN + """; const i = SRC(d); thisLevel = i; levelChoosed(i); bounce.cancel(); bounce.setDrawEnable(false); const t = [];
     for (let k = 0; k < n; ++k) { const t0 = performance.now(); bounce.calcSyncIdle(); t.push(performance.now() - t0) }
     bounce.setDrawEnable(true); return t }"""
 
 # real game loop only: load the level, then count rAF frames until the idle trail is complete.
 # Counting starts after the first frame (the game loop starts the idle job in its own rAF callback).
-FILL = """([i, limit]) => new Promise(res => {
+FILL = """([d, limit]) => new Promise(res => {
+    """ + SRC_FN + """; const i = SRC(d)
     thisLevel = i; levelChoosed(i)
     let n = 0
     const tick = () => {

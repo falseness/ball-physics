@@ -8,7 +8,8 @@ helpers come from this script's own directory. Input is real page.mouse clicks /
 state, records the last bounce.request coords (pass-through wrapper) and calls the test-only
 calcSyncIdle() / calcSync().
 
-Per level (levels[0]: no portals, expected 100 points; levels[10]: portal pair, expected 300):
+Per level (source id 1: no portals, expected 100 points; source id 11: portal pair, expected 300; TASK-177:
+addressed by srcId through levelBySrc, a --root tree without it is in definition order):
   a idle:      right after load, no click: !bounce.busy, positions.length == curCount() == expected,
                every point == calcSyncIdle() within 1e-9.
   b drawing:   first real click starts a line, real move to a fixed point: !bounce.busy,
@@ -31,7 +32,8 @@ sys.path.insert(0, HERE)
 import shoot  # noqa: E402
 
 EPS = 1e-9
-LEVELS = {0: 100, 10: 300}
+LEVELS = {1: 100, 11: 300}   # level source id -> expected preview points
+SRC_JS = "n => typeof levelBySrc === 'function' ? levelBySrc(n) : n - 1"
 
 SETUP = """() => { if (window.__wrapped) return; window.__wrapped = true;
     const rq = Bounce.prototype.request; Bounce.prototype.request = function(c) { window.__req = [c[0], c[1]]; return rq.call(this, c) };
@@ -77,8 +79,10 @@ def choose_level(page, i):
     shoot.click(page, *page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", i))
 
 
-def level_run(page, lv, expected):
+def level_run(page, src, expected):
     res, ok = {'expected': expected}, {}
+    lv = page.evaluate(SRC_JS, src)
+    res['srcId'] = src
     if lv != 0:
         choose_level(page, lv)
     shoot.frames(page, 1)
@@ -110,8 +114,9 @@ def level_run(page, lv, expected):
     return res, ok
 
 
-def play_run(page, lv, expected):
+def play_run(page, src, expected):
     """(d) fresh page: load the level, wait for the idle trail, click the play icon"""
+    lv = page.evaluate(SRC_JS, src)
     if lv != 0:
         choose_level(page, lv)
     done = wait_idle(page)

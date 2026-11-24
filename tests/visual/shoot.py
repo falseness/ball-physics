@@ -70,7 +70,9 @@ def sc_start(page, info):
 
 
 def sc_level3(page, info):
-    page.evaluate("() => { thisLevel = 2; levelChoosed(2) }")
+    # level 3 by source id (TASK-177: play order != definition order; levelBySrc maps srcId -> index)
+    page.evaluate("() => { thisLevel = levelBySrc(3); levelChoosed(thisLevel) }")
+    info['srcId'] = page.evaluate("levels[thisLevel].srcId")
     frames(page)
 
 
@@ -164,6 +166,35 @@ def sc_complete_last(page, info):
     frames(page)
     page.evaluate("() => { thisLevel = levels.length - 1; levelChoosed(thisLevel); levelCompletedWindow = true }")
     frames(page)
+
+
+def sc_next_level_order(page, info):
+    # TASK-177 play order: win level 2 (srcId 2), then click 'next level' -> the first portal level (srcId 11).
+    # Menu -> level square of srcId 2 (real click); the win is real game physics: the ball is put on the flag and
+    # physics is turned on, so gameMechanics' flagCollision opens the level-complete window. Then a real click
+    # on the 'next level' rect (same expressions as the click handler, blocks[1]).
+    frames(page)
+    open_menu(page)
+    i2 = page.evaluate("levelBySrc(2)")
+    x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", i2)
+    click(page, x, y)
+    info['level2'] = page.evaluate("({thisLevel, srcId: levels[thisLevel].srcId, drawMenu})")
+    if info['level2'] != {'thisLevel': i2, 'srcId': 2, 'drawMenu': False}:
+        raise RuntimeError('level 2 not loaded: %s' % info['level2'])
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; physics = true }")
+    page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+    info['won'] = page.evaluate("({levelCompletedWindow, thisLevel, unlock: levels[thisLevel].unlock})")
+    frames(page)
+    x, y = page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+        menuCoords[1] + blocks[1] + menuTextRect[1] / 2]""")
+    info['click'] = [x, y]
+    click(page, x, y)
+    frames(page)
+    a = page.evaluate("""({thisLevel, srcId: levels[thisLevel].srcId, srcAt2: levels[2].srcId,
+        levelCompletedWindow, portals: (curLevel().portals || []).length})""")
+    info['after'] = a
+    if not (a['thisLevel'] == 2 and a['srcAt2'] == 11 and a['srcId'] == 11 and not a['levelCompletedWindow']):
+        raise RuntimeError('next level order wrong: %s' % a)
 
 
 def sc_resized(page, info):
@@ -271,7 +302,7 @@ LEVEL12_MAX_FRAMES = 3000
 LEVEL13_LINES = (((381, 679), (696, 744)), ((589, 381), (712, 393)))
 LEVEL13_MAX_FRAMES = 3000
 
-# Level 14 (index 13) solution: one long ramp under the ball. The ball rolls down it into portal A, comes out of B
+# Level 14 (srcId 14) solution: one long ramp under the ball. The ball rolls down it into portal A, comes out of B
 # 152 px higher still moving right, lands on the ramp again, and after the second A -> B teleport it has enough
 # speed to clear wall A and hit the flag (won on physics frame 441). Searched headlessly with in-page stepped
 # frames (artifacts/TASK-077/design.md); 11 of 24 single-coordinate +-1..3 px variants also win, keep these exact
@@ -279,7 +310,7 @@ LEVEL13_MAX_FRAMES = 3000
 LEVEL14_LINE = ((183, 580), (779, 608))
 LEVEL14_MAX_FRAMES = 3000
 
-# Level 15 (index 14) solution (layout from artifacts/new_level15.json, TASK-113): one long line under the ball
+# Level 15 (srcId 15) solution (layout from artifacts/new_level15.json, TASK-113): one long line under the ball
 # rising to the right and crossing the wall x=633. The ball lands on it, rolls down-left into portal B (the floor pad
 # facing up), comes out of A on the wall's right face and reaches the flag (won on physics frame 175, one B->A
 # teleport). Found by a lattice + random search with in-page stepped frames (artifacts/TASK-114/search.log); all 8
@@ -287,7 +318,7 @@ LEVEL14_MAX_FRAMES = 3000
 LEVEL15_LINE = ((207, 547), (1024, 437))
 LEVEL15_MAX_FRAMES = 3000
 
-# Level 16 (index 15) solution: one line under the ball sloping down to the left, ending just above portal B.
+# Level 16 (srcId 16) solution: one line under the ball sloping down to the left, ending just above portal B.
 # The ball rolls down it into B (on the short wall at the bottom left, facing right), comes out of A (the floor pad,
 # facing up) moving up-left, bounces off the right face of the tall wall x=312, flies right onto the sloped ramp and
 # bounces straight up into the flag (won on physics frame 147). Found by a focused lattice + dense local search with
@@ -295,7 +326,7 @@ LEVEL15_MAX_FRAMES = 3000
 LEVEL16_LINE = ((96, 636), (299, 346))
 LEVEL16_MAX_FRAMES = 3000
 
-# Level 17 (index 16) solution: one long ramp under the ball sloping down to the right towards portal A (on the outer,
+# Level 17 (srcId 17) solution: one long ramp under the ball sloping down to the right towards portal A (on the outer,
 # left face of the flag box wall x=1091). The ball rolls off its low end into A, comes out of B (the pad on the left,
 # facing up) 220 px higher, arcs over the wall x=308, bounces on the ramp and the box wall, rises through the gap above
 # the box wall (y < 245) and drops onto the flag (won on physics frame 273, one A->B teleport). Found by a lattice
@@ -304,7 +335,7 @@ LEVEL16_MAX_FRAMES = 3000
 LEVEL17_LINE = ((320, 280), (1060, 620))
 LEVEL17_MAX_FRAMES = 3000
 
-# Level 18 (index 17, lineK 2) solution: a ramp starting just under the ball and sloping down to the right into portal A
+# Level 18 (srcId 18, lineK 2) solution: a ramp starting just under the ball and sloping down to the right into portal A
 # (left face of the full-height wall x=640); B (right face of the pit wall x=1000) fires the ball down-right, away from
 # the pit, onto a shallow second line right of the pit wall that bounces it back up-left over the wall x=1000 onto the
 # flag (won on physics frame 150, one A->B teleport). Found with tools/level_search.py: a seed grid of second lines
@@ -314,7 +345,7 @@ LEVEL17_MAX_FRAMES = 3000
 LEVEL18_LINES = [((130, 77), (630, 568)), ((1020, 768), (1189, 700))]
 LEVEL18_MAX_FRAMES = 1500
 
-# Level 19 (index 18, lineK 2) solution: a short ramp from under the ball down onto the right floor y=300 (the ball rolls
+# Level 19 (srcId 19, lineK 2) solution: a short ramp from under the ball down onto the right floor y=300 (the ball rolls
 # off the floor's left end and drops under the middle shelf), and a "/" kicker below the shelf that bounces the ball up
 # into portal A (the shelf's underside, facing down); B (left wall x=40, facing right) fires it up and over onto the flag
 # shelf (won on physics frame 157, one A->B teleport). Found with tools/level_search.py's evaluate() (exploration wrapper
@@ -325,7 +356,7 @@ LEVEL18_MAX_FRAMES = 1500
 LEVEL19_LINES = [((960, 270), (800, 296)), ((400, 690), (610, 660))]
 LEVEL19_MAX_FRAMES = 1500
 
-# Level 20 (index 19, lineK 3) solution: a short ramp from beside the ball onto the divider y=420 (the ball rolls off it
+# Level 20 (srcId 20, lineK 3) solution: a short ramp from beside the ball onto the divider y=420 (the ball rolls off it
 # and drops through the window x 480..800), a "/" ramp under the window that rolls the ball down-left into portal A
 # (bottom pad, facing up), and a "\" deflector in B's exit stream that turns the leftward stream (B is on the right wall,
 # facing left) back up through the same window onto the hanging flag (won on physics frame 183, one A->B teleport).
@@ -337,7 +368,7 @@ LEVEL19_MAX_FRAMES = 1500
 LEVEL20_LINES = [((260, 395), (460, 420)), ((560, 460), (240, 760)), ((660, 500), (820, 580))]
 LEVEL20_MAX_FRAMES = 1500
 
-# Level 21 (index 20, lineK 2) solution: a shallow ramp from just under the resting ball down-left off its pad (the ball
+# Level 21 (srcId 21, lineK 2) solution: a shallow ramp from just under the resting ball down-left off its pad (the ball
 # rolls off the ramp's left end moving left), and a steep "\" bank line below it that throws the falling ball back
 # down-right, head-on into portal A (cut into the 45-degree slope, facing up-left), so B (pad on the left, facing up)
 # fires it straight up into the hanging flag (won on physics frame 162, one A->B teleport).
@@ -349,7 +380,7 @@ LEVEL20_MAX_FRAMES = 1500
 LEVEL21_LINES = [((930, 312), (700, 360)), ((440, 440), (520, 680))]
 LEVEL21_MAX_FRAMES = 1500
 
-# Level 22 (index 21, lineK 3) solution: a shallow ramp from just left of the resting ball rolls it off its pad; it
+# Level 22 (srcId 22, lineK 3) solution: a shallow ramp from just left of the resting ball rolls it off its pad; it
 # bounces between the long third line and the second line down into portal A (floor pad, facing up); B (right wall,
 # 200 px higher, facing left) fires it left onto the second line, which rolls it back into A for a second lap; the
 # faster ball out of B then flies up-left in a high arc, lands on line 1's right part under the shield wall and is
@@ -363,7 +394,7 @@ LEVEL21_MAX_FRAMES = 1500
 LEVEL22_LINES = [((150, 413), (420, 470)), ((1140, 660), (640, 760)), ((720, 482), (60, 540))]
 LEVEL22_MAX_FRAMES = 1500
 
-# Level 23 (index 22, lineK 2) solution: the ball rolls off its start slope; line 1 is a kicker under the slope's end
+# Level 23 (srcId 23, lineK 2) solution: the ball rolls off its start slope; line 1 is a kicker under the slope's end
 # (rising to the right) that throws it up and over the trap portal B in the floor (going in through B would drop it
 # out of the lower portal A and lose height); it flies off the floor's open right end, falls onto line 2, a
 # reflector under that end rising to the right, which sends it back left into A (low wall, facing right); B fires it
@@ -376,7 +407,7 @@ LEVEL22_MAX_FRAMES = 1500
 LEVEL23_LINES = [((330, 425), (450, 395)), ((880, 760), (1060, 580))]
 LEVEL23_MAX_FRAMES = 1500
 
-# Level 24 (index 23, lineK 3) solution: line 1 is a long, almost flat line over the start pad that rolls the ball
+# Level 24 (srcId 24, lineK 3) solution: line 1 is a long, almost flat line over the start pad that rolls the ball
 # off the pad and carries it right, past portal A (rolled straight off the pad it would drop onto A's left half and,
 # mirrored, leave B in the lower lane, the tunnel); it falls onto line 2, a steep backboard right of A, which banks it
 # back left under the small roof into A's RIGHT half, so B (mirrored offset) lets it out in the upper lane, above the
@@ -390,18 +421,18 @@ LEVEL23_MAX_FRAMES = 1500
 LEVEL24_LINES = [((170, 476), (620, 513)), ((790, 610), (730, 714)), ((1000, 140), (1024, 278))]
 LEVEL24_MAX_FRAMES = 1500
 
-# Level 25 ('skim, don't drop', levels[24], lineK 2): line 1, an almost flat kicker in the well under the start slope,
+# Level 25 ('skim, don't drop', srcId 25, lineK 2): line 1, an almost flat kicker in the well under the start slope,
 # throws the falling ball up and over the crest wall (x = 840, top y = 450) into A's pocket; line 2, a ~42 deg
 # converter slope in the pocket, turns its steep (~75 deg) fall into a flat skim (0.041, 0.010 px/cycle) into floor
 # portal A, so B on the right-edge wall lets it out going straight up the chimney to the flag (won on physics frame
 # 153, one teleport A->B). Found with a hand-aimed scan (3 kickers x 60 converters at 38..50 deg around the kicker's
 # landing point; artifacts/TASK-145/search/cv21.json re-evaluated with tools/level_search.py's evaluate() on the
-# committed levels[24]: 19 of 180 win, artifacts/TASK-145/search_ref.json); 13 of the 17 local +-2 px variants win.
+# committed level 25 (srcId 25): 19 of 180 win, artifacts/TASK-145/search_ref.json); 13 of the 17 local +-2 px variants win.
 # Keep these exact integer coordinates.
 LEVEL25_LINES = [((535, 597), (635, 603)), ((920, 693), (980, 747))]
 LEVEL25_MAX_FRAMES = 1500
 
-# Level 26 ('one line, two jobs', levels[25], lineK 4): line 1 tips the ball off its pad to the left; line 2, a long
+# Level 26 ('one line, two jobs', srcId 26, lineK 4): line 1 tips the ball off its pad to the left; line 2, a long
 # ramp under the pad's open side, carries the falling ball right to the shaft; line 3, a near-vertical backboard at
 # the shaft (its right wall is too low), drops it steeply into floor portal A; B on the short right wall lets it out
 # almost flat to the left, back over line 2, which it hits going the other way and bounces up-left off; line 4 at
@@ -475,12 +506,12 @@ LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
         return r } }"""
 
 
-def play_solution(page, info, index, segments, max_frames, key, via=('A', 'B')):
+def play_solution(page, info, src, segments, max_frames, key, via=('A', 'B')):
     # Pause menu -> level square index + 1, real clicks; then play the solution with real mouse
     # input: draw each line (click, move, click), press start (unless the last allowed line already
     # started physics), and wait until the level is completed
     # (at most max_frames physics frames) with at least one via[0] -> via[1] teleport.
-    place_and_start(page, info, index, segments, key)
+    index = place_and_start(page, info, src, segments, key)
     page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % max_frames,
                            timeout=180000, polling=100)
     r = page.evaluate("""i => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
@@ -496,16 +527,22 @@ def play_solution(page, info, index, segments, max_frames, key, via=('A', 'B')):
     frames(page)
 
 
-def place_and_start(page, info, index, segments, key, before_draw_js=None):
+def place_and_start(page, info, src, segments, key, before_draw_js=None):
     # play_solution's input part: menu -> level, draw the lines with real clicks, start physics.
     # before_draw_js runs right after the frame counter is installed (before any line is drawn).
+    # src is the level's source id (definition number, TASK-177); its grid square is levelBySrc(src).
+    # Returns the play-order index.
     frames(page)
+    index = page.evaluate("n => levelBySrc(n)", src)
+    if index < 0:
+        raise RuntimeError('%s: no level with srcId %s' % (key, src))
     open_menu(page)
     x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", index)
     click(page, x, y)
     st = page.evaluate("({thisLevel, drawMenu, portals: (curLevel().portals || []).length})")
     info[key] = st
-    if st != {'thisLevel': index, 'drawMenu': False, 'portals': 2}:
+    info['srcId'] = page.evaluate("levels[thisLevel].srcId")
+    if st != {'thisLevel': index, 'drawMenu': False, 'portals': 2} or info['srcId'] != src:
         raise RuntimeError('%s not loaded: %s' % (key, st))
     n0 = page.evaluate("lines.length")
     # installed before drawing: physics is off until the start (or the last allowed line), so the
@@ -535,94 +572,95 @@ def place_and_start(page, info, index, segments, key, before_draw_js=None):
         x, y = page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
         click(page, x, y)
         info['startPressed'] = page.evaluate("({physics, levelStarted})")
+    return index
 
 
 def sc_level11(page, info):
-    play_solution(page, info, 10, [LEVEL11_LINE], LEVEL11_MAX_FRAMES, 'level11')
+    play_solution(page, info, 11, [LEVEL11_LINE], LEVEL11_MAX_FRAMES, 'level11')
 
 
 def sc_level12(page, info):
-    play_solution(page, info, 11, [LEVEL12_LINE], LEVEL12_MAX_FRAMES, 'level12', via=('B', 'A'))
+    play_solution(page, info, 12, [LEVEL12_LINE], LEVEL12_MAX_FRAMES, 'level12', via=('B', 'A'))
 
 
 def sc_level13(page, info):
-    play_solution(page, info, 12, LEVEL13_LINES, LEVEL13_MAX_FRAMES, 'level13')
+    play_solution(page, info, 13, LEVEL13_LINES, LEVEL13_MAX_FRAMES, 'level13')
 
 
 def sc_level14(page, info):
-    play_solution(page, info, 13, [LEVEL14_LINE], LEVEL14_MAX_FRAMES, 'level14')
+    play_solution(page, info, 14, [LEVEL14_LINE], LEVEL14_MAX_FRAMES, 'level14')
 
 
 def sc_level15(page, info):
-    play_solution(page, info, 14, [LEVEL15_LINE], LEVEL15_MAX_FRAMES, 'level15', via=('B', 'A'))
+    play_solution(page, info, 15, [LEVEL15_LINE], LEVEL15_MAX_FRAMES, 'level15', via=('B', 'A'))
 
 
 def sc_level16(page, info):
-    play_solution(page, info, 15, [LEVEL16_LINE], LEVEL16_MAX_FRAMES, 'level16', via=('B', 'A'))
+    play_solution(page, info, 16, [LEVEL16_LINE], LEVEL16_MAX_FRAMES, 'level16', via=('B', 'A'))
 
 
 def sc_level17(page, info):
-    play_solution(page, info, 16, [LEVEL17_LINE], LEVEL17_MAX_FRAMES, 'level17')
+    play_solution(page, info, 17, [LEVEL17_LINE], LEVEL17_MAX_FRAMES, 'level17')
 
 
 def sc_level18(page, info):
-    play_solution(page, info, 17, LEVEL18_LINES, LEVEL18_MAX_FRAMES, 'level18')
+    play_solution(page, info, 18, LEVEL18_LINES, LEVEL18_MAX_FRAMES, 'level18')
 
 
 def sc_level19(page, info):
-    play_solution(page, info, 18, LEVEL19_LINES, LEVEL19_MAX_FRAMES, 'level19')
+    play_solution(page, info, 19, LEVEL19_LINES, LEVEL19_MAX_FRAMES, 'level19')
 
 
 def sc_level20(page, info):
-    play_solution(page, info, 19, LEVEL20_LINES, LEVEL20_MAX_FRAMES, 'level20')
+    play_solution(page, info, 20, LEVEL20_LINES, LEVEL20_MAX_FRAMES, 'level20')
 
 
 def sc_level21(page, info):
-    play_solution(page, info, 20, LEVEL21_LINES, LEVEL21_MAX_FRAMES, 'level21')
+    play_solution(page, info, 21, LEVEL21_LINES, LEVEL21_MAX_FRAMES, 'level21')
 
 
 def sc_level22(page, info):
-    play_solution(page, info, 21, LEVEL22_LINES, LEVEL22_MAX_FRAMES, 'level22')
+    play_solution(page, info, 22, LEVEL22_LINES, LEVEL22_MAX_FRAMES, 'level22')
 
 
 def sc_level23(page, info):
-    play_solution(page, info, 22, LEVEL23_LINES, LEVEL23_MAX_FRAMES, 'level23')
+    play_solution(page, info, 23, LEVEL23_LINES, LEVEL23_MAX_FRAMES, 'level23')
 
 
 def sc_level24(page, info):
-    play_solution(page, info, 23, LEVEL24_LINES, LEVEL24_MAX_FRAMES, 'level24')
+    play_solution(page, info, 24, LEVEL24_LINES, LEVEL24_MAX_FRAMES, 'level24')
 
 
 def sc_level25(page, info):
-    play_solution(page, info, 24, LEVEL25_LINES, LEVEL25_MAX_FRAMES, 'level25')
+    play_solution(page, info, 25, LEVEL25_LINES, LEVEL25_MAX_FRAMES, 'level25')
 
 
 def sc_level26(page, info):
-    play_solution(page, info, 25, LEVEL26_LINES, LEVEL26_MAX_FRAMES, 'level26')
+    play_solution(page, info, 26, LEVEL26_LINES, LEVEL26_MAX_FRAMES, 'level26')
 
 
 def sc_level27(page, info):
-    play_solution(page, info, 26, LEVEL27_LINES, LEVEL27_MAX_FRAMES, 'level27')
+    play_solution(page, info, 27, LEVEL27_LINES, LEVEL27_MAX_FRAMES, 'level27')
 
 
 def sc_level28(page, info):
-    play_solution(page, info, 27, LEVEL28_LINES, LEVEL28_MAX_FRAMES, 'level28')
+    play_solution(page, info, 28, LEVEL28_LINES, LEVEL28_MAX_FRAMES, 'level28')
 
 
 def sc_level29(page, info):
-    play_solution(page, info, 28, LEVEL29_LINES, LEVEL29_MAX_FRAMES, 'level29')
+    play_solution(page, info, 29, LEVEL29_LINES, LEVEL29_MAX_FRAMES, 'level29')
 
 
 def sc_level30(page, info):
-    play_solution(page, info, 29, LEVEL30_LINES, LEVEL30_MAX_FRAMES, 'level30')
+    play_solution(page, info, 30, LEVEL30_LINES, LEVEL30_MAX_FRAMES, 'level30')
 
 
 def sc_level31(page, info):
-    play_solution(page, info, 30, LEVEL31_LINES, LEVEL31_MAX_FRAMES, 'level31')
+    play_solution(page, info, 31, LEVEL31_LINES, LEVEL31_MAX_FRAMES, 'level31')
 
 
 def sc_level32(page, info):
-    play_solution(page, info, 31, LEVEL32_LINES, LEVEL32_MAX_FRAMES, 'level32')
+    play_solution(page, info, 32, LEVEL32_LINES, LEVEL32_MAX_FRAMES, 'level32')
 
 
 # TASK-164 rim trap: the level 19 lines from the bug video (artifacts/ball-physics-bug.mp4). Before the fix the ball
@@ -681,7 +719,7 @@ def sc_l19_rim_backside(page, info, out_dir=None):
     sys.path.insert(0, os.path.join(ROOT, 'tests', 'portal'))
     from rimtrap import install
     install(page)
-    place_and_start(page, info, 18, L19_RIM_LINES, 'l19_rim_backside', before_draw_js=L19_RIM_WATCH_JS)
+    place_and_start(page, info, 19, L19_RIM_LINES, 'l19_rim_backside', before_draw_js=L19_RIM_WATCH_JS)
     page.wait_for_function("levelCompletedWindow || (window.__rt && window.__rt.trapped) || window.__l11Frames >= %d"
                            % L19_RIM_FRAMES, timeout=180000, polling=100)
     r = page.evaluate("""() => ({trapped: window.__rt.trapped, trapFrame: window.__rt.trapFrame,
@@ -725,7 +763,7 @@ def sc_l24_center_entry(page, info):
     sys.path.insert(0, os.path.join(ROOT, 'tests', 'portal'))
     from embed import install
     install(page)
-    place_and_start(page, info, 23, L24_CENTER_LINES, 'l24_center_entry', before_draw_js=L24_CENTER_WATCH_JS)
+    place_and_start(page, info, 24, L24_CENTER_LINES, 'l24_center_entry', before_draw_js=L24_CENTER_WATCH_JS)
     # ends on the win, after L24_CENTER_FRAMES frames, or when the ball left the map (the level restarted, physics off)
     page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d || (window.__l11Frames > 0 && !physics)"
                            % L24_CENTER_FRAMES, timeout=180000, polling=100)
@@ -764,6 +802,7 @@ SCENARIOS = {
     'menu_level': sc_menu_level,
     'complete_next': sc_complete_next,
     'complete_last': sc_complete_last,
+    'next_level_order': sc_next_level_order,
     'resized': sc_resized,
     'editor': sc_editor,
     'trail': sc_trail,

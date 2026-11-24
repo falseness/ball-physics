@@ -23,9 +23,11 @@ live game loop (requestAnimationFrame) and evaluates candidate player-line sets 
              >= 30 consecutive frames (a ball resting on a line sits ~r - 0.5 px from it). An embedded run stops early
              with end 'embedded'.
 
-Level input: --level INDEX (levels[INDEX], 0-based: --level 16 is level 17), optionally with --level-json FILE,
-an editor export ({version 2, ballX, ballY, flagX, flagY, flagRotate, lineK, lines, portals}) injected in-page
-as levels[INDEX] (test only, js/levels.js is not touched; INDEX == levels.length appends).
+Level input: --level INDEX (0-based DEFINITION index = srcId - 1: --level 16 is level 17, the 17th level defined in
+js/levels.js; TASK-177 reordered the play order, the page index is levelBySrc(INDEX + 1)), optionally with
+--level-json FILE, an editor export ({version 2, ballX, ballY, flagX, flagY, flagRotate, lineK, lines, portals})
+injected in-page in that level's place (test only, js/levels.js is not touched; INDEX == levels.length appends).
+levelSha256 hashes JSON.stringify(level) without srcId, so it equals the hashes of runs before TASK-177.
 
 Modes (--lines k = player lines per candidate):
   dense1     one line, both endpoints on a --step px lattice over --bounds (default the whole field 1280x800,
@@ -120,17 +122,21 @@ editorMode = false; playtestLevel = null; physics = false; levelStarted = false;
 levelChoosed(idx)
 return out }"""
 
-INJECT_JS = r"""([idx, d]) => {
+# --level (definition index, srcId - 1) -> play-order index; not found (e.g. INDEX == levels.length): INDEX itself
+RESOLVE_JS = "(n) => { const i = typeof levelBySrc === 'function' ? levelBySrc(n + 1) : n; return i >= 0 ? i : n }"
+
+INJECT_JS = r"""([idx, d, src]) => {
 const L = editorLevelFromData(d)
 if (!L) return 'invalid level json'
 const lv = {ballX: L.ballX, ballY: L.ballY, flagX: L.flagX, flagY: L.flagY, flagRotate: L.flagRotate, lineK: L.lineK,
-            lines: L.lines, portals: L.portals, unlock: 1}
+            lines: L.lines, portals: L.portals, unlock: 1, srcId: src}
 if (idx > levels.length) return 'index beyond levels.length'
 levels[idx] = lv
 return 'ok' }"""
 
 INFO_JS = r"""(idx) => { const L = levels[idx]; return L ? {nLevels: levels.length, lineK: L.lineK, ballX: L.ballX, ballY: L.ballY,
-    flagX: L.flagX, flagY: L.flagY, portals: (L.portals || []).length, cyclesPerTact, levelJson: JSON.stringify(L)} : {nLevels: levels.length} }"""
+    flagX: L.flagX, flagY: L.flagY, portals: (L.portals || []).length, cyclesPerTact, levelJson: JSON.stringify(L, (k, v) => k === 'srcId' ? undefined : v),
+    srcId: L.srcId, index: idx} : {nLevels: levels.length} }"""
 
 
 def open_page(pw, args):
@@ -144,11 +150,12 @@ def open_page(pw, args):
     pg.evaluate("() => { window.requestAnimationFrame = () => 0 }")  # stop the live loop; frames are stepped here
     install_trap(pg)  # window.__rimtrap (shared rim-trap detector, tests/portal/rimtrap.py)
     install_embed(pg)  # window.__embed (shared embedded-ball detector, tests/portal/embed.py)
+    idx = pg.evaluate(RESOLVE_JS, args['level'])
     if args['level_json']:
-        res = pg.evaluate(INJECT_JS, [args['level'], args['level_json']])
+        res = pg.evaluate(INJECT_JS, [idx, args['level_json'], args['level'] + 1])
         if res != 'ok':
             raise SystemExit('level json: ' + res)
-    return b, pg, errors
+    return b, pg, errors, idx
 
 
 def job(a):
@@ -158,10 +165,10 @@ def job(a):
     rows = []
     t0 = time.time()
     with sync_playwright() as pw:
-        b, pg, errors = open_page(pw, args)
+        b, pg, errors, idx = open_page(pw, args)
         B = args['batch']
         for i in range(0, len(cands), B):
-            rows += pg.evaluate(EVAL_JS, [args['level'], cands[i:i + B], args['max_frames'], args['still'], args['simulate']])
+            rows += pg.evaluate(EVAL_JS, [idx, cands[i:i + B], args['max_frames'], args['still'], args['simulate']])
             if args['progress'] and (i // B) % args['progress'] == 0 and i:
                 print('  worker %d: %d/%d (%.0f s)' % (wid, i + B, len(cands), time.time() - t0), file=sys.stderr, flush=True)
         b.close()
@@ -192,8 +199,8 @@ def evaluate(cands, args, simulate=True):
 def level_info(args):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        b, pg, errors = open_page(pw, args)
-        info = pg.evaluate(INFO_JS, args['level'])
+        b, pg, errors, idx = open_page(pw, args)
+        info = pg.evaluate(INFO_JS, idx)
         b.close()
     lj = info.pop('levelJson', None)
     if lj is not None:  # sha256 of JSON.stringify(levels[INDEX]): proves several runs used the same layout
@@ -318,8 +325,8 @@ def write_out(path, rows, summ):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--level', type=int, required=False, help='levels[] index (0-based)')
-    ap.add_argument('--level-json', help='editor export injected as levels[INDEX] (test only)')
+    ap.add_argument('--level', type=int, required=False, help='definition index (0-based, srcId - 1; mapped with levelBySrc)')
+    ap.add_argument('--level-json', help='editor export injected in place of level INDEX (test only)')
     ap.add_argument('--lines', type=int, default=1, help='player lines per candidate (k)')
     ap.add_argument('--mode', required=True, choices=['dense1', 'sample', 'local', 'necessity', 'merge'])
     ap.add_argument('--workers', type=int, default=7)

@@ -10,7 +10,7 @@
   python3 tests/portal/embed.py --task TASK-NNN --controls [--out controls.json]
       -> detector false-positive controls (c); exit 1 if any control is embedded (or level 24 is not won).
 
-The bug: on level 24 (levels[23], 'pick the half') the shelf line (60,360)->(1240,360) starts exactly at
+The bug: on level 24 (srcId 24, 'pick the half') the shelf line (60,360)->(1240,360) starts exactly at
 portal B's centre. A ball entering A within ~r of A's centre leaves B with its centre ON the shelf; the
 exit check (portalPathBlocked between the opening point O and the exit centre, js/portal.js
 portalTeleport) does not see a line that only overlaps the exit (here it is even collinear with the
@@ -52,7 +52,7 @@ EMBED_FRAMES = 30
 STEPS_PER_FRAME = 500
 
 # window.__embed.run(opts):
-#   opts.setup: {kind: 'cfg', cfg} (window.__portalTest.setup) or {kind: 'level', index, lines, ball}
+#   opts.setup: {kind: 'cfg', cfg} (window.__portalTest.setup) or {kind: 'level', src, lines, ball}
 #     (ball: {x, y, vx, vy} in px/step, optional, placed after levelChoosed)
 #   opts.frames: max frames; opts.stateAt: frame whose end state is recorded (rounded 1e-6)
 # returns {embedded, embedFrame, embedFrames, maxRun, frames, end, teleports, exitOverlap, state, ball}
@@ -62,7 +62,8 @@ window.__embed = {
   run(o) {
     const S = o.setup
     if (S.kind === 'level') {
-      thisLevel = S.index; playtestLevel = null; levelChoosed(S.index)
+      // S.src: level source id (TASK-177; a --root tree without levelBySrc is in definition order)
+      thisLevel = (typeof levelBySrc === 'function' ? levelBySrc(S.src) : S.src - 1); playtestLevel = null; levelChoosed(thisLevel)
       for (const l of (S.lines || [])) lines.push(new Line(l[0], l[1], l[2], l[3], dotRadius, '#0000ff', 'player'))
       linesK = (S.lines || []).length
       if (S.ball) {
@@ -237,7 +238,7 @@ def controls(task, out):
         {'setup': {'kind': 'cfg', 'cfg': {'wall': True, 'lines': plain, 'portals': [],
                                           'ball': {'x': 150, 'y': 400 - R, 'vx': 5 / STEPS_PER_FRAME, 'vy': 0, 'r': R}}},
          'frames': 200},
-        {'setup': {'kind': 'level', 'index': 23, 'lines': [[a[0], a[1], b[0], b[1]] for a, b in LEVEL24_LINES]},
+        {'setup': {'kind': 'level', 'src': 24, 'lines': [[a[0], a[1], b[0], b[1]] for a, b in LEVEL24_LINES]},
          'frames': LEVEL24_MAX_FRAMES},
     ]
     res, errors = single(setups)
@@ -265,7 +266,7 @@ def main():
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'controls.json')
-    rep, errs = single([{'setup': {'kind': 'level', 'index': 23, 'lines': [], 'ball': {'x': x, 'y': 700, 'vx': 0, 'vy': 0.02}},
+    rep, errs = single([{'setup': {'kind': 'level', 'src': 24, 'lines': [], 'ball': {'x': x, 'y': 700, 'vx': 0, 'vy': 0.02}},
                          'frames': REPRO_FRAMES} for x in REPRO_XS])
     repro = [{'x': x, 'embedded': r['embedded'], 'frames': r['embedFrames'], 'embedFrame': r['embedFrame'],
               'maxRun': r['maxRun'], 'teleports': r['teleports'], 'exitOverlap': r['exitOverlap'], 'end': r['end']}

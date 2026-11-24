@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portal level audit (TASK-174, part 4 of TASK-171..176): every portal level 11-32 (levels[10..31]).
+"""Portal level audit (TASK-174, part 4 of TASK-171..176): every portal level 11-32 (source ids, levelBySrc).
 
   python3 tests/portal/levels_audit.py --task TASK-NNN --risk [--out risk.json]
       (1) static scan: every non-host level line within r + 2 px of a portal opening (segment c +- h t),
@@ -36,23 +36,25 @@ from sim import open_page  # noqa: E402
 from embed import install as install_embed  # noqa: E402
 from rimtrap import install as install_trap  # noqa: E402
 
-LEVELS = list(range(10, 32))   # levels[10..31] = level 11..32
+LEVELS = list(range(11, 33))   # level source ids 11..32 (TASK-177: levelBySrc maps them to play-order indices)
 ANGLES = [-60, -30, 0, 30, 60]
 SPEED = 10                     # px/frame (medium)
 GAP = 3.0
 FRAMES = 200
 SPF = 500
 
-INFO_JS = r"""(idxs) => idxs.map(i => {
+SRC_JS = "(typeof levelBySrc === 'function' ? levelBySrc(%s) : %s - 1)"   # a --root tree without srcId: definition order
+INFO_JS = r"""(srcs) => srcs.map(src => {
+  const i = """ + SRC_JS % ('src', 'src') + r"""
   thisLevel = i; playtestLevel = null; levelChoosed(i)
   const P = currentPortals() || [], L = curLevel().lines
-  return {index: i, r: ball.radius,
+  return {src, index: i, r: ball.radius,
           lines: lines.map(l => [l.posX, l.posY, l.posX2, l.posY2, L.indexOf(l)]),
           portals: P.map(p => ({name: p.name, x: p.x, y: p.y, angle: p.angle, h: p.h, line: p.line}))}
 })"""
 
 RUN_JS = r"""(cases) => cases.map(c => {
-  thisLevel = c.index; playtestLevel = null; levelChoosed(c.index)
+  thisLevel = """ + SRC_JS % ('c.src', 'c.src') + r"""; playtestLevel = null; levelChoosed(thisLevel)
   ball.posX = c.x; ball.posY = c.y; ball.speedX = c.vx; ball.speedY = c.vy
   portalReset()
   const P = currentPortals() || [], lv = curLevel(), rd = v => Math.round(v * 100) / 100
@@ -131,7 +133,7 @@ def risk(task, out, root):
                 d = seg_dist((l[0], l[1]), (l[2], l[3]), a, b)
                 if d < r + 2:
                     near.append({'portal': P['name'], 'line': k, 'seg': [round(v, 3) for v in l[:4]], 'dist': round(d, 3)})
-        doc['perLevel'][str(L['index'] + 1)] = {'portals': len(L['portals']), 'near': near}
+        doc['perLevel'][str(L['src'])] = {'portals': len(L['portals']), 'near': near}
         total += len(near)
     doc['totalNear'] = total
     with open(out_path(task, out), 'w') as fh:
@@ -158,7 +160,7 @@ def cases_for(info, s_step):
                     t = math.radians(a)
                     dx, dy = -math.cos(t) * nx + math.sin(t) * tx, -math.cos(t) * ny + math.sin(t) * ty
                     v = SPEED / SPF
-                    out.append({'index': L['index'], 'portal': P['name'], 's': s, 'a': a, 'skip': inside,
+                    out.append({'src': L['src'], 'portal': P['name'], 's': s, 'a': a, 'skip': inside,
                                 'x': cx, 'y': cy, 'vx': v * dx, 'vy': v * dy, 'frames': FRAMES, 'spf': SPF})
     return out
 
@@ -189,7 +191,7 @@ def out_path(task, out):
 
 def sweep(a):
     t0 = time.time()
-    idxs = [int(x) - 1 for x in a.levels.split(',')] if a.levels else LEVELS
+    idxs = [int(x) for x in a.levels.split(',')] if a.levels else LEVELS
     info, errors = level_info(a.root, idxs)
     allc = cases_for(info, a.s_step)
     run = [c for c in allc if not c['skip']]
@@ -203,19 +205,19 @@ def sweep(a):
             res[i + j * J] = x
     per = {}
     for L in info:
-        per[str(L['index'] + 1)] = {'portals': len(L['portals']), 'runs': 0, 'skipped': 0, 'portalEntries': 0,
+        per[str(L['src'])] = {'portals': len(L['portals']), 'runs': 0, 'skipped': 0, 'portalEntries': 0,
                                     'teleports': 0, 'embedded': 0, 'trapped': 0, 'won': 0}
     for c in allc:
         if c['skip']:
-            per[str(c['index'] + 1)]['skipped'] += 1
+            per[str(c['src'])]['skipped'] += 1
     emb, trp = [], []
     for c, r in zip(run, res):
-        p = per[str(c['index'] + 1)]
+        p = per[str(c['src'])]
         p['runs'] += 1
         p['portalEntries'] += 1 if r['teleports'] else 0
         p['teleports'] += r['teleports']
         p['won'] += 1 if r['end'] == 'won' else 0
-        case = {'level': c['index'] + 1, 'portal': c['portal'], 's': c['s'], 'a': c['a'], 'end': r['end'],
+        case = {'level': c['src'], 'portal': c['portal'], 's': c['s'], 'a': c['a'], 'end': r['end'],
                 'frames': r['frames'], 'ball': r['ball'], 'tp': r['tp']}
         if r['embedded']:
             p['embedded'] += 1

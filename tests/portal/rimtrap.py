@@ -50,7 +50,7 @@ TRAP_MIN_SPEED = 1.0          # px/frame
 STEPS_PER_FRAME = 500
 
 # Shared livelock detector + runner. window.__rimtrap.run(opts):
-#   opts.setup: {kind: 'cfg', cfg} (window.__portalTest.setup) or {kind: 'level', index, lines}
+#   opts.setup: {kind: 'cfg', cfg} (window.__portalTest.setup) or {kind: 'level', src, lines}
 #   opts.frames: max frames; opts.box: stop when |ball - portal[boxPortal]| > box (null = no box);
 #   opts.stateAt: frame whose end state is recorded (rounded 1e-6); opts.stopOnTrap
 # returns {trapped, trapFrame, trapPortal, frames, end, teleports, firstTeleport, state, hostHits, rimHits}
@@ -60,7 +60,8 @@ window.__rimtrap = {
   run(o) {
     const S = o.setup
     if (S.kind === 'level') {
-      thisLevel = S.index; playtestLevel = null; levelChoosed(S.index)
+      // S.src: level source id (TASK-177; a --root tree without levelBySrc is in definition order)
+      thisLevel = (typeof levelBySrc === 'function' ? levelBySrc(S.src) : S.src - 1); playtestLevel = null; levelChoosed(thisLevel)
       for (const l of S.lines) lines.push(new Line(l[0], l[1], l[2], l[3], dotRadius, '#0000ff', 'player'))
       linesK = S.lines.length
     } else window.__portalTest.setup(S.cfg)
@@ -128,7 +129,7 @@ def install(page):
     page.evaluate('() => {' + TRAP_JS + '}')
 
 
-# level 19 (index 18) bug repro (artifacts/ball-physics-bug.mp4)
+# level 19 (srcId 19) bug repro (artifacts/ball-physics-bug.mp4)
 REPRO_LINES = [[40, 400, 295, 750], [295, 750, 980, 240]]
 REPRO_FRAMES = 900
 
@@ -241,7 +242,7 @@ def controls(task, out):
                                           'ball': {'x': 320, 'y': 400 - R, 'vx': 5 / STEPS_PER_FRAME, 'vy': 0, 'r': R}}},
          'frames': 600},
         # (iii) level 19 reference solution
-        {'setup': {'kind': 'level', 'index': 18, 'lines': [[a[0], a[1], b[0], b[1]] for a, b in LEVEL19_LINES]},
+        {'setup': {'kind': 'level', 'src': 19, 'lines': [[a[0], a[1], b[0], b[1]] for a, b in LEVEL19_LINES]},
          'frames': LEVEL19_MAX_FRAMES},
     ]
     res, errors = single(setups)
@@ -269,7 +270,7 @@ def main():
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'detector_controls.json')
-    rep, errs = single([{'setup': {'kind': 'level', 'index': 18, 'lines': REPRO_LINES}, 'frames': REPRO_FRAMES}])
+    rep, errs = single([{'setup': {'kind': 'level', 'src': 19, 'lines': REPRO_LINES}, 'frames': REPRO_FRAMES}])
     rep = rep[0]
     print('repro', json.dumps(rep, separators=(',', ':')), flush=True)
     cases = grid(a.preview)
