@@ -30,6 +30,10 @@
     <canvas id = "canvas" width = "1280" height = "800"></canvas>
     <script src = "platform/backends/local.js"></script>
     <script src = "platform.js"></script>
+    <script src = "js/buildinfo.js"></script>
+    <script src = "analytics/vendor/GameAnalytics.min.js"></script>
+    <script src = "analytics/backends/gameanalytics.js"></script>
+    <script src = "analytics.js"></script>
     <script src = "js/theme.js"></script>
     <script src = "js/sketch.js"></script>
     <script src = "js/sprite.js"></script>
@@ -668,9 +672,42 @@
             : Promise.resolve()
         // Boot (TASK-184): platform init, then the saved progress and editor toolbar position are read
         // through the platform facade, all before the first frame. bootComplete marks the end.
+        // Analytics (TASK-190): the grapnelninja ANALYTICS facade (analytics.js) with the gameanalytics
+        // backend (tests may swap in analytics/backends/none.js). Build = BUILD_CONFIG.build
+        // ('<git short sha>-<YYYYMMDD>', tools/stamp_build.py; 'dev-<today>' when unstamped), prefixed
+        // 'test-' for automated browsers (navigator.webdriver) and ?gaTest=1 so reports can drop them.
+        function analyticsBuild()
+        {
+            const cfg = typeof BUILD_CONFIG === 'object' && BUILD_CONFIG || (window.BUILD_CONFIG = {})
+            if (!cfg.build)
+            {
+                const d = new Date(), pad = n => String(n).padStart(2, '0')
+                cfg.build = 'dev-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate())
+            }
+            const testRun = navigator.webdriver === true || /[?&]gaTest=1(&|$)/.test(location.search)
+            return (testRun ? 'test-' : '') + cfg.build
+        }
+        function analyticsStart()
+        {
+            // Added before ANALYTICS.init: the gameanalytics backend's own pagehide handler runs after this one
+            window.addEventListener('pagehide', function()
+            {
+                ANALYTICS.flush()
+                ANALYTICS.sessionEnd()
+            })
+            // A page restored from the back/forward cache opens a new session
+            window.addEventListener('pageshow', function(e)
+            {
+                if (e.persisted)
+                    ANALYTICS.sessionStart()
+            })
+            ANALYTICS.init({build: analyticsBuild()})
+            ANALYTICS.sessionStart()
+        }
         let bootComplete = false
         async function boot()
         {
+            analyticsStart()
             await PLATFORM.init()
             const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE, SPEED_STORE])
             loadProgress(saved)
