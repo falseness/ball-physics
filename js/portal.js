@@ -570,6 +570,17 @@ function portalTeleport(A, B, s, d, kind)
         {
             ball.speedX = vx - 2 * vn * fa.nx
             ball.speedY = vy - 2 * vn * fa.ny
+            // TASK-176: a blocked 'touch' on the opening face (|s| <= h, so 0 < d <= radius) is a wall contact at
+            // d = radius; mirror the centre back about it (like 'cross' about d = 0). portalStep runs after the move,
+            // so without this the ball keeps the inward step it made before the bounce. Wedged between that spot and a
+            // line end it overlaps (collisionWithDot flips v every step), it then crept 1 inward step per 2 steps into
+            // A's plane and stayed there (fuzz --crossing --seed 2 case 1298, embedded).
+            if (kind === 'touch' && Math.abs(s) <= A.h && d < ball.radius)
+            {
+                ball.posX += 2 * (ball.radius - d) * fa.nx
+                ball.posY += 2 * (ball.radius - d) * fa.ny
+                record.mirror = true
+            }
         }
         record.after = [ball.posX, ball.posY, ball.speedX, ball.speedY]
         ++portalState.blockedExits

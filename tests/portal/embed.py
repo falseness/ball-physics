@@ -5,7 +5,8 @@
       -> artifacts/TASK-NNN/<out> (compact JSON); exit 1 when the level 24 repro (a) or the synthetic
          sweep (b) has an embedded run.
       --baseline (default artifacts/TASK-171/baseline.json, '' = off; TASK-172): every case whose baseline
-         exitOverlap was false must keep its outcome (diffNonOverlap == 0 in the log, else exit 1).
+         exitOverlap was false must keep its outcome (diffNonOverlap == 0 in the log, else exit 1); TASK-176: runs
+         with a mirrored blocked face touch (record.mirror) are exempt and counted as changedNonOverlapMirrored.
   python3 tests/portal/embed.py --task TASK-NNN --controls [--out controls.json]
       -> detector false-positive controls (c); exit 1 if any control is embedded (or level 24 is not won).
 
@@ -71,12 +72,13 @@ window.__embed = {
     } else window.__portalTest.setup(S.cfg)
     const P = currentPortals() || [], rd = v => Math.round(v * 1e6) / 1e6
     const det = this.detector()
-    let end = 'frames', f = 0, state = null, exitOverlap = false
+    let end = 'frames', f = 0, state = null, exitOverlap = false, mirrored = false
     for (; f < o.frames; ++f) {
       let stop = null
       for (let i = 0; i < this.SPF; ++i) {
-        const n0 = portalState.teleports.length
+        const n0 = portalState.teleports.length, m0 = portalState.blocked.length
         gamePhysics()
+        for (let k = m0; k < portalState.blocked.length; ++k) if (portalState.blocked[k].mirror) mirrored = true
         if (portalState.teleports.length > n0 && this.exitOverlaps(P, portalState.teleports[portalState.teleports.length - 1]))
           exitOverlap = true
         if (S.kind === 'level' && flagCollision(curLevel().flagX, curLevel().flagY)) { stop = 'won'; break }
@@ -89,7 +91,7 @@ window.__embed = {
     }
     if (o.stateAt && state === null) state = [ball.posX, ball.posY, ball.speedX, ball.speedY].map(rd)
     return {embedded: det.embedded, embedFrame: det.embedFrame, embedFrames: det.count, maxRun: det.maxRun, frames: f, end,
-            teleports: portalState.teleports.length, exitOverlap, state,
+            teleports: portalState.teleports.length, exitOverlap, mirrored, state,
             ball: [rd(ball.posX), rd(ball.posY), rd(ball.speedX * this.SPF), rd(ball.speedY * this.SPF)]}
   },
   batch(list) { return list.map(o => this.run(o)) },
@@ -284,6 +286,7 @@ def main():
                   'teleported': sum(1 for r in res if r['teleports']), 'exitOverlap': sum(1 for r in res if r['exitOverlap'])},
         'outcomes': {case_id(c): {'teleported': r['teleports'] > 0, 'exitOverlap': r['exitOverlap'], 'state120': r['state']}
                      for c, r in zip(cases, res)},
+        'mirrored': sorted(case_id(c) for c, r in zip(cases, res) if r['mirrored']),
         'grid': {'A': A_P, 'B': B_P, 'geometries': geo, 'entry': ENTRY, 'speed': SPEED, 'sStep': 5 if a.preview else 1,
                  'h': H, 'r': R, 'gap': GAP, 'frames': 120},
         'pageErrors': errs + e1,
@@ -295,15 +298,21 @@ def main():
             base = json.load(fh)['outcomes']
         common = [k for k in base if k in doc['outcomes']]     # --preview runs a subset of the grid
         nonov = [k for k in common if not base[k]['exitOverlap']]
-        diff = [k for k in nonov if doc['outcomes'][k] != base[k]]
+        # TASK-176: a blocked face touch mirrors the ball back about d = r (record.mirror); such a run may change too.
+        # Up to its first mirror a run is the TASK-173 code's run, which had diffNonOverlap 0 against this baseline.
+        mir = set(doc['mirrored'])
+        changed = [k for k in nonov if doc['outcomes'][k] != base[k]]
+        diff = [k for k in changed if k not in mir]
         ov = [k for k in common if base[k]['exitOverlap']]
         doc['baselineDiff'] = {'baseline': os.path.relpath(a.baseline, ROOT), 'commonCases': len(common),
                                'nonOverlapCases': len(nonov),
                                'diffNonOverlap': len(diff), 'diffNonOverlapCases': diff[:50],
+                               'changedNonOverlapMirrored': len(changed) - len(diff), 'mirroredCases': len(mir),
                                'overlapCases': len(ov),
                                'overlapChanged': sum(1 for k in ov if doc['outcomes'].get(k) != base[k])}
-        print('baseline=%s nonOverlapCases=%d diffNonOverlap=%d overlapCases=%d overlapChanged=%d'
-              % (doc['baselineDiff']['baseline'], len(nonov), len(diff), len(ov), doc['baselineDiff']['overlapChanged']))
+        print('baseline=%s nonOverlapCases=%d diffNonOverlap=%d changedNonOverlapMirrored=%d mirroredCases=%d overlapCases=%d overlapChanged=%d'
+              % (doc['baselineDiff']['baseline'], len(nonov), len(diff), len(changed) - len(diff), len(mir), len(ov),
+                 doc['baselineDiff']['overlapChanged']))
         fail = fail or len(diff) > 0
     doc['fail'] = fail
     with open(out_path(a.task, a.out or 'embed.json'), 'w') as fh:

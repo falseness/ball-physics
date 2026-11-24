@@ -27,6 +27,20 @@ Notes:
 - A run ending at `--max-frames` (default 2000 frames, ~33 s of play) without a win counts as a loss; the
   reference must win well within it (see Flow).
 - Record each gate as compact JSON with the command line, the counts the gate names and pass/fail.
+- **Hard rule – no embedded or trapped runs (TASK-176).** Every gate search (G1, G2, G3 and G4) must report
+  **`embedded == 0`** and **`trapped == 0`** in its `tools/level_search.py` summary (the shared detectors of
+  `tests/portal/embed.py` (TASK-171/173) and `tests/portal/rimtrap.py` (TASK-166); a row ending `end: embedded` or
+  `end: trapped` is a ball sliding inside a line or shuttling on a portal rim). A gate with either count > 0 **FAILS**
+  even when its win counts pass: fix the layout (or the engine) and re-run; never filter those rows out.
+- **Hard rule – lines near a portal opening (TASK-176).** A non-host line (level line or wall) whose distance to a
+  portal opening is less than the ball radius r (10 px) is allowed **only** because of the exit-overlap block
+  (TASK-172/173): an exit whose ball centre would overlap a non-host line is refused (`blocked`, reason `overlap`)
+  and the ball bounces off the entry portal instead of being teleported into the line. Such a line must be a
+  deliberate part of the design: the level's `design.md` must name the line and the portal, say which entries
+  are blocked by it (e.g. level 24: the shelf starting on B's centre blocks entries within ~r of A's centre), and
+  show that effect (a screenshot or trace of a blocked bounce). `python3 tests/portal/levels_audit.py --risk`
+  lists every such line; `python3 tests/portal/levels_audit.py --levels N` (entry sweep) must report embedded 0
+  and trapped 0.
 
 ## Subjective score (rubric)
 
@@ -63,5 +77,6 @@ G1 dense1: valid N (>= 12000) wins 0 [ + sample k=2: valid N (>= 10000) wins 0 ]
 G2 necessity: drops lose [true, true(, true)]                                        PASS/FAIL
 G3 local ±2: variantsWin/variants = a/b (>= 0.5), reference win frame F              PASS/FAIL
 G4 sample k=lineK: valid 3000, win rate r (< 0.10), winsWithoutTeleport 0            PASS/FAIL
+G1-G4 embedded 0, trapped 0 (every search); near-opening lines: none | listed in design.md   PASS/FAIL
 Idea s/5, Aha s/5, Readability s/5, Flow s/5, mean m (every >= 3, mean >= 3.5)        PASS/FAIL
 ```
