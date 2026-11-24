@@ -3,7 +3,7 @@
 Plays the telemetry_ui script of tests/visual/shoot.py headless with the committed gameanalytics backend (index.html
 as committed; js/buildinfo.js served stamped with 'live-<YYYYMMDD>', so an automated browser sends build
 'test-live-<YYYYMMDD>'), waits for every relay answer, then reads the relay tap's raw copy
-(/var/lib/ga-tap/events-<UTC day>.jsonl): lines whose path holds the ball-physics game key and whose body events carry
+(/var/lib/ga-tap/events-<game key>-<UTC day>.jsonl, split per key since TASK-194): lines whose path holds the ball-physics game key and whose body events carry
 this build. The design + progression events in the tap must equal the ones the browser sent (ANALYTICS.debugLog).
 
 Usage: python3 tests/platform/live_check.py --out DIR [--build NAME] [--tap-dir DIR]
@@ -61,7 +61,7 @@ def main():
     with open(os.path.join(ROOT, 'analytics', 'backends', 'gameanalytics.js')) as f:
         committed_key = key in f.read()
     want_build = 'test-' + args.build
-    tap_file = os.path.join(args.tap_dir, 'events-%s.jsonl' % day.strftime('%Y-%m-%d'))
+    tap_file = os.path.join(args.tap_dir, 'events-%s-%s.jsonl' % (key, day.strftime('%Y-%m-%d')))
     before = len(tap_lines(tap_file, key, want_build))
 
     requests, responses = [], []

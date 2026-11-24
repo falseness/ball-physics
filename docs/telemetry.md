@@ -113,7 +113,12 @@ blocked storage keeps them in memory only.
   telemetry_ui script with the committed gameanalytics backend and build `test-live-<YYYYMMDD>` (buildinfo stamped
   `live-<day>`; a preview should pass `--build livepre-<day>` so it stays out of that count), waits 9 s at two
   menu-open steps so the SDK's 8 s timer sends several batches, then reads the tap's raw copy
-  `/var/lib/ga-tap/events-<UTC day>.jsonl` (lines whose path holds the game key and whose body build matches). The
+  `/var/lib/ga-tap/events-<game key>-<UTC day>.jsonl` (lines whose path holds the game key and whose body build matches). The
   design + progression events there must equal the ones in `ANALYTICS.debugLog` (count, ids, unique uuids), every
   relay answer 200/201, every tap line `test: true`. Writes `live.json` and `live_excerpt.jsonl` (5 lines as
   recorded, user ids kept). Sends real events: run it once per day per build name.
+- `python3 tests/platform/tap_split_check.py --out FILE` (TASK-194, on the relay host): the tap (`/usr/local/bin/ga_tap.py`)
+  writes one file per game key, `events-<key>-<UTC day>.jsonl` (key from `/v2/<key>/...` or `?game_key=`; none ->
+  `events-unknown-<day>.jsonl`); the old combined `events-<day>.jsonl` files are no longer written. Sends one signed
+  init (build `test-split`) per game (ball-physics, grapnelninja) and checks each lands only in its own file.
+  Rollback: `cp -p /usr/local/bin/ga_tap.py.bak-before-split-20261124 /usr/local/bin/ga_tap.py; systemctl restart ga-tap`.
