@@ -81,6 +81,7 @@ function deleteSelectedLine()
     playerSel = null
     bounce.cancel()
     bounce.positions = []
+    linesSaveDraft() // TASK-185 (js/linestore.js)
 }
 // Click while a line is selected (editable state): bin -> delete; another player line ->
 // select it; anything else -> deselect. Never starts a line.
@@ -276,6 +277,7 @@ function dragDrop(coords)
         endSet(l, d.end, c[0], c[1])
     // the idle trail (js/bounce.js) is recomputed from the final lines (state signature changes)
     playerSel = d.li
+    linesSaveDraft() // TASK-185 (js/linestore.js)
     return true
 }
 function drawDragHint()

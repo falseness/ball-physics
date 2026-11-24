@@ -46,6 +46,7 @@
     <script src = "js/bounce.js"></script>
     <script src = "js/portal.js"></script>
     <script src = "js/editor.js"></script>
+    <script src = "js/linestore.js"></script>
     <script src = "js/routemap.js"></script>
     <script src = "js/mapdraw.js"></script>
     <script src = "js/draw.js"></script>
@@ -142,7 +143,15 @@
         {
             lines.pop()
         }
+        // Open level i: the level's saved player lines come back (js/linestore.js: passed, else draft;
+        // never in play-tests / the editor)
         function levelChoosed(i)
+        {
+            levelReset(i)
+            linesRestore(i)
+        }
+        // Level i from scratch: ball at its start, only the level's own lines, linesK 0
+        function levelReset(i)
         {
             const L = playtestLevel || levels[i]
             ball.posX = L.ballX
@@ -167,7 +176,7 @@
             trailReset()
         }
         
-        levelChoosed(thisLevel)
+        levelReset(thisLevel) // saved lines are restored once boot() has read them
         function inMenuIcon(coords)
         {
             return collisionWithRect(
@@ -251,8 +260,8 @@
                         menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0], 
                         menuCoords[1] + blocks[2] + menuTextRect[1]))
                 {
-                    levelChoosed(thisLevel)
                     levelCompletedWindow = false
+                    restartKeepLines() // restart: ball back to the start, the player's lines kept
                 }
             }
             else if (drawMenu)
@@ -283,7 +292,7 @@
                             drawMenuIcon = true
                             if (menuButtons[i] == 'restart')
                             {
-                                levelChoosed(thisLevel)
+                                restartKeepLines() // ball back to the start, the player's lines kept
                             }
                         }
                 }
@@ -301,6 +310,7 @@
                     if (!addNewLine(coords))
                         return
                     line = false
+                    linesSaveDraft() // TASK-185: this level's draft lines (js/linestore.js)
                     bounce.cancel() // an unfinished preview job is dropped
                     if (linesK >= curLevel().lineK)
                     {
@@ -543,7 +553,7 @@
         {
             const kept = lines.filter(function(l) { return l.type == 'player' })
             const k = linesK
-            levelChoosed(thisLevel)
+            levelReset(thisLevel)
             for (let i = 0; i < kept.length; ++i)
                 lines.push(kept[i])
             linesK = k
@@ -564,8 +574,12 @@
                             levelCompletedWindow = true // play-test: no unlock bookkeeping
                             continue
                         }
-                        levels[thisLevel].unlock = 2 // completed; saved by srcId (TASK-178)
-                        saveProgress()
+                        if (!levelCompletedWindow)
+                        {
+                            levels[thisLevel].unlock = 2 // completed; saved by srcId (TASK-178)
+                            saveProgress()
+                            linesSavePassed() // TASK-185: the lines that won this level
+                        }
                         levelCompletedWindow = true
                     }
                     if (!ball.onMap())
@@ -606,9 +620,12 @@
         async function boot()
         {
             await PLATFORM.init()
-            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE])
+            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE])
             loadProgress(saved)
             editorBarLoad(saved)
+            linesLoad(saved)
+            if (!levelStarted && !line && !editorMode && !playtestLevel)
+                levelChoosed(thisLevel) // the current level with its saved lines
             await fontsReady
             bootComplete = true
             requestAnimationFrame(gameLoop)

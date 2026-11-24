@@ -1227,6 +1227,260 @@ def sc_card_play(page, info):
     info['card'] = d
 
 
+# TASK-185: the player's lines per level (js/linestore.js, key bp.lines.v1 through PLATFORM.storage).
+# Each lines_* scenario puts one record (state dumps + pass) into LINES; run_scenario adds the page's console
+# error count and rewrites lines.json (all records of this run) after every lines_* scenario.
+LINES = {}
+LINES_STATE_JS = """async () => { const L = levels[thisLevel];
+    const stored = (await PLATFORM.storage.getMany([LINES_STORE]))[LINES_STORE];
+    let entry = null; try { entry = JSON.parse(stored)[L.srcId] || null } catch (e) { entry = 'unparsable' }
+    return {thisLevel, srcId: L.srcId, lineK: L.lineK, linesK, nLevelLines: L.lines.length,
+        player: lines.filter(l => l.type == 'player').map(l => [l.posX, l.posY, l.posX2, l.posY2]),
+        ball: [ball.posX, ball.posY], ballStart: [L.ballX, L.ballY], ballSpeed: [ball.speedX, ball.speedY],
+        physics, levelStarted, levelCompletedWindow, drawMenu, drawMap, sha: levelGeometrySha(L), entry,
+        platformId: PLATFORM.getPlatformId()} }"""
+LINE_X = ((700, 600), (900, 640))   # level 1 (srcId 1): away from the ball's start (512, 125)
+LINE_Y = ((300, 700), (460, 730))
+LINE_L2 = ((700, 500), (900, 520))  # level 2 (srcId 2)
+PLAY_ICON_JS = "[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]"
+
+
+def lines_state(page):
+    return page.evaluate(LINES_STATE_JS)
+
+
+def draw_seg(page, seg):
+    # one player line with real input (click, move, click); returns the lines the game placed
+    (x1, y1), (x2, y2) = seg
+    n0 = page.evaluate("lines.filter(l => l.type == 'player').length")
+    click(page, x1, y1)
+    move(page, x2, y2)
+    frames(page)
+    click(page, x2, y2)
+    st = lines_state(page)
+    if len(st['player']) != n0 + 1:
+        raise RuntimeError('line %s not placed: %s' % (seg, st['player']))
+    return st
+
+
+def pause_if_running(page):
+    if page.evaluate("physics"):
+        click(page, *page.evaluate(PLAY_ICON_JS))  # the play box toggles physics off (no win, no off-map reset)
+
+
+def same_lines(a, b, eps=1e-6):
+    return len(a) == len(b) and all(abs(p - q) <= eps for u, v in zip(a, b) for p, q in zip(u, v))
+
+
+def reload_page(page):
+    page.reload()
+    page.wait_for_load_state('load')
+    page.wait_for_function(BOOT_JS)
+    frames(page, 3)
+
+
+def lines_out(info, name, data):
+    info['lines'] = data
+    LINES[name] = data
+
+
+def sc_lines_draft_restore(page, info):
+    pick_level(page, 0)
+    drawn = draw_seg(page, LINE_X)
+    pause_if_running(page)
+    pick_level(page, 1)
+    other = lines_state(page)
+    pick_level(page, 0)
+    back = lines_state(page)
+    d = {'drawn': drawn, 'level2': other, 'back': back}
+    d['pass'] = bool(drawn['srcId'] == 1 and other['srcId'] == 2 and other['player'] == [] and back['srcId'] == 1
+                     and same_lines(back['player'], drawn['player']) and back['linesK'] == len(drawn['player']) == drawn['linesK']
+                     and back['entry'] and same_lines(back['entry']['draft'], drawn['player']) and back['entry']['passed'] is None
+                     and back['linesK'] <= back['lineK'])
+    lines_out(info, 'lines_draft_restore', d)
+
+
+def sc_lines_reload(page, info):
+    pick_level(page, 0)
+    drawn = draw_seg(page, LINE_X)
+    pause_if_running(page)
+    pick_level(page, 1)
+    drawn2 = draw_seg(page, LINE_L2)
+    pause_if_running(page)
+    reload_page(page)
+    boot = lines_state(page)  # boot opens level 1 (thisLevel 0) with its saved lines
+    pick_level(page, 1)
+    back2 = lines_state(page)
+    d = {'drawn': drawn, 'drawnLevel2': drawn2, 'afterReload': boot, 'afterReloadLevel2': back2}
+    d['pass'] = bool(boot['srcId'] == 1 and same_lines(boot['player'], drawn['player']) and boot['linesK'] == len(drawn['player'])
+                     and back2['srcId'] == 2 and same_lines(back2['player'], drawn2['player'])
+                     and back2['linesK'] == len(drawn2['player']) and not boot['physics'] and not boot['levelStarted'])
+    lines_out(info, 'lines_reload', d)
+
+
+def bin_click(page):
+    # select the (only) player line by clicking its midpoint, then click the bin
+    mid = page.evaluate("(() => { const l = lines.find(l => l.type == 'player'); return [(l.posX + l.posX2) / 2, (l.posY + l.posY2) / 2] })()")
+    click(page, *mid)
+    if page.evaluate("playerSel") is None:
+        raise RuntimeError('player line not selected')
+    click(page, *page.evaluate("binCenter(lines[playerSel])"))
+
+
+def sc_lines_passed_restore(page, info):
+    pick_level(page, 0)
+    x = draw_seg(page, LINE_X)
+    # real win through gameMechanics' flagCollision with line X on the field (as win_level_src)
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0; physics = true }")
+    page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+    frames(page, 3)
+    won = lines_state(page)
+    # completion window 'restart' (blocks[2]): ball reset, line X kept and editable
+    click(page, *page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+        menuCoords[1] + blocks[2] + menuTextRect[1] / 2]"""))
+    restarted = lines_state(page)
+    bin_click(page)  # delete X
+    deleted = lines_state(page)
+    y = draw_seg(page, LINE_Y)  # change to Y, not won
+    pause_if_running(page)
+    changed = lines_state(page)
+    pick_level(page, 1)
+    pick_level(page, 0)
+    back = lines_state(page)
+    d = {'drawnX': x, 'won': won, 'restarted': restarted, 'deleted': deleted, 'drawnY': y, 'changed': changed, 'back': back}
+    d['pass'] = bool(won['levelCompletedWindow'] and won['entry'] and same_lines(won['entry']['passed'], x['player'])
+                     and same_lines(restarted['player'], x['player']) and deleted['player'] == [] and deleted['linesK'] == 0
+                     and same_lines(deleted['entry']['draft'], []) and not changed['levelCompletedWindow']
+                     and same_lines(changed['entry']['draft'], y['player']) and not same_lines(x['player'], y['player'])
+                     and same_lines(back['player'], x['player']) and back['linesK'] == len(x['player']))
+    lines_out(info, 'lines_passed_restore', d)
+
+
+def sc_lines_restart_keeps(page, info):
+    pick_level(page, 0)
+    drawn = draw_seg(page, LINE_X)  # lineK 1: the last line starts the run
+    frames(page, 20)
+    running = lines_state(page)
+    # HUD restart box (visible once a run started)
+    r = page.evaluate("restartIconRect()")
+    click(page, r[0] + r[2] / 2, r[1] + r[3] / 2)
+    hud = lines_state(page)
+    click(page, *page.evaluate(PLAY_ICON_JS))  # run again, then the pause menu 'restart' (i = 1)
+    frames(page, 20)
+    running2 = lines_state(page)
+    open_menu(page)
+    click(page, *page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+        menuCoords[1] + 300 + 1 * 85 + menuTextRect[1] / 2]"""))
+    menu = lines_state(page)
+    def ok(s):
+        return (same_lines(s['player'], drawn['player']) and s['linesK'] == drawn['linesK'] and s['ball'] == s['ballStart']
+                and s['ballSpeed'] == [0, 0] and not s['physics'] and not s['levelStarted'] and not s['drawMenu'])
+    d = {'drawn': drawn, 'running': running, 'afterHudRestart': hud, 'running2': running2, 'afterMenuRestart': menu}
+    d['pass'] = bool(running['ball'] != running['ballStart'] and running2['ball'] != running2['ballStart'] and ok(hud) and ok(menu))
+    lines_out(info, 'lines_restart_keeps', d)
+
+
+def sc_lines_sha_mismatch(page, info):
+    pick_level(page, 0)
+    drawn = draw_seg(page, LINE_X)
+    pause_if_running(page)
+    pick_level(page, 1)
+    drawn2 = draw_seg(page, LINE_L2)
+    pause_if_running(page)
+    # tamper level 1's sha in storage (through the facade); level 2's entry stays valid
+    tampered = page.evaluate("""async () => { const v = JSON.parse((await PLATFORM.storage.getMany([LINES_STORE]))[LINES_STORE]);
+        v[1].sha = 'deadbeef'; await PLATFORM.storage.setMany({[LINES_STORE]: JSON.stringify(v)}); return v }""")
+    reload_page(page)
+    l1 = lines_state(page)
+    pick_level(page, 1)
+    l2 = lines_state(page)
+    d = {'drawn': drawn, 'drawnLevel2': drawn2, 'tamperedStore': tampered, 'level1': l1, 'level2': l2}
+    d['pass'] = bool(tampered['1']['sha'] == 'deadbeef' and l1['srcId'] == 1 and l1['entry']['sha'] != l1['sha']
+                     and l1['player'] == [] and l1['linesK'] == 0
+                     and l2['srcId'] == 2 and same_lines(l2['player'], drawn2['player']))
+    lines_out(info, 'lines_sha_mismatch', d)
+
+
+def sc_lines_storage_blocked(page, info):
+    # the backend's setMany throws from now on (the facade falls back with a console.warn, never an error)
+    page.evaluate("() => { PLATFORM_BACKEND.storage.setMany = function() { throw new Error('blocked by test') } }")
+    probe = page.evaluate("() => { try { PLATFORM_BACKEND.storage.setMany({}); return 'no throw' } catch (e) { return 'throws: ' + e.message } }")
+    pick_level(page, 0)
+    drawn = draw_seg(page, LINE_X)
+    pause_if_running(page)
+    pick_level(page, 1)
+    pick_level(page, 0)
+    back = lines_state(page)  # in-memory copy still restores the lines this session
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0; physics = true }")
+    page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+    won = lines_state(page)
+    page.evaluate(LOOP_COUNTER_JS)
+    frames(page, 10)
+    f1 = page.evaluate("window.__loopFrames")
+    d = {'backendProbe': probe, 'drawn': drawn, 'back': back, 'won': won, 'frameCount': [0, f1], 'gameRunning': f1 > 0}
+    d['pass'] = bool(probe.startswith('throws') and same_lines(back['player'], drawn['player']) and won['levelCompletedWindow']
+                     and d['gameRunning'])
+    lines_out(info, 'lines_storage_blocked', d)
+
+
+def lines_tag_rewriter(tb, backend):
+    # one-argument handler (Playwright passes the request too when the handler takes two arguments)
+    tag = tb.backend_tag(backend)
+
+    def rewrite(route):
+        resp = route.fetch()
+        route.fulfill(response=resp, body=resp.text().replace(tb.LOCAL_TAG, tag))
+    return rewrite
+
+
+def sc_lines_backends(page, info):
+    # every platform backend (tests/platform/test_backends.py tag rewrite over a local http server):
+    # draw on level 1, reload, level 1 comes back with the line
+    sys.path.insert(0, os.path.join(ROOT, 'tests', 'platform'))
+    import test_backends as tb
+    from functools import partial
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(tb.QuietHandler, directory=ROOT))
+    Thread(target=server.serve_forever, daemon=True).start()
+    url = 'http://127.0.0.1:%d/index.html' % server.server_port
+    out = []
+    try:
+        for backend in tb.BACKENDS:
+            ctx = page.context.browser.new_context(viewport=VIEWPORT)
+            errors = []
+            try:
+                ctx.route('**/index.html', lines_tag_rewriter(tb, backend))
+                p = ctx.new_page()
+                p.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
+                p.on('pageerror', lambda e: errors.append(str(e)))
+                p.goto(url)
+                p.wait_for_function(tb.READY, timeout=15000)
+                frames(p)
+                pick_level(p, 0)
+                drawn = draw_seg(p, LINE_X)
+                pause_if_running(p)
+                reload_page(p)
+                p.wait_for_function(tb.READY, timeout=15000)
+                back = lines_state(p)
+                r = {'backend': backend, 'platformId': back['platformId'], 'drawn': drawn['player'], 'restored': back['player'],
+                     'linesK': back['linesK'], 'consoleErrors': len(errors), 'errors': errors}
+            except Exception as e:
+                r = {'backend': backend, 'exception': '%s: %s' % (type(e).__name__, str(e).splitlines()[0] if str(e) else ''),
+                     'consoleErrors': len(errors), 'errors': errors}
+            finally:
+                ctx.close()
+            r['pass'] = bool('exception' not in r and r['platformId'] == backend and r['drawn']
+                             and same_lines(r['restored'], r['drawn']) and r['linesK'] == len(r['drawn']) and not errors)
+            out.append(r)
+    finally:
+        server.shutdown()
+        server.server_close()
+    d = {'backends': out, 'nPass': sum(r['pass'] for r in out)}
+    d['pass'] = bool(len(out) == 5 and all(r['pass'] for r in out))
+    lines_out(info, 'lines_backends', d)
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -1281,6 +1535,13 @@ SCENARIOS = {
     'map_card_plain': sc_map_card_plain,
     'map_card_edge': sc_map_card_edge,
     'card_play': sc_card_play,
+    'lines_draft_restore': sc_lines_draft_restore,
+    'lines_reload': sc_lines_reload,
+    'lines_passed_restore': sc_lines_passed_restore,
+    'lines_restart_keeps': sc_lines_restart_keeps,
+    'lines_sha_mismatch': sc_lines_sha_mismatch,
+    'lines_storage_blocked': sc_lines_storage_blocked,
+    'lines_backends': sc_lines_backends,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
@@ -1354,6 +1615,18 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             errors.append('map input check failed: %s' % MAP_INPUT_FILES[name])
     elif name in MAP_INPUT_FILES:
         errors.append('map input scenario wrote no data: %s' % name)
+    if name.startswith('lines_'):  # TASK-185: one record per scenario + the page's final console error count
+        d = info.get('lines')
+        if d is None:
+            d = LINES[name] = {'pass': False}
+            errors.append('lines scenario wrote no data: %s' % name)
+        d['consoleErrors'] = len(errors)
+        d['errors'] = list(errors)
+        d['pass'] = bool(d['pass'] and not errors)
+        with open(os.path.join(out_dir, 'lines.json'), 'w') as f:
+            json.dump(LINES, f, separators=(',', ':'))
+        if not d['pass']:
+            errors.append('lines check failed: %s' % name)
     if '_composite' in info:  # TASK-182 map_card_edge: one tile per hovered edge case
         composite(info.pop('_composite'), os.path.join(out_dir, 'map_card_edge.png'))
     if name in CARD_FILES:  # TASK-182 card checks + the page's final console error count
