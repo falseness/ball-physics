@@ -1,5 +1,5 @@
 // Headless physics harness (TASK-197): loads the real js/sprite.js and js/ball.js into a vm context with
-// stubs for the game globals they read (lines, gravitationalAcceleration, portalHosts, portalCaptureZone)
+// stubs for the game globals they read (lines, gravitationalAcceleration, portalHosts, portalCaptureZone, portalHostSegs)
 // and steps a ball exactly like index.html gamePhysics(): ball.physics() then ball.move(), 500 steps per frame.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -22,7 +22,7 @@ export function makeWorld(segments, opts = {})
         gravitationalAcceleration: opts.g === undefined ? G : opts.g,
         portalHosts: () => null,
         portalCaptureZone: () => false,
-        portalHostCollision: () => { throw new Error('no portals in the physics harness') },
+        portalHostSegs: () => { throw new Error('no portals in the physics harness') },
         GAME_W: 1280, GAME_H: 800,
     })
     for (const f of ['js/sprite.js', 'js/ball.js'])
@@ -132,7 +132,7 @@ export function makeFastWorld(segments, opts = {})
         fastFactory = new Function('G', `var lines = [], gravitationalAcceleration = G, GAME_W = 1280, GAME_H = 800
             function portalHosts() { return null }
             function portalCaptureZone() { return false }
-            function portalHostCollision() { throw new Error('no portals in the physics harness') }
+            function portalHostSegs() { throw new Error('no portals in the physics harness') }
             ${src}
             return { Ball: Ball, setLines: function (l) { lines = l } }`)
     }

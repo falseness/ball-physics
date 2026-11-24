@@ -14,6 +14,12 @@
 //       points; convex and concave joints, segments in random order and direction, a quarter with the joint
 //       end points up to 1 px apart, i.e. within dotRadius) and a ball dropped onto it from above or below.
 //       --levels: every shoot levelNN reference solution inside the game (tests/physics/invariants_browser.py).
+//   node tests/physics/invariants.mjs --browser --portal-fuzz A-B [--portal-cases N] [--portal-frames F] [--out FILE]
+//       TASK-201: portal fuzz scenes inside the game (Playwright, tests/physics/invariants_browser.py
+//       --portal-fuzz SEED, one child process per seed in parallel): N scenes per seed (default 2000) from the
+//       tests/portal/fuzz.py generators in turn (default, --crossing, --backside, --touching), F frames
+//       (default 300) of 500 steps, every step checked; teleport steps by the T rule (speed preserved), rim
+//       bounces and refused teleports as contacts with their normals. --browser is required (it runs the game).
 //   Output: compact JSON (counts per invariant, sub-counts, first 5 examples each, per seed / per level).
 //   Exit 1 when any violation is found (or a selftest check fails), 0 otherwise.
 // Node 12: no ?? / ?. syntax.
@@ -167,6 +173,31 @@ function runShards(seeds, scenes, frames, kind)
         let out = ''
         p.stdout.on('data', d => { out += d })
         p.on('close', code => code === 0 ? resolve(JSON.parse(out)) : reject(new Error('shard ' + seed + ' exit ' + code)))
+    })))
+}
+
+function runPortalFuzz(seeds, cases, frames)
+{
+    return Promise.all(seeds.map(seed => new Promise((resolve, reject) =>
+    {
+        const p = spawn('python3', [path.join(HERE, 'invariants_browser.py'), '--portal-fuzz', String(seed), '--cases', String(cases),
+            '--frames', String(frames)], { stdio: ['ignore', 'pipe', 'inherit'] })
+        let out = ''
+        p.stdout.on('data', d => { out += d })
+        p.on('close', code =>
+        {
+            if (code !== 0) return reject(new Error('portal fuzz seed ' + seed + ' exit ' + code))
+            const r = JSON.parse(out), perScene = [], kinds = {}
+            r.scenes.forEach(sc =>
+            {
+                const k = kinds[sc.kind] = kinds[sc.kind] || { scenes: 0, teleports: 0, blockedExits: 0, hostHits: 0, offMap: 0 }
+                ++k.scenes; k.teleports += sc.teleports; k.blockedExits += sc.blockedExits; k.hostHits += sc.hostHits; k.offMap += sc.offMap ? 1 : 0
+                const tot = sc.counts.I1 + sc.counts.I2 + sc.counts.I3 + sc.counts.T
+                if (tot) perScene.push([sc.scene, sc.kind, sc.counts.I1, sc.counts.I2, sc.counts.I3, sc.counts.T])
+            })
+            resolve({ seed, scenes: r.scenes.length, frames: r.frames, kinds, scenesWithViolations: perScene.length,
+                pageErrors: r.pageErrors, seconds: r.seconds, ...Core.merge(r.scenes), violatingScenes: perScene.slice(0, 50) })
+        })
     })))
 }
 
@@ -350,6 +381,15 @@ async function main()
     const ch = arg('--chains', null)
     if (ch)
         jobs.push(runShards(seedList(ch), scenes, frames, 'chains').then(r => { out.chains = { scenesPerSeed: scenes, frames, seeds: r, total: Core.merge(r) } }))
+    const pf = arg('--portal-fuzz', null)
+    if (pf && !has('--browser'))
+        throw new Error('--portal-fuzz runs the game: add --browser')
+    const pcases = +arg('--portal-cases', 2000), pframes = +arg('--portal-frames', 300)
+    if (pf)
+        jobs.push(runPortalFuzz(seedList(pf), pcases, pframes).then(r =>
+        {
+            out.portalFuzz = { scenesPerSeed: pcases, frames: pframes, seeds: r, pageErrors: [].concat(...r.map(x => x.pageErrors)), total: Core.merge(r) }
+        }))
     if (has('--levels'))
         jobs.push(runLevels(arg('--level-frames', null)).then(r =>
         {
@@ -368,6 +408,13 @@ async function main()
         console.log(summary('chains total', out.chains.total))
         parts.push(out.chains.total)
     }
+    if (out.portalFuzz)
+    {
+        out.portalFuzz.seeds.forEach(s => console.log(summary('portal fuzz seed ' + s.seed + ' (' + s.scenes + ' scenes, ' + s.scenesWithViolations +
+            ' violating, teleports ' + s.teleports + ', kinds ' + JSON.stringify(s.kinds) + ')', s)))
+        console.log(summary('portal fuzz total', out.portalFuzz.total) + ' teleports ' + out.portalFuzz.total.teleports + ' pageErrors ' + out.portalFuzz.pageErrors.length)
+        parts.push(out.portalFuzz.total)
+    }
     if (out.levels)
     {
         out.levels.list.forEach(l => console.log(summary('level' + l.src + ' won=' + l.won + ' teleports=' + l.teleports, l)))
@@ -377,6 +424,8 @@ async function main()
     out.total = Core.merge(parts)
     out.seconds = (Date.now() - t0) / 1000
     out.violations = out.total.counts.I1 + out.total.counts.I2 + out.total.counts.I3 + out.total.counts.T
+    if (out.portalFuzz && out.portalFuzz.pageErrors.length)
+        out.violations += out.portalFuzz.pageErrors.length
     writeOut(out)
     console.log(summary('TOTAL', out.total) + ' -> ' + (out.violations ? 'VIOLATIONS ' + out.violations + ' (exit 1)' : 'clean (exit 0)'))
     return out.violations ? 1 : 0

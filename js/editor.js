@@ -1222,7 +1222,7 @@ function editorPreviewStart(key, pend)
     editorPrev = {
         key: key, snap: snap,
         ballX: snap.ballX, ballY: snap.ballY, speedX: 0, speedY: 0,
-        portal: { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null, blockedExits: 0, blocked: [] }, // = portalReset()
+        portal: { prevD: [], teleports: [], rimHits: 0, rims: [], steps: 0, hostHits: 0, hostHit: null, blockedExits: 0, blocked: [], grace: null }, // = portalReset()
         cache: { level: null, src: null, vals: [], list: null, hosts: null },
         step: 0, points: [], slices: 0, done: false,
         count: editorPortals().length ? bounce.portalPointsCount : bounce.pointsCount  // TASK-118: 300 with portals, else 100

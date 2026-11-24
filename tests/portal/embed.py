@@ -4,7 +4,7 @@
   python3 tests/portal/embed.py --task TASK-NNN [--out embed.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON); exit 1 when the level 24 repro (a) or the synthetic
          sweep (b) has an embedded run.
-      --baseline (default artifacts/TASK-171/baseline.json, '' = off; TASK-172): every case whose baseline
+      --baseline (default artifacts/TASK-201/baselines/embed_baseline.json, re-recorded under the contact model; before artifacts/TASK-171/baseline.json; '' = off; TASK-172): every case whose baseline
          exitOverlap was false must keep its outcome (diffNonOverlap == 0 in the log, else exit 1); TASK-176: runs
          with a mirrored blocked face touch (record.mirror) are exempt and counted as changedNonOverlapMirrored.
   python3 tests/portal/embed.py --task TASK-NNN --controls [--out controls.json]
@@ -261,8 +261,10 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 5 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
-    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-171', 'baseline.json'),
-                    help="diff outcomes of cases whose baseline exitOverlap was false ('' = no diff)")
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-201', 'baselines', 'embed_baseline.json'),
+                    help="diff outcomes of cases whose baseline exitOverlap was false ('' = no diff). Default: TASK-201, "
+                         "re-recorded under the ball contact model (TASK-199..201 changed every line and host-line "
+                         "bounce); before: artifacts/TASK-171/baseline.json (the TASK-171 code, old physics)")
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'controls.json')
@@ -315,6 +317,10 @@ def main():
               % (doc['baselineDiff']['baseline'], len(nonov), len(diff), len(changed) - len(diff), len(mir), len(ov),
                  doc['baselineDiff']['overlapChanged']))
         fail = fail or len(diff) > 0
+    elif a.baseline:
+        print('baseline missing: %s' % a.baseline)      # TASK-201: fail instead of skipping the comparison
+        doc['baselineDiff'] = {'baseline': a.baseline, 'missing': True}
+        fail = True
     doc['fail'] = fail
     with open(out_path(a.task, a.out or 'embed.json'), 'w') as fh:
         json.dump(doc, fh, separators=(',', ':'))

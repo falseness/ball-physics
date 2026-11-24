@@ -3,14 +3,19 @@
 // (tests/physics/invariants_browser.py injects it for the portal levels). Defines InvariantsCore.
 //
 // One checker per simulated ball. Feed it every step, in order (no sampling):
-//   chk.step(x0, y0, vx0, vy0, x1, y1, vx1, vy1, tele, vmx, vmy)
+//   chk.step(x0, y0, vx0, vy0, x1, y1, vx1, vy1, tele, vmx, vmy, post)
 // (x0, y0, vx0, vy0) = ball state before the step, (x1, ...) = after it; tele = a portal teleport
-// happened in this step, (vmx, vmy) = the velocity right before portalStep() (teleport steps only).
+// happened in this step, (vmx, vmy) = the velocity right before portalStep() (teleport steps only);
+// post (optional) = [[nx, ny, src], ...] the normals portalStep() reflected about after the move in this
+// step (rim bounces, refused teleports bouncing off the entry plane; TASK-201), taken as contacts.
 //
 // Geometry (opts): segs [[x1,y1,x2,y2]] = contact candidates (every line), points [[x,y]] = point
 // colliders (portal rims), solid [[x1,y1,x2,y2]] = what the ball must never sink into (default segs;
 // the portal levels pass the host lines minus their openings), postMoveContacts = also take contacts at
-// the post-move position (portalStep collides there).
+// the post-move position (lines and points). The browser mode does not use it (TASK-201): lines are only
+// resolved at the step's start position (ball.physics() runs before ball.move()), so a ball that merely
+// moves into a line's reach is a free step, and portalStep's rims / openings only act in some states
+// (front side, not refused by a line); it passes the normals portalStep actually used (post) instead.
 //
 // I1 'no stuck': (a) depth: the centre is more than STUCK_DEPTH inside a solid line (distance <
 //    R - 0.5) for more than 2 consecutive steps (one violation per episode, at its 3rd step);
@@ -137,7 +142,7 @@ var InvariantsCore = (function ()
 
         function energy(y, vx, vy) { return 0.5 * (vx * vx + vy * vy) + 0.5 * G * vy + G * (H - y) }
 
-        function step(x0, y0, vx0, vy0, x1, y1, vx1, vy1, tele, vmx, vmy)
+        function step(x0, y0, vx0, vy0, x1, y1, vx1, vy1, tele, vmx, vmy, post)
         {
             ++steps
             // ---- I1a depth (post-step position)
@@ -182,6 +187,9 @@ var InvariantsCore = (function ()
             // ---- I2 / I3
             var cs = contactsAt(x0, y0, [])
             if (postMove) contactsAt(x1, y1, cs)
+            if (post)
+                for (var pi = 0; pi < post.length; ++pi)
+                    cs.push([post[pi][0], post[pi][1], 0, post[pi][2]])
             if (cs.length === 0)
             {
                 if (vx1 !== vx0 || vy1 !== vy0 + G)

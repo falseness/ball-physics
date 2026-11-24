@@ -78,53 +78,8 @@ class Ball extends Sprite
         }
         return false
     }
-    // Collision with the segment (x1, y1)-(x2, y2) (the original per-line code); true = it reflected
-    collisionWithSegment(x1, y1, x2, y2)
-    {
-        let x0 = this.posX
-        let y0 = this.posY
-        let r = this.radius
-        
-        if (x1 == x2)
-        {
-            let root1 = y0 + Math.sqrt(Math.pow(r, 2) - Math.pow(x1 - x0, 2))
-            let root2 = y0 - Math.sqrt(Math.pow(r, 2) - Math.pow(x1 - x0, 2))
-            //if (Math.pow(y1 - y0, 2) + Math.pow(x1 - x0, 2) <= Math.pow(this.radius, 2) && this.speedY > 0 ||
-             //  Math.pow(y2 - y0, 2) + Math.pow(x2 - x0, 2) <= Math.pow(this.radius, 2) && this.speedY < 0)
-             //   this.speedY *= -1
-            if (root1 < y1 && y2 < root1 ||
-                    root1 < y2 && y1 < root1 ||
-                    root2 < y1 && y2 < root2 ||
-                    root2 < y2 && y1 < root2)
-            {
-                this.speedX *= -1
-                return true
-            }
-        }
-        else if (collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r))
-        {
-            let lineAngle = Math.atan((y1 - y2) / (x1 - x2))
-
-            let xn = -this.speedX
-            let yn = -this.speedY
-
-            let x = xn * Math.cos(lineAngle) + yn * Math.sin(lineAngle)
-            let y = yn * Math.cos(lineAngle) - xn * Math.sin(lineAngle)
-
-            x = -x
-
-            xn = x * Math.cos(lineAngle) - y * Math.sin(lineAngle)
-            yn = y * Math.cos(lineAngle) + x * Math.sin(lineAngle)
-
-            this.speedX = xn
-            this.speedY = yn
-            this.speedX += gravitationalAcceleration * Math.cos(lineAngle) * Math.sin(lineAngle)
-            this.speedY -= gravitationalAcceleration * Math.pow(Math.cos(lineAngle), 2)
-            return true
-        }
-        return false
-    }
-    // Ball-line contacts (TASK-199), for every line that is not a wall-portal host.
+    // Ball-line contacts (TASK-199), for every line; a wall-portal host line takes part as its solid pieces
+    // (portalHostSegs, TASK-201: host-piece contacts a portal capture covers are dropped in contacts()).
     // For each line the closest point q on the segment (end points included), n = (c - q)/|c - q|; a contact is
     // |c - q| < radius (+ CONTACT_SLOP, so a ball lying exactly on a line keeps its contact).
     // 1. Velocity, from the contacts at the start of the step (normals fixed), deepest first, re-tested after each
@@ -147,7 +102,7 @@ class Ball extends Sprite
     contactCollision(segs)
     {
         const r = this.radius, g = gravitationalAcceleration, n = segs.length
-        const E0 = 0.5 * (this.speedX * this.speedX + this.speedY * this.speedY) + 0.5 * g * this.speedY - g * this.posY
+        const E0 = this.energy()
         // contacts at the start position: normal, distance, closest point (scratch arrays reused)
         const cn = Ball.scratch(n)
         let k = this.contacts(segs, cn)
@@ -155,6 +110,8 @@ class Ball extends Sprite
             return
         // ---- 1. velocity
         let hitMask = 0, lnx = 0, lny = 0, last = -1
+        // the first wall-portal host piece that changes the velocity (portalState.hostHit, TASK-201)
+        let hostSeg = null, hvx = 0, hvy = 0
         for (let it = 0; it < CONTACT_ITERATIONS; ++it)
         {
             const vx = this.speedX, vy = this.speedY
@@ -201,8 +158,16 @@ class Ball extends Sprite
                 this.speedX = nvx
                 this.speedY = nvy
             }
+            // (reached only when this iteration changed the velocity)
+            const bs = segs[cn[best * CS + 5]]
+            if (hostSeg === null && bs.hostList !== undefined)
+            {
+                hostSeg = bs; hvx = vx; hvy = vy
+            }
             lnx = bnx; lny = bny; last = best
         }
+        if (hostSeg !== null)
+            portalHostHit(hostSeg, hvx, hvy)
         // ---- 2. position
         let pi = -1
         for (let it = 0; it < CONTACT_ITERATIONS; ++it)
@@ -245,21 +210,31 @@ class Ball extends Sprite
         // ---- 3. energy (only after a velocity change: a ball moving away keeps its velocity, its push-out is a
         // second-order sliver)
         if (last >= 0)
+            this.limitEnergy(E0, lnx, lny)
+    }
+    // E = |v|^2/2 + g vy/2 - g y, the integrator's free-flight invariant (constant between steps without contact)
+    energy()
+    {
+        const g = gravitationalAcceleration
+        return 0.5 * (this.speedX * this.speedX + this.speedY * this.speedY) + 0.5 * g * this.speedY - g * this.posY
+    }
+    // A bounce about the normal (nx, ny) never adds energy: if E grew above E0, the outgoing normal speed is lowered
+    // until E = E0 (contactCollision step 3; portalTeleport's refused-exit bounce, TASK-201)
+    limitEnergy(E0, nx, ny)
+    {
+        const g = gravitationalAcceleration
+        const vx = this.speedX, vy = this.speedY, vn = vx * nx + vy * ny
+        if (this.energy() > E0 && vn > 0)
         {
-            const vx = this.speedX, vy = this.speedY, vn = vx * lnx + vy * lny
-            const E1 = 0.5 * (vx * vx + vy * vy) + 0.5 * g * vy - g * this.posY
-            if (E1 > E0 && vn > 0)
-            {
-                // E(w) for v = vt + w n: 0.5 w^2 + b w + C, b = g n_y / 2
-                const tx = vx - vn * lnx, ty = vy - vn * lny, b = 0.5 * g * lny
-                const C = 0.5 * (tx * tx + ty * ty) + 0.5 * g * ty - g * this.posY - E0
-                const D = b * b - 2 * C
-                let w = D > 0 ? -b + Math.sqrt(D) : 0
-                if (!(w < vn)) w = vn
-                if (w < 0) w = 0
-                this.speedX = tx + w * lnx
-                this.speedY = ty + w * lny
-            }
+            // E(w) for v = vt + w n: 0.5 w^2 + b w + C, b = g n_y / 2
+            const tx = vx - vn * nx, ty = vy - vn * ny, b = 0.5 * g * ny
+            const C = 0.5 * (tx * tx + ty * ty) + 0.5 * g * ty - g * this.posY - E0
+            const D = b * b - 2 * C
+            let w = D > 0 ? -b + Math.sqrt(D) : 0
+            if (!(w < vn)) w = vn
+            if (w < 0) w = 0
+            this.speedX = tx + w * nx
+            this.speedY = ty + w * ny
         }
     }
     // Contacts with segs at the current position, ghost joint contacts removed (see contactCollision); returns
@@ -269,11 +244,23 @@ class Ball extends Sprite
         const n = segs.length
         let k = 0
         for (let i = 0; i < n; ++i)
-            if (this.segContact(segs[i], out, k))
+        {
+            const s = segs[i]
+            if (!this.segContact(s, out, k))
+                continue
+            // TASK-201 (TASK-074/173): a wall-portal host piece (portalHostSegs): a ball being captured by a portal
+            // ignores a host-line contact in its capture zone; a ball moving away from the portal's front ignores the
+            // gap edges (the rims next to the opening it may have just left)
+            if (s.hostList !== undefined)
             {
-                out[k * CS + 5] = i
-                ++k
+                const e = out[k * CS + 6], hostEnd = (e === 1 && s.endA) || (e === 2 && s.endC)
+                if (s.away ? this.gapEdge(s, out[k * CS + 3], out[k * CS + 4])
+                           : portalCaptureZone(this, s.hostList, out[k * CS + 3], out[k * CS + 4], hostEnd))
+                    continue
             }
+            out[k * CS + 5] = i
+            ++k
+        }
         let m = 0
         for (let j = 0; j < k; ++j)
         {
@@ -285,6 +272,15 @@ class Ball extends Sprite
             ++m
         }
         return m
+    }
+    // The closest point (qx, qy) on host piece s (portalHostSegs) is one of its gap edges (an end that is a portal
+    // rim, not an end of the host line), up to 1e-6 px: a touch exit at s = +-h lands exactly beside the rim and
+    // the closest point's line parameter may round to just inside the piece
+    gapEdge(s, qx, qy)
+    {
+        const E2 = 1e-12
+        return (!s.endA && (qx - s.posX) * (qx - s.posX) + (qy - s.posY) * (qy - s.posY) <= E2) ||
+            (!s.endC && (qx - s.posX2) * (qx - s.posX2) + (qy - s.posY2) * (qy - s.posY2) <= E2)
     }
     // Contact j lies on an end V of its line: it is a ghost when another line joined at V (an end within CHAIN_JOIN)
     // has the centre projecting into it (past its joined end: the normal (c - V) is outside the joint's cone) and is
@@ -363,35 +359,22 @@ class Ball extends Sprite
         // wall-portal host lines (null when the level has none): line object -> its resolved portals
         const hosts = portalHosts()
         const segs = []
-        let hostDot = false
         const m = this.radius + 1, x0 = this.posX, y0 = this.posY
         for (let i = 0; i < lines.length; ++i)
         {
             const l = lines[i]
-            const host = hosts && hosts.get(l)
             // exact broadphase (TASK-122): a line cannot touch the ball when its centre lies outside the line's
-            // bounding box grown by radius + 1
+            // bounding box grown by radius + 1 (a host line's pieces lie inside its box)
+            if (x0 < (l.posX < l.posX2 ? l.posX : l.posX2) - m || x0 > (l.posX > l.posX2 ? l.posX : l.posX2) + m ||
+                y0 < (l.posY < l.posY2 ? l.posY : l.posY2) - m || y0 > (l.posY > l.posY2 ? l.posY : l.posY2) + m)
+                continue
+            const host = hosts && hosts.get(l)
             if (!host)
-            {
-                if (x0 < (l.posX < l.posX2 ? l.posX : l.posX2) - m || x0 > (l.posX > l.posX2 ? l.posX : l.posX2) + m ||
-                    y0 < (l.posY < l.posY2 ? l.posY : l.posY2) - m || y0 > (l.posY > l.posY2 ? l.posY : l.posY2) + m)
-                    continue
                 segs.push(l)
-                continue
-            }
-            // portal host lines keep the original per-line code until TASK-201 (an end-point hit still ends the
-            // host-line pass, as the old loop's break did):
-            if (hostDot)
-                continue
-            // a ball being captured by a portal on this line ignores a line end next to the opening (TASK-074; true: a line end, TASK-173)
-            // (dotHit first: when it is false collisionWithDot would do nothing, so the capture zone is not needed)
-            if ((this.dotHit(l.posX, l.posY) && !portalCaptureZone(this, host, l.posX, l.posY, true) && this.collisionWithDot(l.posX, l.posY)) ||
-                (this.dotHit(l.posX2, l.posY2) && !portalCaptureZone(this, host, l.posX2, l.posY2, true) && this.collisionWithDot(l.posX2, l.posY2)))
-            {
-                hostDot = true
-                continue
-            }
-            portalHostCollision(this, l, host)
+            else
+                // TASK-201: a wall-portal host line takes part in the same contact model as its solid pieces
+                // (the whole line from behind, the pieces outside the open gaps from the front), see portalHostSegs
+                portalHostSegs(this, l, host, segs)
         }
         if (segs.length)
             this.contactCollision(segs)

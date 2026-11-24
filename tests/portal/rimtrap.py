@@ -4,7 +4,7 @@
   python3 tests/portal/rimtrap.py --task TASK-NNN [--out rimtrap.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON), exit 1 when the level 19 repro is trapped, the
          back-side sweep finds a trap, or (TASK-164) a front-side outcome differs from --baseline
-         (default artifacts/TASK-163/baseline.json, the unfixed code; front_diff in the log).
+         (default artifacts/TASK-201/baselines/rimtrap_baseline.json, re-recorded under the contact model; before artifacts/TASK-163/baseline.json, the unfixed code; front_diff in the log).
   python3 tests/portal/rimtrap.py --task TASK-NNN --controls [--out detector_controls.json]
       -> detector false-positive controls; exit 1 if any control is reported trapped.
 
@@ -264,9 +264,11 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 6 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
-    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-163', 'baseline.json'),
-                    help='rimtrap.json of the unfixed code: front outcomes must match it case by case '
-                         '(front_diff, exit 1 when > 0); "" = no comparison')
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-201', 'baselines', 'rimtrap_baseline.json'),
+                    help='a rimtrap.json: front outcomes must match it case by case (front_diff, exit 1 when > 0); '
+                         '"" = no comparison. Default: TASK-201, re-recorded under the ball contact model (TASK-199..201 '
+                         'changed every line and host-line bounce); before: artifacts/TASK-163/baseline.json (the '
+                         'unfixed TASK-163 code, old reflect-on-overlap physics)')
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'detector_controls.json')
@@ -305,6 +307,9 @@ def main():
         doc['front']['baseline'] = os.path.relpath(a.baseline, ROOT)
         doc['front']['baselineCases'] = len(base['keys'])
         doc['front']['diffCases'] = diffs[:50]
+    elif a.baseline:
+        front_diff = -1      # TASK-201: a named baseline that does not exist fails instead of skipping the comparison
+        print('baseline missing: %s' % a.baseline)
     doc['front']['front_diff'] = front_diff
     print('front_diff=%s baseline=%s' % (front_diff, a.baseline or '-'))
     fail = rep['trapped'] or len(traps) > 0 or bool(front_diff)
