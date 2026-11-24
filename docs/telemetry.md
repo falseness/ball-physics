@@ -122,3 +122,26 @@ blocked storage keeps them in memory only.
   `events-unknown-<day>.jsonl`); the old combined `events-<day>.jsonl` files are no longer written. Sends one signed
   init (build `test-split`) per game (ball-physics, grapnelninja) and checks each lands only in its own file.
   Rollback: `cp -p /usr/local/bin/ga_tap.py.bak-before-split-20261124 /usr/local/bin/ga_tap.py; systemctl restart ga-tap`.
+
+## Stats report (TASK-195)
+
+`python3 tools/stats_report.py [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--include-test] [--out DIR] [--root DIR]`
+reads the tap's raw copy (on the relay host): every `events-<ball-physics key>-<day>.jsonl` plus the older combined
+`events-<day>.jsonl` files (lines whose request path holds the key), found by glob in `--root` (default
+`/var/lib/ga-tap`); `--since` / `--until` filter on the file day. Test traffic (record `test` flag or an event
+build starting with `test-`) is left out unless `--include-test`. Events are de-duplicated by `event_uuid`. Lines
+that are not tap records, or carry a body that is not a GA body, are counted as `unparsed` and listed `file:line`;
+bodiless GET / OPTIONS records are counted as `no_body_records`; design ids not in the catalogue go to
+`unknown_events`.
+
+Writes `DIR/report.json` and `DIR/report.md`:
+- per user (GA `user_id`): first/last seen, builds, inits, sessions (id, build, events, play-time milestone,
+  `session_end` length), levels tried, per level attempts / highest attempt number / wins / first-win attempt /
+  win seconds / restarts / abandons / off-map / progression Start-Complete-Fail / lines placed, deleted, dragged,
+  drag rejected, over the limit, runs, max lines used; button counts by name (and by `<ctx>`), play seconds (sum of
+  the highest `session:play_seconds` milestone per session), hides, totals;
+- per level: users tried / won, attempts, wins, win rate (wins / attempts), median attempt number of the first win.
+
+Check: `python3 tools/stats_report.py --root tests/stats/fixture --out DIR && python3 tests/stats/check_fixture.py
+DIR/report.json` (fixture written by `tests/stats/make_fixture.py`, expected report hand-written in
+`tests/stats/fixture_expected.json`).
