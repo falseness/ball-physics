@@ -394,7 +394,10 @@ levels.push(
         new Line(700, 300, 1000, 300, dotRadius, levelLineColor, 'line'),
         new Line(250, 450, 550, 450, dotRadius, levelLineColor, 'line'),
         new Line(40, 400, 40, 60, dotRadius, levelLineColor, 'line'),
-        new Line(300, 170, 500, 170, dotRadius, levelLineColor, 'line')
+        new Line(300, 170, 500, 170, dotRadius, levelLineColor, 'line'),
+        // TASK-206: deflector under the shelf right of A (starts 15 px from the opening): turns balls running left
+        // under the shelf back up-right, away from A; the steep kick from the lower right still reaches A
+        new Line(460, 450, 510, 500, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (400, 450) on the middle shelf's underside
     // facing down (0, 1), B at (40, 200) facing right (1, 0)
