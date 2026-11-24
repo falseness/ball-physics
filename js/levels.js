@@ -138,8 +138,10 @@ levels.push(
         new Line(800, 700, 1000, 500, dotRadius, levelLineColor, 'line'),
         new Line(340, 600, 390, 600, dotRadius, levelLineColor, 'line'),
         new Line(380, 300, 340, 600, dotRadius, levelLineColor, 'line'),
-        new Line(630, 520, 630, 250, dotRadius, levelLineColor, 'line'),
-        new Line(630, 650, 630, 550, dotRadius, levelLineColor, 'line')
+        // TASK-203: the gap in the x = 630 wall widened from y 520-550 (30 px, a 20 px ball fit only through a
+        // knife-edge bounce: every winning line had 0/8 winning +-2 px variants) to y 495-575
+        new Line(630, 495, 630, 250, dotRadius, levelLineColor, 'line'),
+        new Line(630, 650, 630, 575, dotRadius, levelLineColor, 'line')
     ],
     unlock: 0
 },

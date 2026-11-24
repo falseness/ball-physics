@@ -647,6 +647,19 @@ LEVEL4_MAX_FRAMES = 1500
 LEVEL5_LINES = [((192, 621), (1083, 9))]
 LEVEL5_MAX_FRAMES = 1500
 
+# Levels 6-10 (srcId 6-10, no portals) references found for the TASK-199/200/201 contact physics (TASK-203), the
+# same way as levels 1-5 (artifacts/TASK-203/search). Keep these exact integer coordinates.
+LEVEL6_LINES = [((100, 200), (700, 300)), ((414, 763), (983, 626)), ((83, 604), (495, 778))]
+LEVEL6_MAX_FRAMES = 1500
+LEVEL7_LINES = [((964, 269), (393, 350))]
+LEVEL7_MAX_FRAMES = 1500
+LEVEL8_LINES = [((453, 480), (0, 565))]
+LEVEL8_MAX_FRAMES = 1500
+LEVEL9_LINES = [((476, 208), (188, 259))]  # level 9 layout changed in TASK-203 (wider gap in the x = 630 wall)
+LEVEL9_MAX_FRAMES = 1500
+LEVEL10_LINES = [((0, 460), (120, 580)), ((837, 355), (495, 687))]
+LEVEL10_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -742,6 +755,26 @@ def sc_level4(page, info):
 
 def sc_level5(page, info):
     play_solution(page, info, 5, LEVEL5_LINES, LEVEL5_MAX_FRAMES, 'level5', via=None, portals=0)
+
+
+def sc_level6(page, info):
+    play_solution(page, info, 6, LEVEL6_LINES, LEVEL6_MAX_FRAMES, 'level6', via=None, portals=0)
+
+
+def sc_level7(page, info):
+    play_solution(page, info, 7, LEVEL7_LINES, LEVEL7_MAX_FRAMES, 'level7', via=None, portals=0)
+
+
+def sc_level8(page, info):
+    play_solution(page, info, 8, LEVEL8_LINES, LEVEL8_MAX_FRAMES, 'level8', via=None, portals=0)
+
+
+def sc_level9(page, info):
+    play_solution(page, info, 9, LEVEL9_LINES, LEVEL9_MAX_FRAMES, 'level9', via=None, portals=0)
+
+
+def sc_level10(page, info):
+    play_solution(page, info, 10, LEVEL10_LINES, LEVEL10_MAX_FRAMES, 'level10', via=None, portals=0)
 
 
 def sc_level11(page, info):
@@ -2088,6 +2121,11 @@ SCENARIOS = {
     'level3': sc_level3_win,  # TASK-202: the srcId 3 reference win, like every other levelNN
     'level4': sc_level4,
     'level5': sc_level5,
+    'level6': sc_level6,
+    'level7': sc_level7,
+    'level8': sc_level8,
+    'level9': sc_level9,
+    'level10': sc_level10,
     'level11': sc_level11,
     'level12': sc_level12,
     'level13': sc_level13,
