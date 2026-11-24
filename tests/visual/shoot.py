@@ -137,11 +137,15 @@ def open_map(page):
 
 
 def pick_level(page, i):
-    # menu -> 'Levels' -> the level's slot on the map (real clicks); returns the clicked point
+    # menu -> 'Levels' -> the level's slot on the map (real clicks); returns the clicked point. TASK-182: the first
+    # click selects the level (preview card), the second click on the selected level starts it.
     open_map(page)
     pt = page.evaluate(LEVEL_POINT_JS, i)
     if pt is None:
         raise RuntimeError('level index %s has no slot on the route map' % i)
+    click(page, *pt)
+    if page.evaluate("mapSel") != i or not page.evaluate("drawMap"):
+        raise RuntimeError('first click on level %s did not select it on the map' % i)
     click(page, *pt)
     return pt
 
@@ -166,6 +170,10 @@ def sc_menu_level(page, info):
     info['before'] = page.evaluate("({thisLevel, drawMenu, drawMap})")
     x, y = page.evaluate(LEVEL_POINT_JS, 1)
     info['click'] = [x, y]
+    click(page, x, y)  # TASK-182: the first click selects level 2 (preview card), the second click starts it
+    info['selected'] = page.evaluate("({thisLevel, drawMap, mapSel, card: window.mapCard && window.mapCard.i})")
+    if info['selected'] != {'thisLevel': 0, 'drawMap': True, 'mapSel': 1, 'card': 1}:
+        raise RuntimeError('menu_level: first click did not select level 2: %s' % info['selected'])
     click(page, x, y)
     info['after'] = page.evaluate("({thisLevel, drawMenu, drawMap, levelCompletedWindow})")
     if info['after'] != {'thisLevel': 1, 'drawMenu': False, 'drawMap': False, 'levelCompletedWindow': False}:
@@ -228,9 +236,10 @@ PROGRESS_FILES = {'progress_reload': 'progress_reload.json', 'progress_storage_b
                   'progress_garbage': 'progress_garbage.json'}
 PROGRESS_STATE_JS = """() => { let stored = null; try { stored = localStorage.getItem(PROGRESS_STORE) } catch (e) { stored = 'THROWS' }
     return {solved: progressSolved(), stored, nLevels: levels.length, thisLevel, physics, drawMenu, levelCompletedWindow} }"""
-# Every level slot (TASK-181 route map): mapClick (the click handler's map path) at its hit box centre must start it.
+# Every level slot (TASK-181 route map): mapClick (the click handler's map path) at its hit box centre must start it
+# (TASK-182: the first click selects the level and shows its card, the second click on it starts it).
 CLICKABLE_JS = """() => { const out = []; for (let i = 0; i < levels.length; ++i) {
-        mapOpen(); const p = routeLevelPoint(levels, i); if (p) mapClick(p)
+        mapOpen(); const p = routeLevelPoint(levels, i); if (p) { mapClick(p); mapClick(p) }
         out.push({i, srcId: levels[i].srcId, clickable: !!p && thisLevel === i && !drawMap}) }
     thisLevel = 0; levelChoosed(0); return out }"""
 # Overrides localStorage get/set to throw (installed before any page script runs).
@@ -990,25 +999,32 @@ def map_play_common(page, info, tap):
     onMap = page.evaluate(MAP_UI_JS)
     si = slot_info(page, MAP_PLAY_INDEX)
     page.evaluate("() => { window.__inputs = {click: 0, mousedown: 0, touchstart: 0, touchend: 0} }")
-    if tap:
-        page.touchscreen.tap(*to_client(page, *si['point']))
-        frames(page)
-    else:
-        click(page, *si['point'])
+    # TASK-182: first tap / click selects (card shown, level not started), the second one on the same level starts it
+    selected = None
+    for k in range(2):
+        if tap:
+            page.touchscreen.tap(*to_client(page, *si['point']))
+            frames(page)
+        else:
+            click(page, *si['point'])
+        if k == 0:
+            selected = page.evaluate("() => Object.assign((" + MAP_UI_JS + ")(), {mapSel, card: window.mapCard && window.mapCard.i})")
     frames(page, 3)
     after = page.evaluate(MAP_UI_JS)
     inputs = page.evaluate("window.__inputs")
-    d = {'before': before, 'openInputs': opened, 'onMap': onMap, 'slot': si, 'after': after, 'inputs': inputs,
+    d = {'before': before, 'openInputs': opened, 'onMap': onMap, 'slot': si, 'selected': selected, 'after': after, 'inputs': inputs,
          'levelLoaded': page.evaluate("({ball: [ball.posX, ball.posY], start: [curLevel().ballX, curLevel().ballY], linesK, nLines: lines.length})")}
     ok = (onMap['drawMap'] and si['slot'] is not None and si['hitAtPoint'] == MAP_PLAY_INDEX
           and after['thisLevel'] == MAP_PLAY_INDEX and after['srcId'] == MAP_PLAY_SRC
           and not after['drawMap'] and not after['drawMenu'] and not after['levelCompletedWindow']
-          and after['drawMenuIcon'] and not after['playtest'])
+          and after['drawMenuIcon'] and not after['playtest']
+          and selected['drawMap'] and selected['mapSel'] == MAP_PLAY_INDEX and selected['card'] == MAP_PLAY_INDEX
+          and selected['thisLevel'] == before['thisLevel'])
     if tap:  # the tap went through the touch handlers (no mouse click event)
-        ok = ok and inputs['touchstart'] == 1 and inputs['touchend'] == 1 and inputs['click'] == 0 and opened == {
+        ok = ok and inputs['touchstart'] == 2 and inputs['touchend'] == 2 and inputs['click'] == 0 and opened == {
             'click': 0, 'mousedown': 0, 'touchstart': 2, 'touchend': 2}
     else:
-        ok = ok and inputs['click'] == 1 and inputs['touchstart'] == 0
+        ok = ok and inputs['click'] == 2 and inputs['touchstart'] == 0
     d['pass'] = bool(ok)
     info['mapinput'] = d
 
@@ -1045,6 +1061,163 @@ def sc_map_close(page, info):
                      and after['thisLevel'] == onMap['thisLevel']
                      and not resumed['drawMenu'] and not resumed['drawMap'] and resumed['drawMenuIcon'])
     info['mapinput'] = d
+
+
+# TASK-182 preview card. map_card_portal / map_card_plain: real mouse hover over a portal / non-portal level writes
+# card_hover.json; map_card_edge: hover over the levels nearest each screen edge and corner, boxes.json + a composite
+# map_card_edge.png (one tile per case, the per-case shots in card_edge/); card_play: click flow -> card_play.json.
+CARD_FILES = {'map_card_portal': 'card_hover.json', 'map_card_plain': 'card_hover.json', 'map_card_edge': 'boxes.json',
+              'card_play': 'card_play.json'}
+CARD_HOVER = {}
+# drawn card + an independent in-page recheck of its rects (overlap / on-screen / pointer direction)
+CARD_STATE_JS = """() => { const c = window.mapCard; if (!c) return null;
+    const ov = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    const avoid = {menuIcon: c.menuIcon, flag: c.flag}; if (c.nextFlag) avoid.nextFlag = c.nextFlag;
+    const hits = []; for (const k in avoid) { if (ov(c.body, avoid[k])) hits.push('body:' + k); if (ov(c.ptr, avoid[k])) hits.push('pointer:' + k) }
+    const A = c.all, F = c.flag, t = c.tip;
+    const dist = Math.hypot(Math.max(F[0] - t[0], 0, t[0] - F[2]), Math.max(F[1] - t[1], 0, t[1] - F[3]));
+    const dir = c.side === 'above' ? t[1] > c.body[3] && t[1] < F[1] : c.side === 'below' ? t[1] < c.body[1] && t[1] > F[3]
+        : c.side === 'right' ? t[0] < c.body[0] && t[0] > F[2] : t[0] > c.body[2] && t[0] < F[0];
+    const along = (c.side === 'above' || c.side === 'below') ? (t[0] > F[0] && t[0] < F[2]) : (t[1] > F[1] && t[1] < F[3]);
+    return {i: c.i, n: c.n, srcId: c.srcId, slot: c.slot, side: c.side, card: c.body, pointer: {tip: t, base: c.base, box: c.ptr},
+        cardWithPointer: A, menuIcon: c.menuIcon, flag: c.flag, nextSlot: c.nextSlot, nextFlag: c.nextFlag,
+        overlaps: hits.length, overlapList: hits, layoutOverlaps: c.overlaps,
+        onscreen: A[0] >= 0 && A[1] >= 0 && A[2] <= GAME_W && A[3] <= GAME_H,
+        pointsAtFlag: dir && along && dist <= 4, tipToFlag: dist,
+        mapSel, mapHover, cursor: canvas.style.cursor, info: window.mapCardInfo, drawMap, thisLevel} }"""
+
+
+def hover_level(page, i):
+    pt = page.evaluate(LEVEL_POINT_JS, i)
+    move(page, *pt)
+    frames(page, 3)
+    return pt
+
+
+def card_hover(page, info, want_portal):
+    frames(page)
+    open_map(page)
+    i = page.evaluate("p => levels.findIndex((l, i) => i >= 2 && !!(l.portals && l.portals.length) === p)", want_portal)
+    before = page.evaluate("({card: window.mapCard, cursor: canvas.style.cursor})")
+    pt = hover_level(page, i)
+    st = page.evaluate(CARD_STATE_JS)
+    d = {'level': i, 'number': i + 1, 'portalLevel': want_portal, 'point': pt, 'beforeHover': before, 'card': st}
+    d['pass'] = bool(before['card'] is None and st and st['i'] == i and st['info']['i'] == i
+                     and st['info']['badge'] == want_portal and st['info']['glyphs'] == page.evaluate("i => levels[i].lineK", i)
+                     and st['info']['thumb']['lines'] > 0 and st['overlaps'] == 0 and st['onscreen'] and st['pointsAtFlag']
+                     and st['drawMap'] and st['thisLevel'] == 0 and st['mapSel'] == -1 and st['cursor'] == 'pointer')
+    info['card'] = d
+
+
+def sc_map_card_portal(page, info):
+    card_hover(page, info, True)
+
+
+def sc_map_card_plain(page, info):
+    card_hover(page, info, False)
+
+
+EDGE_JS = """() => { const a = routeAssign(levels), ids = Object.keys(a), S = ROUTEMAP.slots;
+    const pick = (f, best) => ids.reduce((m, id) => (m === null || best(f(id), f(m))) ? id : m, null);
+    const lt = (x, y) => x < y, gt = (x, y) => x > y, X = id => S[id][0], Y = id => S[id][1];
+    const want = {left: pick(X, lt), right: pick(X, gt), top: pick(Y, lt), bottom: pick(Y, gt),
+        topLeft: pick(id => X(id) + Y(id), lt), topRight: pick(id => X(id) - Y(id), gt),
+        bottomLeft: pick(id => X(id) - Y(id), lt), bottomRight: pick(id => X(id) + Y(id), gt)};
+    const out = {}; for (const k in want) { const id = want[k]; (out[id] = out[id] || {slot: id, i: a[id], edges: []}).edges.push(k) }
+    return Object.values(out) }"""
+
+
+def sc_map_card_edge(page, info):
+    frames(page)
+    open_map(page)
+    cases = page.evaluate(EDGE_JS)
+    edge_dir = os.path.join(OUT_DIR, 'card_edge')
+    os.makedirs(edge_dir, exist_ok=True)
+    shots = []
+    for c in cases:
+        move(page, 20, 400)  # leave the previous level first
+        frames(page)
+        c['point'] = hover_level(page, c['i'])
+        c['state'] = page.evaluate(CARD_STATE_JS)
+        f = os.path.join(edge_dir, 'edge_%s.png' % c['slot'])
+        page.screenshot(path=f)
+        shots.append((f, '%s n%d %s' % (c['slot'], c['i'] + 1, '/'.join(c['edges']))))
+    # every level's card by the same rule (no hover), as a wider check
+    allc = page.evaluate("() => mapCardCheck().map(c => ({i: c.i, slot: c.slot, side: c.side, overlaps: c.overlaps, onscreen: c.all[0] >= 0 && c.all[1] >= 0 && c.all[2] <= GAME_W && c.all[3] <= GAME_H}))")
+    d = {'cases': cases, 'edgesCovered': sorted({e for c in cases for e in c['edges']}), 'allLevels': {
+        'count': len(allc), 'maxOverlaps': max(c['overlaps'] for c in allc), 'allOnscreen': all(c['onscreen'] for c in allc),
+        'sides': {k: sum(1 for c in allc if c['side'] == k) for k in ('above', 'right', 'left', 'below')}, 'levels': allc}}
+    d['pass'] = bool(len(cases) >= 4 and len(d['edgesCovered']) == 8 and all(
+        c['state'] and c['state']['i'] == c['i'] and c['state']['overlaps'] == 0 and c['state']['layoutOverlaps'] == 0
+        and c['state']['onscreen'] and c['state']['pointsAtFlag'] for c in cases)
+        and d['allLevels']['maxOverlaps'] == 0 and d['allLevels']['allOnscreen'] and len(allc) == page.evaluate("levels.length"))
+    info['card'] = d
+    info['_composite'] = shots
+
+
+def composite(shots, out):
+    from PIL import Image, ImageDraw
+    tiles = [Image.open(f).convert('RGB') for f, _ in shots]
+    tw, th = tiles[0].width // 2, tiles[0].height // 2
+    cols = 2 if len(tiles) <= 4 else 3
+    rows = (len(tiles) + cols - 1) // cols
+    img = Image.new('RGB', (cols * tw, rows * th), (0, 0, 0))
+    dr = ImageDraw.Draw(img)
+    for k, (t, (_, label)) in enumerate(zip(tiles, shots)):
+        x, y = (k % cols) * tw, (k // cols) * th
+        img.paste(t.resize((tw, th)), (x, y))
+        dr.rectangle([x, y, x + tw - 1, y + th - 1], outline=(90, 90, 90))
+        dr.text((x + 8, y + th - 18), label, fill=(255, 255, 0))
+    img.save(out)
+
+
+def sc_card_play(page, info):
+    frames(page)
+    page.evaluate(INPUT_COUNTER_JS)
+    j, k = MAP_PLAY_INDEX, MAP_PLAY_INDEX + 5
+    ui = "() => Object.assign((" + MAP_UI_JS + ")(), {mapSel, card: window.mapCard && window.mapCard.i, play: window.mapCard && window.mapCard.play})"
+    # A: first click selects (card, not started), then a click on the card's play button starts it
+    open_map(page)
+    a0 = page.evaluate(ui)
+    pa = page.evaluate(LEVEL_POINT_JS, j)
+    click(page, *pa)
+    frames(page)
+    a1 = page.evaluate(ui)
+    cardA = page.evaluate(CARD_STATE_JS)
+    move(page, a1['play'][0], a1['play'][1])  # travel to the play button: the card stays
+    frames(page)
+    a2 = page.evaluate(ui)
+    a2['cursor'] = page.evaluate("canvas.style.cursor")
+    click(page, a1['play'][0], a1['play'][1])
+    frames(page, 3)
+    a3 = page.evaluate(ui)
+    # B: a first click selects level k, a second click on it starts it
+    open_map(page)
+    b0 = page.evaluate(ui)
+    pb = page.evaluate(LEVEL_POINT_JS, k)
+    click(page, *pb)
+    frames(page)
+    b1 = page.evaluate(ui)
+    click(page, *pb)
+    frames(page, 3)
+    b2 = page.evaluate(ui)
+    # C: a click on empty map space clears the selection without starting anything
+    open_map(page)
+    click(page, *page.evaluate(LEVEL_POINT_JS, j))
+    c1 = page.evaluate(ui)
+    click(page, 40, 40)
+    c2 = page.evaluate(ui)
+    d = {'playButton': {'level': j, 'point': pa, 'onMap': a0, 'afterFirstClick': a1, 'card': cardA, 'hoverPlay': a2, 'afterPlay': a3},
+         'secondClick': {'level': k, 'point': pb, 'onMap': b0, 'afterFirstClick': b1, 'afterSecondClick': b2},
+         'emptyClick': {'selected': c1, 'after': c2}, 'inputs': page.evaluate("window.__inputs")}
+    d['firstClickShowsCardNotStarted'] = bool(a1['drawMap'] and a1['mapSel'] == j and a1['card'] == j and a1['thisLevel'] == a0['thisLevel'] == 0)
+    d['playStarts'] = bool(a2['card'] == j and a2['cursor'] == 'pointer' and a3['thisLevel'] == j and not a3['drawMap'] and not a3['drawMenu'])
+    d['secondClickFirstNotStarted'] = bool(b1['drawMap'] and b1['mapSel'] == k and b1['card'] == k and b1['thisLevel'] == j)
+    d['secondClickStarts'] = bool(b2['thisLevel'] == k and not b2['drawMap'] and not b2['drawMenu'] and b2['srcId'] == page.evaluate("i => levels[i].srcId", k))
+    d['emptyClears'] = bool(c1['mapSel'] == j and c2['mapSel'] == -1 and c2['drawMap'] and c2['thisLevel'] == k)
+    d['pass'] = bool(d['firstClickShowsCardNotStarted'] and d['playStarts'] and d['secondClickFirstNotStarted']
+                     and d['secondClickStarts'] and d['emptyClears'] and cardA and cardA['overlaps'] == 0)
+    info['card'] = d
 
 
 SCENARIOS = {
@@ -1097,6 +1270,10 @@ SCENARIOS = {
     'map_play': sc_map_play,
     'map_touch': sc_map_touch,
     'map_close': sc_map_close,
+    'map_card_portal': sc_map_card_portal,
+    'map_card_plain': sc_map_card_plain,
+    'map_card_edge': sc_map_card_edge,
+    'card_play': sc_card_play,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
@@ -1169,6 +1346,23 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             errors.append('map input check failed: %s' % MAP_INPUT_FILES[name])
     elif name in MAP_INPUT_FILES:
         errors.append('map input scenario wrote no data: %s' % name)
+    if '_composite' in info:  # TASK-182 map_card_edge: one tile per hovered edge case
+        composite(info.pop('_composite'), os.path.join(out_dir, 'map_card_edge.png'))
+    if name in CARD_FILES:  # TASK-182 card checks + the page's final console error count
+        d = info.get('card')
+        if d is None:
+            errors.append('card scenario wrote no data: %s' % name)
+        else:
+            d['consoleErrors'] = len(errors)
+            d['errors'] = list(errors)
+            d['pass'] = bool(d['pass'] and not errors)
+            if CARD_FILES[name] == 'card_hover.json':
+                CARD_HOVER[name] = d
+                d = CARD_HOVER
+            with open(os.path.join(out_dir, CARD_FILES[name]), 'w') as f:
+                json.dump(d, f, separators=(',', ':'))
+            if not info['card']['pass']:
+                errors.append('card check failed: %s' % name)
     if 'mapstate' in info:  # TASK-180: route map state + the page's final console error count
         d = info['mapstate']
         d['consoleErrors'] = len(errors)

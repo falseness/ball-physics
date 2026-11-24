@@ -390,6 +390,8 @@
                     return editorCancelDrag()
                 return editorMouseMove(mouseCoords(event))
             }
+            if (drawMap)
+                return mapMove(mouseCoords(event)) // route map: hover highlight + preview card (js/mapdraw.js)
             if (endDrag)
             {
                 if ((event.buttons & 1) == 0)

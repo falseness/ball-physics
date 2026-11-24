@@ -166,3 +166,21 @@ function routeLevelPoint(levels, i, map = ROUTEMAP)
         }
     return null
 }
+
+// TASK-182: rect the preview card must never cover for a slot's flag: the routeSlotBox (platform + flag box) grown
+// to the drawn flag (js/mapdraw.js mapFlag: pole at cx + 12 s / 0.62, pennant 59 * 64 / 99 s wide, check mark at
+// +30 s .. +44 s). [x1, y1, x2, y2] in game coordinates.
+function routeFlagRect(id, map = ROUTEMAP)
+{
+    const [cx, top, w, s] = map.slots[id], b = routeSlotBox(id, map), px = cx + 12 * s / 0.62
+    return [Math.min(b[0], px - 16 * s), b[1], Math.max(b[2], px + 46 * s), b[3]]
+}
+
+// Slot id of play-order level i, or null
+function routeSlotOf(levels, i, map = ROUTEMAP)
+{
+    const assign = routeAssign(levels, map)
+    for (const id in assign)
+        if (assign[id] === i) return id
+    return null
+}
