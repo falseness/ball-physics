@@ -1655,6 +1655,15 @@ TELEMETRY_LOGS = {}
 FULL_LOG_JS = "() => ANALYTICS.debugLog.map(e => [e.fn, ...e.args.map(a => a === undefined ? null : a)])"
 
 
+# TASK-193: tests/platform/live_check.py sets these to run telemetry_ui with the committed gameanalytics backend
+# (index.html unchanged) and js/buildinfo.js stamped with TELEMETRY_BUILD; the defaults keep the none backend
+TELEMETRY_BACKEND = 'none'
+TELEMETRY_BUILD = None
+TELEMETRY_PAGE_HOOK = None  # called with the new page before the first load (live_check: request/response capture)
+TELEMETRY_CLOSE_HOOK = None  # called with the page before its context closes (live_check: wait for the relay answers)
+TELEMETRY_STEP_HOOK = None  # telemetry_ui: called with (page, step name) after each step (live_check: timed SDK sends)
+
+
 @contextlib.contextmanager
 def telemetry_page(page, errors, **ctx_options):
     # own context on a local http server; index.html with the GA SDK tag dropped and the none backend swapped in
@@ -1671,16 +1680,27 @@ def telemetry_page(page, errors, **ctx_options):
         resp = route.fetch()
         body = resp.text().replace(ta.SDK_TAG + '\n', '').replace(ta.GA_TAG, ta.NONE_TAG)
         route.fulfill(response=resp, body=body)
+
+    def buildinfo(route):
+        resp = route.fetch()
+        route.fulfill(response=resp, body=ta.stamp_build.stamped(resp.text(), TELEMETRY_BUILD))
     ctx = page.context.browser.new_context(viewport=VIEWPORT, **ctx_options)
     try:
-        ctx.route('**/index.html', rewrite)
+        if TELEMETRY_BACKEND == 'none':
+            ctx.route('**/index.html', rewrite)
+        if TELEMETRY_BUILD:
+            ctx.route('**/js/buildinfo.js', buildinfo)
         p = ctx.new_page()
+        if TELEMETRY_PAGE_HOOK:
+            TELEMETRY_PAGE_HOOK(p)
         p.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
         p.on('pageerror', lambda e: errors.append(str(e)))
         p.goto(url)
         p.wait_for_function(BOOT_JS, timeout=15000)
         frames(p)
         yield p
+        if TELEMETRY_CLOSE_HOOK:
+            TELEMETRY_CLOSE_HOOK(p)
     finally:
         ctx.close()
         server.shutdown()
@@ -1837,6 +1857,8 @@ def sc_telemetry_ui(page, info):
         def step(name):
             n = p.evaluate("ANALYTICS.debugLog.length")
             steps.append({'step': name, 'srcId': p.evaluate("levels[thisLevel].srcId"), 'logLength': n})
+            if TELEMETRY_STEP_HOOK:
+                TELEMETRY_STEP_HOOK(p, name)
         if p.evaluate("levels[thisLevel].srcId") != 1 or p.evaluate("curLevel().lineK") != 1:
             raise RuntimeError('boot did not open srcId 1 (lineK 1)')
         step('boot')
@@ -1933,7 +1955,7 @@ def sc_telemetry_ui(page, info):
            'consoleErrors': len(errors), 'errors': errors, 'fullLog': full}
     seq['matchExpected'] = telemetry_match(actual, want['events'])
     seq['touchTap'] = bool(inputs['touchend'] >= 1)
-    seq['pass'] = bool(seq['matchExpected'] and backend == 'none' and not errors and seq['touchTap'])
+    seq['pass'] = bool(seq['matchExpected'] and backend == TELEMETRY_BACKEND and not errors and seq['touchTap'])
     with open(os.path.join(OUT_DIR, 'sequence.json'), 'w') as f:
         json.dump(seq, f, separators=(',', ':'))
     cov = None

@@ -109,3 +109,11 @@ blocked storage keeps them in memory only.
   catalogue above (progression status, facade function, or design id with `<srcId>` / `<ctx>` as patterns) found in
   the two full debug logs; `uncovered` must be `[]`.
 - `python3 tests/platform/test_analytics.py`: facade boot with both backends (TASK-190).
+- `python3 tests/platform/live_check.py --out DIR` (TASK-193): live delivery through the relay. Plays the
+  telemetry_ui script with the committed gameanalytics backend and build `test-live-<YYYYMMDD>` (buildinfo stamped
+  `live-<day>`; a preview should pass `--build livepre-<day>` so it stays out of that count), waits 9 s at two
+  menu-open steps so the SDK's 8 s timer sends several batches, then reads the tap's raw copy
+  `/var/lib/ga-tap/events-<UTC day>.jsonl` (lines whose path holds the game key and whose body build matches). The
+  design + progression events there must equal the ones in `ANALYTICS.debugLog` (count, ids, unique uuids), every
+  relay answer 200/201, every tap line `test: true`. Writes `live.json` and `live_excerpt.jsonl` (5 lines as
+  recorded, user ids kept). Sends real events: run it once per day per build name.
