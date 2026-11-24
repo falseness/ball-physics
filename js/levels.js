@@ -174,7 +174,9 @@ levels.push(
     flagX: 1200,
     flagY: 450,
     flagRotate: 0,
-    lineK: 2,
+    // TASK-204: lineK 2 -> 1. One line wins (the reference), so with lineK 2 the rubric gate G1 (fewer than
+    // lineK lines cannot win) failed by construction; the level is a one-line level.
+    lineK: 1,
     lines: [
         new Line(1040, 0, 1040, 450, dotRadius, levelLineColor, 'line'),
         new Line(1040, 450, 1270, 450, dotRadius, levelLineColor, 'line'),
@@ -224,7 +226,10 @@ levels.push(
     flagX: 362,
     flagY: 112,
     flagRotate: -Math.PI / 2,
-    lineK: 4,
+    // TASK-204: lineK 4 -> 1. Under the contact physics the TASK-074 ramp (381,679)-(696,744) wins on its own
+    // (the second line is no longer needed: G2 failed), so G1 (fewer than lineK lines cannot win) failed for
+    // lineK 4; the ramp alone is the new one-line reference.
+    lineK: 1,
     lines: [
         new Line(360, 755, 1240, 755, dotRadius, levelLineColor, 'line'),
         new Line(1240, 755, 1240, 70, dotRadius, levelLineColor, 'line'),

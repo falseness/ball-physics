@@ -428,21 +428,19 @@ LEVEL11_MAX_FRAMES = 3000
 LEVEL12_LINE = ((312, 214), (388, 240))
 LEVEL12_MAX_FRAMES = 3000
 
-# Level 13 'accelerator' reference solution (TASK-074; was TASK-071's (394,678)-(710,752) + (663,202)-(594,249),
-# which stopped winning once portal edges capture by touch): two player lines (lineK 4). The ramp under
-# the ball rolls it right onto floor portal A; it loops A -> B (shelf underside) twice, gaining speed,
-# and the second line (589,381)-(712,393), left of the shelf, kicks it up-left into the flag (completed
-# on physics frame 262). Searched headlessly with in-page stepped frames (artifacts/TASK-074/design.md);
-# 14 of 17 single-coordinate +-3 px variants also win, but keep these exact integer coordinates.
-LEVEL13_LINES = (((381, 679), (696, 744)), ((589, 381), (712, 393)))
+# Level 13 'accelerator' reference solution (TASK-204, lineK 1; was TASK-074's ramp + (589,381)-(712,393) kicker, lineK 4):
+# under the contact physics the TASK-074 ramp under the ball wins on its own: the ball rolls right onto floor portal A,
+# loops A -> B (shelf underside) twice, gaining speed, and reaches the flag (won on physics frame 241). G3: 5 of 8
+# single-coordinate +-2 px variants also win (artifacts/TASK-204/gates_13.json).
+LEVEL13_LINES = (((381, 679), (696, 744)),)
 LEVEL13_MAX_FRAMES = 3000
 
 # Level 14 (srcId 14) solution: one long ramp under the ball. The ball rolls down it into portal A, comes out of B
 # 152 px higher still moving right, lands on the ramp again, and after the second A -> B teleport it has enough
-# speed to clear wall A and hit the flag (won on physics frame 441). Searched headlessly with in-page stepped
-# frames (artifacts/TASK-077/design.md); 11 of 24 single-coordinate +-1..3 px variants also win, keep these exact
-# integer coordinates.
-LEVEL14_LINE = ((183, 580), (779, 608))
+# speed to clear wall A and hit the flag. TASK-204 (contact physics): the TASK-077 ramp (183,580)-(779,608) had only
+# 2 of 8 winning +-2 px variants; its right end moved 8 px left, (183,580)-(771,608), is robust (re-found with
+# tools/level_search.py, artifacts/TASK-204/gates_14.json).
+LEVEL14_LINE = ((183, 580), (771, 608))
 LEVEL14_MAX_FRAMES = 3000
 
 # Level 15 (srcId 15) solution (layout from artifacts/new_level15.json, TASK-113): one long line under the ball
