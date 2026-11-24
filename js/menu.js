@@ -137,6 +137,41 @@ function drawRestartIcon()
     ctx.fill()
     ctx.restore()
 }
+// '3x speed' box (concept 14): a double play arrow centred on the box on both axes and a Caveat '3x' label
+// (23 px, centre at x+48, y+49). Off: ink on the cyan hudBox; on (speedMul 3): green on a coral box.
+function drawSpeedIcon()
+{
+    const r = speedIconRect(), x = r[0], y = r[1], cx = x + r[2] / 2, cy = y + r[3] / 2
+    const on = speedMul == 3, c = on ? THEME.physicsOn : THEME.ink
+    const w = 17, h = 24, step = 14, ax = cx - (step + w) / 2
+    ctx.save()
+    if (on)
+    {
+        ctx.fillStyle = 'rgba(255,106,85,0.14)'
+        ctx.fillRect(x, y, r[2], r[3])
+        ctx.strokeStyle = THEME.coral; ctx.lineWidth = 1.5
+        ctx.shadowColor = THEME.coral; ctx.shadowBlur = 14
+        ctx.strokeRect(x, y, r[2], r[3])
+    }
+    else
+        hudBox(x, y)
+    ctx.restore()
+    for (const tx of [ax, ax + step])
+    {
+        ctx.save()
+        ctx.fillStyle = ctx.shadowColor = c; ctx.shadowBlur = 6
+        ctx.beginPath()
+        ctx.moveTo(tx, cy - h / 2); ctx.lineTo(tx + w, cy); ctx.lineTo(tx, cy + h / 2)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+    }
+    ctx.save()
+    ctx.font = '23px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillStyle = c; ctx.shadowColor = 'rgba(190,230,255,0.45)'; ctx.shadowBlur = 6
+    ctx.fillText('3x', x + 48, y + 49)
+    ctx.restore()
+}
 // Line counter option A: one mini line glyph per allowed line; used = coral, free = dashed cyan
 function drawLinesK()
 {

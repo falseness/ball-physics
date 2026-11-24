@@ -297,10 +297,10 @@ function editorStartPlaytest()
 }
 
 // HUD 'edit' box (play-test only): left of the restart box (x - 146), same size and style;
-// always at x - 219 so it does not jump when the restart box appears
+// always at x - 292 so it does not jump when the restart and speed boxes appear (TASK-187: speed took x - 219)
 function editIconRect()
 {
-    return [menuIconRect[0][0] - 219, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1]]
+    return [menuIconRect[0][0] - 292, menuIconRect[0][1], menuIconRect[1][0], menuIconRect[1][1]]
 }
 function inEditIcon(coords)
 {

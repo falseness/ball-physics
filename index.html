@@ -203,6 +203,41 @@
         {
             return levelStarted && !editorMode && !drawMenu && !levelCompletedWindow && drawMenuIcon
         }
+        // HUD '3x speed' box (artifacts/concepts/speed/14-arrow-centre-big3x-v2.png): left of the restart box,
+        // same 63x63 size and 10 px gap, visible exactly when the restart box is. A click toggles speedMul 1 <-> 3
+        // (the execution speed-up itself is TASK-188); saved under SPEED_STORE via the platform facade.
+        const SPEED_STORE = 'bp.speed.v1'
+        let speedMul = 1
+        function speedIconRect()
+        {
+            const r = restartIconRect()
+            return [r[0] - 73, r[1], r[2], r[3]]
+        }
+        function inSpeedIcon(coords)
+        {
+            const r = speedIconRect()
+            return collisionWithRect(coords[0], coords[1], r[0], r[1], r[0] + r[2], r[1] + r[3])
+        }
+        function speedIconVisible()
+        {
+            return restartIconVisible()
+        }
+        // values: the PLATFORM.storage.getMany result; anything but '3' means 1x
+        function speedLoad(values)
+        {
+            speedMul = values && values[SPEED_STORE] == '3' ? 3 : 1
+        }
+        function speedToggle()
+        {
+            speedMul = speedMul == 3 ? 1 : 3
+            try
+            {
+                const p = PLATFORM.storage.setMany({ [SPEED_STORE]: String(speedMul) })
+                if (p && p.catch)
+                    p.catch(function() {})
+            }
+            catch (e) {}
+        }
         document.addEventListener('click', function(event)
         {
             if (suppressClick)
@@ -299,6 +334,11 @@
             }
             else
             {
+                if (speedIconVisible() && inSpeedIcon(coords))
+                {
+                    speedToggle() // 1x <-> 3x; lines and selection untouched
+                    return
+                }
                 if (restartIconVisible() && inRestartIcon(coords))
                 {
                     selectionClear()
@@ -425,7 +465,7 @@
         {
             if (editorMode || drawMap || levelCompletedWindow || drawMenu || line || levelStarted)
                 return false
-            if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)) || (restartIconVisible() && inRestartIcon(coords)))
+            if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)) || (restartIconVisible() && inRestartIcon(coords)) || (speedIconVisible() && inSpeedIcon(coords)))
                 return false
             if (endStartPoint(coords))
                 return true // on a player line end with lines left: a line starts at that end
@@ -620,10 +660,11 @@
         async function boot()
         {
             await PLATFORM.init()
-            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE])
+            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE, SPEED_STORE])
             loadProgress(saved)
             editorBarLoad(saved)
             linesLoad(saved)
+            speedLoad(saved)
             if (!levelStarted && !line && !editorMode && !playtestLevel)
                 levelChoosed(thisLevel) // the current level with its saved lines
             await fontsReady

@@ -1481,6 +1481,194 @@ def sc_lines_backends(page, info):
     lines_out(info, 'lines_backends', d)
 
 
+
+# TASK-187: '3x speed' HUD box (UI + state; speed itself is TASK-188). speed_* scenarios add one record each to SPEED
+# (written to speed.json by run_scenario with the page's final console error count).
+SPEED = {}
+SPEED_STATE_JS = """async () => ({speedMul, visible: speedIconVisible(), restartVisible: restartIconVisible(),
+    rect: speedIconRect(), restartRect: restartIconRect(), levelStarted, physics, line: !!line,
+    nPlayer: lines.filter(l => l.type == 'player').length, linesK,
+    stored: (await PLATFORM.storage.getMany([SPEED_STORE]))[SPEED_STORE]})"""
+# counts drawSpeedIcon calls (draw.js calls it through the global name every frame while visible)
+SPEED_DRAW_COUNTER_JS = """() => { if (window.__speedDraws === undefined) { window.__speedDraws = 0; const f = drawSpeedIcon;
+    drawSpeedIcon = function() { ++window.__speedDraws; return f.apply(this, arguments) } } return window.__speedDraws }"""
+
+
+def speed_state(page):
+    return page.evaluate(SPEED_STATE_JS)
+
+
+def speed_run(page):
+    # level 1 (srcId 1, lineK 1): one player line with real input, then the run (the last line starts it; the play box
+    # is clicked only if it did not); a few frames so the ball is moving but still on the map
+    if page.evaluate("levels[thisLevel].srcId") != 1:
+        pick_level(page, page.evaluate("levelBySrc(1)"))
+    draw_seg(page, LINE_X)
+    if not page.evaluate("levelStarted"):
+        click(page, *page.evaluate(PLAY_ICON_JS))
+    frames(page, 4)
+    st = speed_state(page)
+    if not (st['levelStarted'] and st['visible']):
+        raise RuntimeError('run not started / speed box hidden: %s' % st)
+    return st
+
+
+def speed_click(page):
+    r = page.evaluate("speedIconRect()")
+    click(page, r[0] + r[2] / 2, r[1] + r[3] / 2)
+    return speed_state(page)
+
+
+def speed_out(info, name, data):
+    info['speed'] = data
+    SPEED[name] = data
+
+
+def sc_speed_off(page, info):
+    st = speed_run(page)
+    # '3x' label ink box in logical px (same font / anchor as drawSpeedIcon), excluded from the arrow bbox in centre.json
+    label = page.evaluate("""() => { const r = speedIconRect(); ctx.save(); ctx.font = '23px ' + THEME.fontStack;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const m = ctx.measureText('3x'); ctx.restore();
+        const x = r[0] + 48, y = r[1] + 49;
+        return [x - m.actualBoundingBoxLeft, y - m.actualBoundingBoxAscent, x + m.actualBoundingBoxRight, y + m.actualBoundingBoxDescent] }""")
+    speed_out(info, 'speed_off', {'state': st, 'label': label, 'pass': bool(st['speedMul'] == 1 and st['visible'])})
+
+
+def sc_speed_on(page, info):
+    speed_run(page)
+    st = speed_click(page)
+    speed_out(info, 'speed_on', {'state': st, 'pass': bool(st['speedMul'] == 3 and st['visible'] and st['stored'] == '3')})
+
+
+def sc_speed_toggle(page, info):
+    run = speed_run(page)
+    r = run['rect']
+    one = speed_click(page)   # mouse click: 1 -> 3
+    two = speed_click(page)   # mouse click: 3 -> 1
+    # the same with two touch taps (touchstart + touchend inside TAP_SLOP -> handleClick)
+    tx, ty = to_client(page, r[0] + r[2] / 2, r[1] + r[3] / 2)
+    page.touchscreen.tap(tx, ty)
+    frames(page)
+    tap1 = speed_state(page)
+    page.touchscreen.tap(tx, ty)
+    frames(page)
+    tap2 = speed_state(page)
+    seq = [run, one, two, tap1, tap2]
+    d = {'mouse': [s['speedMul'] for s in seq[:3]], 'touch': [two['speedMul'], tap1['speedMul'], tap2['speedMul']],
+         'nPlayer': [s['nPlayer'] for s in seq], 'lineStarted': [s['line'] for s in seq],
+         'stored': [s['stored'] for s in seq], 'rect': r, 'restartRect': run['restartRect']}
+    d['gapPx'] = run['restartRect'][0] - (r[0] + r[2])
+    d['pass'] = bool(d['mouse'] == [1, 3, 1] and d['touch'] == [1, 3, 1] and len(set(d['nPlayer'])) == 1
+                     and not any(d['lineStarted']) and d['stored'][1:] == ['3', '1', '3', '1']
+                     and r[2] == r[3] == 63 and d['gapPx'] == 10 and r[0] == run['restartRect'][0] - 73)
+    speed_out(info, 'speed_toggle', d)
+
+
+def bright_count(page, rect):
+    # screenshot of the rect (CSS px clip, device pixels in the PNG): pixels with every channel > 160
+    from PIL import Image
+    import io
+    x1, y1 = to_client(page, rect[0] + 3, rect[1] + 3)
+    x2, y2 = to_client(page, rect[0] + rect[2] - 3, rect[1] + rect[3] - 3)
+    im = Image.open(io.BytesIO(page.screenshot(clip={'x': x1, 'y': y1, 'width': x2 - x1, 'height': y2 - y1}))).convert('RGB')
+    return sum(1 for p in im.getdata() if min(p) > 160)
+
+
+def sc_speed_hidden(page, info):
+    if page.evaluate("levels[thisLevel].srcId") != 1:
+        pick_level(page, page.evaluate("levelBySrc(1)"))
+    page.evaluate(SPEED_DRAW_COUNTER_JS)
+    frames(page, 3)
+    before = speed_state(page)
+    r = before['rect']
+    draws0 = page.evaluate("window.__speedDraws")
+    hiddenBright = bright_count(page, r)
+    clicked = speed_click(page)  # before the run: no toggle (the box is not there)
+    page.keyboard.press('Escape')
+    page.evaluate("() => { line = false; bounce.cancel(); levelChoosed(thisLevel) }")  # drop a line the click may have started
+    frames(page)
+    shown = speed_run(page)
+    page.evaluate("() => { window.__speedDraws = 0 }")
+    frames(page, 3)
+    draws1 = page.evaluate("window.__speedDraws")
+    shownBright = bright_count(page, r)
+    d = {'before': before, 'drawCallsHidden': draws0, 'brightHidden': hiddenBright, 'afterClickHidden': clicked,
+         'shown': shown, 'drawCallsShown': draws1, 'brightShown': shownBright}
+    d['pass'] = bool(not before['visible'] and not before['levelStarted'] and draws0 == 0 and hiddenBright == 0
+                     and clicked['speedMul'] == 1 and clicked['stored'] is None
+                     and shown['visible'] and draws1 > 0 and shownBright > 100)
+    speed_out(info, 'speed_hidden', d)
+
+
+def sc_speed_reload(page, info):
+    speed_run(page)
+    on = speed_click(page)
+    reload_page(page)
+    after = speed_state(page)
+    d = {'set': on, 'afterReload': after}
+    d['pass'] = bool(on['speedMul'] == 3 and on['stored'] == '3' and after['speedMul'] == 3 and after['stored'] == '3')
+    speed_out(info, 'speed_reload', d)
+
+
+SPEED_CONCEPT = os.path.join(ROOT, 'artifacts', 'concepts', 'speed', '14-arrow-centre-big3x-v2.png')
+
+
+def speed_centre(out_dir, page_dpr):
+    # centre.json: bright-pixel bbox of the double arrow in speed_off.png, inside the box (3 px stroke margin)
+    # and outside the measured '3x' label box; centre vs the box centre in logical px
+    from PIL import Image
+    d = SPEED.get('speed_off')
+    if not d:
+        return
+    r = d['state']['rect']
+    lab = d.get('label')
+    k = page_dpr
+    im = Image.open(os.path.join(out_dir, 'speed_off.png')).convert('RGB')
+    xs, ys = [], []
+    for py in range(int((r[1] + 3) * k), int((r[1] + r[3] - 3) * k)):
+        for px in range(int((r[0] + 3) * k), int((r[0] + r[2] - 3) * k)):
+            lx, ly = px / k, py / k
+            if lab and lab[0] - 2 <= lx <= lab[2] + 2 and lab[1] - 2 <= ly <= lab[3] + 2:
+                continue
+            if min(im.getpixel((px, py))) > 200:
+                xs.append(px); ys.append(py)
+    bbox = [min(xs) / k, min(ys) / k, (max(xs) + 1) / k, (max(ys) + 1) / k]
+    c = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
+    box_c = [r[0] + r[2] / 2, r[1] + r[3] / 2]
+    err = [abs(c[0] - box_c[0]), abs(c[1] - box_c[1])]
+    out = {'dpr': k, 'rect': r, 'labelBox': lab, 'threshold': 'min(r,g,b)>200', 'nPixels': len(xs),
+           'arrowBboxLogical': bbox, 'arrowCentre': c, 'boxCentre': box_c, 'errPx': err,
+           'pass': bool(err[0] <= 1 and err[1] <= 1)}
+    with open(os.path.join(out_dir, 'centre.json'), 'w') as f:
+        json.dump(out, f, separators=(',', ':'))
+    return out
+
+
+def speed_hud_compare(out_dir):
+    # hud_compare.png: the real HUD row (2x crop 930..1270 x 10..96, scaled like the concept inset, k 1.45) in both
+    # states on the left, the concept-14 inset block (both states) on the right
+    from PIL import Image, ImageDraw
+    try:
+        off = Image.open(os.path.join(out_dir, 'speed_off.png')).convert('RGB')
+        on = Image.open(os.path.join(out_dir, 'speed_on.png')).convert('RGB')
+    except FileNotFoundError:
+        return
+    con = Image.open(SPEED_CONCEPT).convert('RGB')
+    k = off.width / 1280
+    crop = lambda im, kk: im.crop((int(930 * kk), int(10 * kk), int(1270 * kk), int(96 * kk)))
+    W, H = int(340 * 1.45 * 2), int(86 * 1.45 * 2)
+    a, b = crop(off, k).resize((W, H)), crop(on, k).resize((W, H))
+    ins = con.crop((755 * 2, 474 * 2, 1266 * 2, 790 * 2))
+    hgt = max(2 * H + 120, ins.height + 60)
+    out = Image.new('RGB', (W + ins.width + 60, hgt), (4, 14, 28))
+    dr = ImageDraw.Draw(out)
+    out.paste(a, (20, 40)); out.paste(b, (20, 80 + H))
+    out.paste(ins, (W + 40, 40))
+    dr.text((20, 10), 'game speed_off.png (1x)', fill=(200, 230, 255))
+    dr.text((20, 50 + H), 'game speed_on.png (3x)', fill=(200, 230, 255))
+    dr.text((W + 40, 10), 'concept 14-arrow-centre-big3x-v2.png inset (1x / 3x on)', fill=(200, 230, 255))
+    out.save(os.path.join(out_dir, 'hud_compare.png'))
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -1542,12 +1730,18 @@ SCENARIOS = {
     'lines_sha_mismatch': sc_lines_sha_mismatch,
     'lines_storage_blocked': sc_lines_storage_blocked,
     'lines_backends': sc_lines_backends,
+    'speed_off': sc_speed_off,
+    'speed_on': sc_speed_on,
+    'speed_toggle': sc_speed_toggle,
+    'speed_hidden': sc_speed_hidden,
+    'speed_reload': sc_speed_reload,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
 PAGE_OPTIONS = {
     'touch_line': {'has_touch': True},
     'map_touch': {'has_touch': True},
+    'speed_toggle': {'has_touch': True},
 }
 # Scripts added with page.add_init_script() before the first load (they run before every page script).
 PAGE_INIT = {
@@ -1627,6 +1821,27 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             json.dump(LINES, f, separators=(',', ':'))
         if not d['pass']:
             errors.append('lines check failed: %s' % name)
+    if name.startswith('speed_'):  # TASK-187: one record per scenario + the page's final console error count
+        d = info.get('speed')
+        if d is None:
+            d = SPEED[name] = {'pass': False}
+            errors.append('speed scenario wrote no data: %s' % name)
+        d['consoleErrors'] = len(errors)
+        d['errors'] = list(errors)
+        d['pass'] = bool(d['pass'] and not errors)
+        with open(os.path.join(out_dir, 'speed.json'), 'w') as f:
+            json.dump(SPEED, f, separators=(',', ':'))
+        if not d['pass']:
+            errors.append('speed check failed: %s' % name)
+        try:
+            if name == 'speed_off' and d['pass']:
+                c = speed_centre(out_dir, dpr)
+                if not (c and c['pass']):
+                    errors.append('centre check failed: %s' % c)
+            if name in ('speed_off', 'speed_on'):
+                speed_hud_compare(out_dir)
+        except Exception as e:
+            errors.append('speed evidence: %s: %s' % (type(e).__name__, e))
     if '_composite' in info:  # TASK-182 map_card_edge: one tile per hovered edge case
         composite(info.pop('_composite'), os.path.join(out_dir, 'map_card_edge.png'))
     if name in CARD_FILES:  # TASK-182 card checks + the page's final console error count
