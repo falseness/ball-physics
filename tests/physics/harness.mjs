@@ -118,3 +118,29 @@ export function runFrames(w, b, n, onStep)
     return frames
 }
 export const round = (v, d = 6) => (typeof v === 'number' && isFinite(v)) ? +v.toFixed(d) : v
+
+// Same sources and stubs as makeWorld, but js/sprite.js + js/ball.js are compiled inside one function scope
+// (new Function) instead of a vm context: the game globals become closure variables, which is ~60x faster
+// in node 12 (vm context globals go through interceptors). TASK-198 uses it for the fuzz runs; its
+// selftest checks that it steps exactly like makeWorld.
+let fastFactory = null
+export function makeFastWorld(segments, opts = {})
+{
+    if (!fastFactory)
+    {
+        const src = ['js/sprite.js', 'js/ball.js'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n')
+        fastFactory = new Function('G', `var lines = [], gravitationalAcceleration = G, GAME_W = 1280, GAME_H = 800
+            function portalHosts() { return null }
+            function portalCaptureZone() { return false }
+            function portalHostCollision() { throw new Error('no portals in the physics harness') }
+            ${src}
+            return { Ball: Ball, setLines: function (l) { lines = l } }`)
+    }
+    const W = fastFactory(opts.g === undefined ? G : opts.g)
+    W.setLines(segments.map(([x1, y1, x2, y2]) => ({ posX: x1, posY: y1, posX2: x2, posY2: y2 })))
+    return {
+        segments,
+        ball(x, y, vx = 0, vy = 0, r = R) { return new W.Ball(r, x, y, vx, vy, '#000', 'ball') },
+        step(b) { b.physics(); b.move() },
+    }
+}
