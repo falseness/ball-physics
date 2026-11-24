@@ -10,23 +10,28 @@ levels.push(
     flagY: 450,
     flagRotate: 0,
     lineK: 1,
+    // TASK-202: the tall back wall (100,450)-(100,200) caught almost any leftward bounce (random one-line
+    // win rate 14.7 % under the TASK-199 contact physics); a shallow cup with two 70 px walls instead.
     lines: [
-        new Line(100, 450, 300, 450, dotRadius, levelLineColor, 'line'), 
-        new Line(100, 450, 100, 200, dotRadius, levelLineColor, 'line')],
+        new Line(100, 450, 300, 450, dotRadius, levelLineColor, 'line'),
+        new Line(100, 450, 100, 380, dotRadius, levelLineColor, 'line'),
+        new Line(300, 450, 300, 380, dotRadius, levelLineColor, 'line')],
     unlock: 1
 }, 
 {
     
+    // TASK-202: under the TASK-199 contact physics the ball drops through the V's gap onto the old shelf
+    // (450,400)-(280,400) and wins with no line; the shelf and flag moved left, under the V's left arm.
     ballX: 100,
     ballY: 15,
-    flagX: 360,
+    flagX: 100,
     flagY: 400,
     flagRotate: 0,
     lineK: 1,
     lines: [
         new Line(0, 50, 200, 250, dotRadius, levelLineColor, 'line'),
         new Line(235, 235, 420, 50, dotRadius, levelLineColor, 'line'),
-        new Line(450, 400, 280, 400, dotRadius, levelLineColor, 'line')
+        new Line(180, 400, 20, 400, dotRadius, levelLineColor, 'line')
     ],
     unlock: 0
 },
@@ -37,9 +42,14 @@ levels.push(
     flagY: 340,
     flagRotate: -0.96667 + Math.PI * 1.5,
     lineK: 2,
+    // TASK-202: under the TASK-199 contact physics one line won (165 of 12894 one-line lattice candidates): the ball
+    // ran down any falling line into the floor/slope joint and up the slope into the flag. A wall at the joint and a
+    // roof box the flag in; it is open only to the right (x 450, y 220..300), so the ball must be sent back from there.
     lines: [
         new Line(100, 400, 300, 400, dotRadius, levelLineColor, 'line'),
-        new Line(300, 400, 450, 300, dotRadius, levelLineColor, 'line')],
+        new Line(300, 400, 450, 300, dotRadius, levelLineColor, 'line'),
+        new Line(300, 400, 300, 220, dotRadius, levelLineColor, 'line'),
+        new Line(300, 220, 450, 220, dotRadius, levelLineColor, 'line')],
     unlock: 0
 },
 {

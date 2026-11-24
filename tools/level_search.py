@@ -80,10 +80,14 @@ FIELD = (1280, 800)
 # In-page evaluation of a batch of candidates. args: [idx, cands, maxF, still, simulate]
 EVAL_JS = r"""([idx, cands, maxF, still, simulate]) => {
 const r2 = x => Math.round(x * 100) / 100
+// TASK-202: levelChoosed() restores the saved draft lines (TASK-185 js/linestore.js linesRestore), so after the first
+// candidate every later one started with the previous candidate's lines (invalid placement). levelReset() is the
+// level from scratch (ball, own lines, linesK 0); older trees without it fall back to levelChoosed.
+const fresh = i => typeof levelReset === 'function' ? levelReset(i) : levelChoosed(i)
 const out = []
 for (const c of cands) {
   editorMode = false; playtestLevel = null; drawMenu = false; levelCompletedWindow = false; line = false
-  thisLevel = idx; levelChoosed(idx)
+  thisLevel = idx; fresh(idx)                    // fresh level: no restored draft/passed lines (TASK-202)
   let ok = true
   for (const s of c) {
     const n0 = lines.length, k0 = linesK
@@ -119,7 +123,7 @@ for (const c of cands) {
            embedded: emb.embedded, ...(emb.embedded ? {embedFrame: emb.embedFrame, ball: [r2(ball.posX), r2(ball.posY)]} : {})})
 }
 editorMode = false; playtestLevel = null; physics = false; levelStarted = false; levelCompletedWindow = false; line = false
-levelChoosed(idx)
+fresh(idx)
 return out }"""
 
 # --level (definition index, srcId - 1) -> play-order index; not found (e.g. INDEX == levels.length): INDEX itself

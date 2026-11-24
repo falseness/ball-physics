@@ -632,6 +632,21 @@ LEVEL31_MAX_FRAMES = 1500
 LEVEL32_LINES = [((154, 360), (217, 390)), ((326, 645), (420, 670)), ((893, 682), (863, 598))]
 LEVEL32_MAX_FRAMES = 1500
 
+# Levels 1-5 (srcId 1-5, no portals) references re-found for the TASK-199/200 contact physics (TASK-202): each is the
+# best of the winning random candidates of tools/level_search.py sample runs, ranked by the share of its single-
+# coordinate +-2 px variants that also win (all 100 %), with every drop-one variant losing (artifacts/TASK-202/search).
+# Levels 1, 2 and 3 got new layouts in TASK-202 (js/levels.js). Keep these exact integer coordinates.
+LEVEL1_LINES = [((537, 248), (83, 689))]
+LEVEL1_MAX_FRAMES = 1500
+LEVEL2_LINES = [((532, 325), (99, 714))]
+LEVEL2_MAX_FRAMES = 1500
+LEVEL3_LINES = [((387, 523), (1204, 103)), ((237, 446), (171, 44))]
+LEVEL3_MAX_FRAMES = 1500
+LEVEL4_LINES = [((100, 204), (774, 664)), ((548, 272), (296, 689))]
+LEVEL4_MAX_FRAMES = 1500
+LEVEL5_LINES = [((192, 621), (1083, 9))]
+LEVEL5_MAX_FRAMES = 1500
+
 # Counts game frames that run physics and remembers the frame on which the level was completed.
 LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
@@ -641,12 +656,13 @@ LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
         return r } }"""
 
 
-def play_solution(page, info, src, segments, max_frames, key, via=('A', 'B')):
+def play_solution(page, info, src, segments, max_frames, key, via=('A', 'B'), portals=2):
     # Pause menu -> level square index + 1, real clicks; then play the solution with real mouse
     # input: draw each line (click, move, click), press start (unless the last allowed line already
     # started physics), and wait until the level is completed
-    # (at most max_frames physics frames) with at least one via[0] -> via[1] teleport.
-    index = place_and_start(page, info, src, segments, key)
+    # (at most max_frames physics frames) with at least one via[0] -> via[1] teleport (via None: a level without
+    # portals, no teleport required; TASK-202).
+    index = place_and_start(page, info, src, segments, key, portals=portals)
     page.wait_for_function("levelCompletedWindow || window.__l11Frames >= %d" % max_frames,
                            timeout=180000, polling=100)
     r = page.evaluate("""i => ({levelCompleted: levelCompletedWindow, winFrame: window.__l11Win,
@@ -654,7 +670,7 @@ def play_solution(page, info, src, segments, max_frames, key, via=('A', 'B')):
         teleports: portalState.teleports.map(t => ({step: t.step, from: t.from, to: t.to,
             before: t.before, after: t.after}))})""", index)
     info['play'] = r
-    ab = [t for t in r['teleports'] if t['from'] == via[0] and t['to'] == via[1]]
+    ab = [t for t in r['teleports'] if t['from'] == via[0] and t['to'] == via[1]] if via else [True]
     if not (r['levelCompleted'] and r['winFrame'] is not None and r['winFrame'] <= max_frames and ab):
         raise RuntimeError('%s not won with a %s->%s teleport: %s' % (key, via[0], via[1], {k: r[k] for k in (
             'levelCompleted', 'winFrame', 'frames', 'ball')}))
@@ -662,7 +678,7 @@ def play_solution(page, info, src, segments, max_frames, key, via=('A', 'B')):
     frames(page)
 
 
-def place_and_start(page, info, src, segments, key, before_draw_js=None):
+def place_and_start(page, info, src, segments, key, before_draw_js=None, portals=2):
     # play_solution's input part: menu -> 'Levels' -> map slot, draw the lines with real clicks, start physics.
     # before_draw_js runs right after the frame counter is installed (before any line is drawn).
     # src is the level's source id (definition number, TASK-177); its map slot holds levelBySrc(src).
@@ -675,7 +691,7 @@ def place_and_start(page, info, src, segments, key, before_draw_js=None):
     st = page.evaluate("({thisLevel, drawMenu, portals: (curLevel().portals || []).length})")
     info[key] = st
     info['srcId'] = page.evaluate("levels[thisLevel].srcId")
-    if st != {'thisLevel': index, 'drawMenu': False, 'portals': 2} or info['srcId'] != src:
+    if st != {'thisLevel': index, 'drawMenu': False, 'portals': portals} or info['srcId'] != src:
         raise RuntimeError('%s not loaded: %s' % (key, st))
     n0 = page.evaluate("lines.length")
     # installed before drawing: physics is off until the start (or the last allowed line), so the
@@ -706,6 +722,26 @@ def place_and_start(page, info, src, segments, key, before_draw_js=None):
         click(page, x, y)
         info['startPressed'] = page.evaluate("({physics, levelStarted})")
     return index
+
+
+def sc_level1(page, info):
+    play_solution(page, info, 1, LEVEL1_LINES, LEVEL1_MAX_FRAMES, 'level1', via=None, portals=0)
+
+
+def sc_level2(page, info):
+    play_solution(page, info, 2, LEVEL2_LINES, LEVEL2_MAX_FRAMES, 'level2', via=None, portals=0)
+
+
+def sc_level3_win(page, info):
+    play_solution(page, info, 3, LEVEL3_LINES, LEVEL3_MAX_FRAMES, 'level3', via=None, portals=0)
+
+
+def sc_level4(page, info):
+    play_solution(page, info, 4, LEVEL4_LINES, LEVEL4_MAX_FRAMES, 'level4', via=None, portals=0)
+
+
+def sc_level5(page, info):
+    play_solution(page, info, 5, LEVEL5_LINES, LEVEL5_MAX_FRAMES, 'level5', via=None, portals=0)
 
 
 def sc_level11(page, info):
@@ -2032,7 +2068,7 @@ def speed_hud_compare(out_dir):
 
 SCENARIOS = {
     'start': sc_start,
-    'level3': sc_level3,
+    'level3_open': sc_level3,  # level 3 opened, no lines (was 'level3' before TASK-202)
     'drawing': sc_drawing,
     'placed': sc_placed,
     'running': sc_running,
@@ -2047,6 +2083,11 @@ SCENARIOS = {
     'editor': sc_editor,
     'trail': sc_trail,
     'touch_line': sc_touch_line,
+    'level1': sc_level1,
+    'level2': sc_level2,
+    'level3': sc_level3_win,  # TASK-202: the srcId 3 reference win, like every other levelNN
+    'level4': sc_level4,
+    'level5': sc_level5,
     'level11': sc_level11,
     'level12': sc_level12,
     'level13': sc_level13,

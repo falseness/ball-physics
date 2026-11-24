@@ -13,7 +13,8 @@
 //       --chains A-B: seeds A..B, N scenes each, each a random chain of 2-5 connected segments (shared end
 //       points; convex and concave joints, segments in random order and direction, a quarter with the joint
 //       end points up to 1 px apart, i.e. within dotRadius) and a ball dropped onto it from above or below.
-//       --levels: every shoot levelNN reference solution inside the game (tests/physics/invariants_browser.py).
+//       --levels: every shoot levelNN reference solution inside the game (tests/physics/invariants_browser.py);
+//       --level-list 1,2,3: only these srcIds (TASK-202).
 //   node tests/physics/invariants.mjs --browser --portal-fuzz A-B [--portal-cases N] [--portal-frames F] [--out FILE]
 //       TASK-201: portal fuzz scenes inside the game (Playwright, tests/physics/invariants_browser.py
 //       --portal-fuzz SEED, one child process per seed in parallel): N scenes per seed (default 2000) from the
@@ -201,10 +202,11 @@ function runPortalFuzz(seeds, cases, frames)
     })))
 }
 
-function runLevels(levelFrames)
+function runLevels(levelFrames, levelList)
 {
     const args = [path.join(HERE, 'invariants_browser.py')]
     if (levelFrames) args.push('--frames', String(levelFrames))
+    if (levelList) args.push('--levels', String(levelList)) // TASK-202: comma-separated srcIds
     return new Promise((resolve, reject) =>
     {
         const p = spawn('python3', args, { stdio: ['ignore', 'pipe', 'inherit'] })
@@ -391,7 +393,7 @@ async function main()
             out.portalFuzz = { scenesPerSeed: pcases, frames: pframes, seeds: r, pageErrors: [].concat(...r.map(x => x.pageErrors)), total: Core.merge(r) }
         }))
     if (has('--levels'))
-        jobs.push(runLevels(arg('--level-frames', null)).then(r =>
+        jobs.push(runLevels(arg('--level-frames', null), arg('--level-list', null)).then(r =>
         {
             out.levels = { list: r.levels, pageErrors: r.pageErrors, total: Core.merge(r.levels) }
         }))
