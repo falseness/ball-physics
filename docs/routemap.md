@@ -46,6 +46,60 @@ All storage goes through the platform facade (`PLATFORM.storage`, see docs/platf
 local backend keeps values in memory). To reset progress with the local backend:
 `localStorage.removeItem('bp.progress.v1')`.
 
+## Storage (platform facade)
+
+The game never touches `localStorage` directly; every read and write goes through `PLATFORM.storage`
+(`platform.js` + one backend under `platform/backends/`, copied as-is from grapnelninja c61a049).
+Boot (`boot()` in index.html) awaits `PLATFORM.init()`, then reads all three keys in one
+`PLATFORM.storage.getMany([...])` call before the first frame and sets `bootComplete = true`.
+
+| key | owner | value |
+| --- | --- | --- |
+| `bp.progress.v1` | js/levels.js (`PROGRESS_STORE`, `loadProgress` / `saveProgress`) | `{"solved": [srcId, ...]}` |
+| `bp.lines.v1` | js/linestore.js (`LINES_STORE`, `linesLoad` / `linesSaveDraft` / `linesSavePassed`) | `{[srcId]: {draft, passed, sha}}`, see Saved lines |
+| `bp.editorBar.v1` | js/editor.js (`EDITOR_BAR_STORE`, `editorBarLoad` / `editorBarSave`) | editor toolbar position |
+
+Writes use `PLATFORM.storage.setMany`; a throwing or rejecting backend (blocked storage) is swallowed,
+so the game keeps playing with in-memory values and no console errors.
+
+Switching the backend: index.html loads `platform/backends/local.js` and then `platform.js`. For a
+portal build add the portal SDK tag (if any) and the portal backend tag right after `local.js`, e.g.
+
+```html
+<script src = "platform/backends/local.js"></script>
+<script src = "platform/backends/itch.js"></script>
+<script src = "platform.js"></script>
+```
+
+The SDK tags and backend ids (`local`, `itch`, `gamepix`, `y8`, `playgama`) are listed in
+docs/platform-sdk.md ("Selecting a backend"). `python3 tests/platform/test_backends.py --out <json>`
+does this tag swap in a Playwright route for all five backends and checks a storage round trip and
+zero page errors.
+
+## Saved lines
+
+The player's lines are saved per level in `bp.lines.v1`, keyed by `srcId` (never the play-order
+index). When a level is opened (`levelChoosed(i)` = `levelReset(i)` + `linesRestore(i)`):
+
+- a) level not passed yet: the last state of the lines is shown (`draft`, written by
+  `linesSaveDraft` after a line is drawn, a dragged line is dropped, or a line is deleted);
+- b) level passed at least once: the lines of the last pass are shown (`passed`, written by
+  `linesSavePassed` once per real win). `passed` wins over `draft`; nothing saved means no lines.
+
+At most `lineK` lines are restored; `linesK` is set to the restored count. Saved values survive a page
+reload (they are read at boot through the facade).
+
+Sha guard: each entry stores `sha = levelGeometrySha(level)` (FNV-1a over the level's lines, portals,
+ball start and flag). If the level's geometry changes (edited in the editor), the sha no longer matches,
+the stale entry is ignored and the next save replaces it, so lines are never restored onto a different
+layout. The editor and play-tests (`editorMode`, `playtestLevel`) never read or write this key.
+
+Restart: the menu 'restart', the win-window 'restart' and a ball falling off the map call
+`restartKeepLines()`: the ball and level go back to the start and the player's current lines (and
+`linesK`) are kept, not reloaded from storage. `restart()` (used by tests/portal/sim.py) is
+`levelChoosed(thisLevel)` and restores the saved lines. Checked by the `lines_*` scenarios of
+tests/visual/shoot.py.
+
 ## Adding a slot for a new level
 
 1. Add the level to `js/levels.js` (at the end, so existing srcIds do not change).
