@@ -44,6 +44,8 @@
     <script src = "js/bounce.js"></script>
     <script src = "js/portal.js"></script>
     <script src = "js/editor.js"></script>
+    <script src = "js/routemap.js"></script>
+    <script src = "js/mapdraw.js"></script>
     <script src = "js/draw.js"></script>
     <script src = "js/select.js"></script>
     <script src = "js/visualsperf.js"></script>
@@ -202,6 +204,8 @@
         // One click (mouse) or tap (touch) at logical coords
         function handleClick(coords)
         {
+            if (drawMap)
+                return // route map: drawing only for now (map input: TASK-181)
             if (editorMode)
             {
                 editorClick(coords)

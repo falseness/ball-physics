@@ -117,6 +117,11 @@ function draw()
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.drawImage(bgCanvas, 0, 0)
     applyViewTransform()
+    if (drawMap && !editorMode)
+    {
+        mapDraw() // full-screen route map (js/mapdraw.js)
+        return
+    }
     if (editorMode)
     {
         editorDraw()

@@ -884,6 +884,39 @@ def sc_l24_center_entry(page, info):
         raise RuntimeError('l24_center_entry: ball EMBEDDED at frame %s (%s frames)' % (r['embedFrame'], r['embedFrames']))
 
 
+# TASK-180 route map (drawing only). map: no progress; map_progress: new levels 1-7 + the first two extra-branch
+# levels solved through window.mapDebug. Both write their entry into state.json (MAP_STATE) in the task dir.
+MAP_STATE = {}
+MAP_STATE_JS = """() => { const M = ROUTEMAP, a = routeAssign(levels), s = window.mapState;
+    const solved = i => levels[i].unlock == 2;
+    const expectedCoral = M.hops.filter(h => a[h[0]] !== undefined && a[h[1]] !== undefined && solved(a[h[0]]) && solved(a[h[1]])).length;
+    let expectedNext = levels.findIndex(l => l.unlock != 2) + 1;
+    return {drawMap, nLevels: levels.length, solvedNumbers: levels.map((l, i) => l.unlock == 2 ? i + 1 : 0).filter(n => n),
+        solvedSrcIds: progressSolved(), next: s.next, expectedNext, coralHops: s.coralHops, expectedCoralHops: expectedCoral,
+        hops: s.hops, lamps: s.lamps, flags: s.flags, platforms: s.platforms, obstacles: s.obstacles,
+        obstaclesInData: M.obstacles.length, portals: s.portals, ball: s.ball, builds: s.builds,
+        menuIconVisible: drawMenuIcon, menuIconRect, slots: s.slots} }"""
+
+
+def map_open(page, info, solved_js):
+    solved = page.evaluate(solved_js)
+    nxt = page.evaluate("ids => window.mapDebug(ids)", solved)
+    frames(page, 4)
+    st = page.evaluate(MAP_STATE_JS)
+    st['hookNext'] = nxt
+    info['mapstate'] = st
+
+
+def sc_map(page, info):
+    map_open(page, info, "[]")
+
+
+def sc_map_progress(page, info):
+    map_open(page, info, """(() => { const ids = levels.slice(0, 7).map(l => l.srcId);
+        const extra = levels.map((l, i) => i).filter(i => routeBranch(levels, i) === 'extra').slice(0, 2);
+        return ids.concat(extra.map(i => levels[i].srcId)) })()""")
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -928,6 +961,8 @@ SCENARIOS = {
     'progress_reload': sc_progress_reload,
     'progress_storage_blocked': sc_progress_storage_blocked,
     'progress_garbage': sc_progress_garbage,
+    'map': sc_map,
+    'map_progress': sc_map_progress,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
@@ -940,6 +975,8 @@ PAGE_INIT = {
     'progress_garbage': "localStorage.setItem('bp.progress.v1', '{solved: [1, 2,')",
 }
 OUT_DIR = None
+# Screenshot file name when it differs from the scenario name
+SHOT_NAME = {'map': 'map_fresh'}
 
 
 def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
@@ -961,7 +998,7 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
                 "async js => JSON.parse(JSON.stringify(await (0, eval)(js)) ?? 'null')", eval_js)
             frames(page)
         entry['state'] = page.evaluate(STATE_JS)
-        page.screenshot(path=os.path.join(out_dir, name + '.png'))
+        page.screenshot(path=os.path.join(out_dir, SHOT_NAME.get(name, name) + '.png'))
         if '_path' in info:  # path strip next to the screenshot (TASK-164)
             path_strip(os.path.join(out_dir, name + '.png'), info.pop('_path'), (info.get('rimtrap') or info['embed'])['portals'],
                        os.path.join(out_dir, name + '_path.png'))
@@ -986,6 +1023,20 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             json.dump(d, f, separators=(',', ':'))
         if not d['pass']:
             errors.append('progress check failed: %s' % PROGRESS_FILES[name])
+    if 'mapstate' in info:  # TASK-180: route map state + the page's final console error count
+        d = info['mapstate']
+        d['consoleErrors'] = len(errors)
+        d['errors'] = list(errors)
+        want_next = 8 if name == 'map_progress' else 1
+        d['pass'] = bool(not errors and d['next'] == want_next == d['expectedNext'] == d['hookNext']
+                         and d['coralHops'] == d['expectedCoralHops'] and d['lamps'] == 1 and d['drawMap']
+                         and d['obstacles'] == d['obstaclesInData'] and d['portals'] == 2 and d['ball'] is not None
+                         and d['platforms'] == d['nLevels'])
+        MAP_STATE[name] = d
+        with open(os.path.join(out_dir, 'state.json'), 'w') as f:
+            json.dump(MAP_STATE, f, separators=(',', ':'))
+        if not d['pass']:
+            errors.append('map state check failed: %s' % name)
     return entry
 
 
