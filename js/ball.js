@@ -249,12 +249,13 @@ class Ball extends Sprite
             if (!this.segContact(s, out, k))
                 continue
             // TASK-201 (TASK-074/173): a wall-portal host piece (portalHostSegs): a ball being captured by a portal
-            // ignores a host-line contact in its capture zone; a ball moving away from the portal's front ignores the
-            // gap edges (the rims next to the opening it may have just left)
+            // ignores a host-line contact in its capture zone (portalCaptureZone); a ball moving away from the portal's
+            // front ignores the pieces (as the old portalHostCollision did: an exit placed next to a rim may overlap
+            // them, it moves out freely) except at the host line's own ends
             if (s.hostList !== undefined)
             {
                 const e = out[k * CS + 6], hostEnd = (e === 1 && s.endA) || (e === 2 && s.endC)
-                if (s.away ? this.gapEdge(s, out[k * CS + 3], out[k * CS + 4])
+                if (s.away ? !hostEnd
                            : portalCaptureZone(this, s.hostList, out[k * CS + 3], out[k * CS + 4], hostEnd))
                     continue
             }
@@ -272,15 +273,6 @@ class Ball extends Sprite
             ++m
         }
         return m
-    }
-    // The closest point (qx, qy) on host piece s (portalHostSegs) is one of its gap edges (an end that is a portal
-    // rim, not an end of the host line), up to 1e-6 px: a touch exit at s = +-h lands exactly beside the rim and
-    // the closest point's line parameter may round to just inside the piece
-    gapEdge(s, qx, qy)
-    {
-        const E2 = 1e-12
-        return (!s.endA && (qx - s.posX) * (qx - s.posX) + (qy - s.posY) * (qy - s.posY) <= E2) ||
-            (!s.endC && (qx - s.posX2) * (qx - s.posX2) + (qy - s.posY2) * (qy - s.posY2) <= E2)
     }
     // Contact j lies on an end V of its line: it is a ghost when another line joined at V (an end within CHAIN_JOIN)
     // has the centre projecting into it (past its joined end: the normal (c - V) is outside the joint's cone) and is

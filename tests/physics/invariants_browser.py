@@ -39,19 +39,54 @@ LOOP_JS = r"""window.__invRun = (label, maxSteps, flag) => {
     // solid geometry for I1: host lines minus their openings
     const cut = {}
     P.forEach(p => { if (typeof p.line == 'number') (cut[p.line] = cut[p.line] || []).push(p) })
-    const solid = []
+    const solid = [], solidOwner = []
+    const push = (s, k) => { solid.push(s); solidOwner.push(k) }
     all.forEach((s, k) => {
-        if (!cut[k]) { solid.push(s); return }
+        if (!cut[k]) { push(s, k); return }
         const dx = s[2] - s[0], dy = s[3] - s[1], L = Math.hypot(dx, dy)
         const iv = cut[k].map(p => { const u = ((p.x - s[0]) * dx + (p.y - s[1]) * dy) / (L * L), w = p.h / L; return [u - w, u + w] })
             .sort((a, b) => a[0] - b[0])
         let t = 0
-        iv.forEach(([a, b]) => { if (a > t) solid.push([s[0] + t * dx, s[1] + t * dy, s[0] + a * dx, s[1] + a * dy]); t = Math.max(t, b) })
-        if (t < 1) solid.push([s[0] + t * dx, s[1] + t * dy, s[2], s[3]])
+        iv.forEach(([a, b]) => { if (a > t) push([s[0] + t * dx, s[1] + t * dy, s[0] + a * dx, s[1] + a * dy], k); t = Math.max(t, b) })
+        if (t < 1) push([s[0] + t * dx, s[1] + t * dy, s[2], s[3]], k)
     })
     const points = []
     P.forEach(p => portalRims(p).forEach(q => points.push(q)))
-    const chk = InvariantsCore.makeChecker({ g: gravitationalAcceleration, r: ball.radius, segs: all, points, solid, label })
+    // TASK-201: the portal capture zone (TASK-074 / TASK-173 rule, from the portal geometry): a ball in front of wall
+    // portal P (d > 0) moving toward it (v.n < 0) whose closest point q on P's host line lies within h + r of P's
+    // centre along t (q a host line end: the centre within h + r / 2) is being captured, unless the touch exit is
+    // refused (portalTouchExitBlocked, a line at the exit spot). That host line is not a contact for it (zone).
+    const R = ball.radius, hostOf = P.map(p => typeof p.line == 'number' ? p.line : -1)
+    // I1 (post-step state, post = true) also skips host line k for a ball in front of a portal on it moving away from
+    // that front, unless its closest solid point is a real end of the line: the portal's exit placement (local
+    // (-clamp(s), d) with the entry depth d < r) may leave the ball overlapping the host line next to the opening,
+    // and the game lets it move out freely (only the host line's own ends stay solid for it, js/ball.js contacts()).
+    const isEnd = (c, s) => (c[0] === s[0] && c[1] === s[1]) || (c[0] === s[2] && c[1] === s[3])
+    const zone = (x, y, vx, vy, post) => {
+        let out = null
+        for (let i = 0; i < P.length; ++i) {
+            const k = hostOf[i]
+            if (k < 0 || (out && out.indexOf(k) >= 0)) continue
+            const p = P[i], f = portalFrame(p), d = (x - p.x) * f.nx + (y - p.y) * f.ny, vn = vx * f.nx + vy * f.ny
+            if (!(d > 0)) continue
+            if (post && vn > 0) {
+                let best = null
+                solid.forEach((s, j) => { if (solidOwner[j] === k) { const c = InvariantsCore.closest(x, y, s); if (!best || c[2] < best[2]) best = c } })
+                if (best && !isEnd(best, all[k])) (out = out || []).push(k)
+                continue
+            }
+            if (!(vn < 0)) continue
+            const c = InvariantsCore.closest(x, y, all[k])
+            if (!(c[2] < R + 1e-9)) continue
+            const end = isEnd(c, all[k])
+            if (Math.abs((c[0] - p.x) * f.tx + (c[1] - p.y) * f.ty) > p.h + R) continue
+            if (end && Math.abs((x - p.x) * f.tx + (y - p.y) * f.ty) > p.h + 0.5 * R) continue
+            if (portalTouchExitBlocked(p, { posX: x, posY: y, speedX: vx, speedY: vy, radius: R }, f)) continue
+            (out = out || []).push(k)
+        }
+        return out
+    }
+    const chk = InvariantsCore.makeChecker({ g: gravitationalAcceleration, r: R, segs: all, points, solid, solidOwner, zone, label })
     const S = portalState
     // normals of this step's portalStep bounces (only on steps where S.rimHits / S.blockedExits grew),
     // from the geometry, not from portal.js' own records: a rim bounce about (centre - rim) / |..| for every rim

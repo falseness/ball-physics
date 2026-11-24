@@ -343,7 +343,7 @@ function writeOut(obj)
 function summary(name, m)
 {
     return name + ': steps ' + m.steps + ' contactSteps ' + m.contactSteps + ' I1 ' + m.counts.I1 + ' I2 ' + m.counts.I2 +
-        ' I3 ' + m.counts.I3 + ' T ' + m.counts.T
+        ' I3 ' + m.counts.I3 + ' T ' + m.counts.T + (m.zoneSteps ? ' zoneSteps ' + m.zoneSteps : '')
 }
 
 async function main()

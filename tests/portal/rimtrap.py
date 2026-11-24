@@ -4,7 +4,10 @@
   python3 tests/portal/rimtrap.py --task TASK-NNN [--out rimtrap.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON), exit 1 when the level 19 repro is trapped, the
          back-side sweep finds a trap, or (TASK-164) a front-side outcome differs from --baseline
-         (default artifacts/TASK-201/baselines/rimtrap_baseline.json, re-recorded under the contact model; before artifacts/TASK-163/baseline.json, the unfixed code; front_diff in the log).
+         (default artifacts/TASK-163/baseline.json, the unfixed code, identical to the HEAD 4deacfa recording)
+         that is not in the --allowlist (TASK-201, default tests/portal/allow/rimtrap_task201.json: reviewed
+         contact-model changes, each pinned to its baseline and new outcome, see baseline_allow.py); front_diff =
+         changed cases not allowlisted, front_changed = all changed cases, front_allowlisted = the accepted ones.
   python3 tests/portal/rimtrap.py --task TASK-NNN --controls [--out detector_controls.json]
       -> detector false-positive controls; exit 1 if any control is reported trapped.
 
@@ -41,6 +44,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, 'tests', 'visual'))
 from sim import open_page, wcfg  # noqa: E402
+import baseline_allow  # noqa: E402
 
 PI = math.pi
 H, R = 45, 10
@@ -264,11 +268,12 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 6 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
-    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-201', 'baselines', 'rimtrap_baseline.json'),
-                    help='a rimtrap.json: front outcomes must match it case by case (front_diff, exit 1 when > 0); '
-                         '"" = no comparison. Default: TASK-201, re-recorded under the ball contact model (TASK-199..201 '
-                         'changed every line and host-line bounce); before: artifacts/TASK-163/baseline.json (the '
-                         'unfixed TASK-163 code, old reflect-on-overlap physics)')
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-163', 'baseline.json'),
+                    help='rimtrap.json of the code before the change (default: the unfixed TASK-163 code, equal to HEAD '
+                         '4deacfa): front outcomes must match it case by case unless allowlisted (front_diff, exit 1 when '
+                         '> 0); "" = no comparison. Never record it from the code under test.')
+    ap.add_argument('--allowlist', default=os.path.join(HERE, 'allow', 'rimtrap_task201.json'),
+                    help='reviewed changed cases (baseline_allow.py; made for this exact --baseline file); "" = none')
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'detector_controls.json')
@@ -301,9 +306,16 @@ def main():
     if a.baseline and os.path.exists(a.baseline):
         with open(a.baseline) as fh:
             base = json.load(fh)['front']
+        al = baseline_allow.load(a.allowlist, a.baseline)
         bmap = {tuple(k): o for k, o in zip(base['keys'], base['outcomes'])}
-        diffs = [list(c) for c, o in zip(doc['front']['keys'], doc['front']['outcomes']) if tuple(c) not in bmap or bmap[tuple(c)] != o]
+        changed = [list(c) for c, o in zip(doc['front']['keys'], doc['front']['outcomes']) if tuple(c) not in bmap or bmap[tuple(c)] != o]
+        omap = {tuple(k): o for k, o in zip(doc['front']['keys'], doc['front']['outcomes'])}
+        diffs = [c for c in changed if not (tuple(c) in bmap and
+                 baseline_allow.accepted(al, '|'.join(map(str, c)), bmap[tuple(c)], omap[tuple(c)]))]
         front_diff = len(diffs)
+        doc['front']['allowlist'] = baseline_allow.rel(a.allowlist, ROOT)
+        doc['front']['front_changed'] = len(changed)
+        doc['front']['front_allowlisted'] = len(changed) - len(diffs)
         doc['front']['baseline'] = os.path.relpath(a.baseline, ROOT)
         doc['front']['baselineCases'] = len(base['keys'])
         doc['front']['diffCases'] = diffs[:50]
@@ -311,7 +323,9 @@ def main():
         front_diff = -1      # TASK-201: a named baseline that does not exist fails instead of skipping the comparison
         print('baseline missing: %s' % a.baseline)
     doc['front']['front_diff'] = front_diff
-    print('front_diff=%s baseline=%s' % (front_diff, a.baseline or '-'))
+    print('front_diff=%s front_changed=%s front_allowlisted=%s baseline=%s allowlist=%s'
+          % (front_diff, doc['front'].get('front_changed'), doc['front'].get('front_allowlisted'), a.baseline or '-',
+             a.allowlist or '-'))
     fail = rep['trapped'] or len(traps) > 0 or bool(front_diff)
     doc['fail'] = fail
     with open(out_path(a.task, a.out or 'rimtrap.json'), 'w') as fh:

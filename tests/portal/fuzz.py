@@ -19,8 +19,7 @@ level line segment (host lines included; a front-to-back pass through an opening
 so every non-teleport crossing went through a wall). Every teleport record is re-checked in
 Python against the resolved portals read from the page (TASK-074): a 'touch' teleport needs the ball
 on the entry front (d > 0) moving toward it (v . n < 0) and touching the opening (centre within r of
-c +- h t, so |s| <= h + r) or (TASK-201, capture through the host line) touching the entry's host line with a
-straight path to the entry plane that comes within r of the opening (counted in hostLineTouches), and lands on the partner's front (d' > 0) moving away (v . n' > 0); a
+c +- h t, so |s| <= h + r), and lands on the partner's front (d' > 0) moving away (v . n' > 0); a
 'cross' teleport (fallback) needs |s| <= h and a front -> back crossing (d <= 0, |d| <= |v|) and lands
 on d' = -d >= 0. Both: relative speed change <= 1e-9 and the exit state equals an independent
 recomputation (sim.mapped: touch (s, d) -> (-clamp(s, h), d), cross (s, d) -> (-s, -d), v rotated).
@@ -465,23 +464,7 @@ def main():
                     case_bad.append(('sd', t['step'], s, d))
                 elif kind == 'touch':
                     touch = math.hypot(max(abs(s) - A['h'], 0.0), d)
-                    vb = t['before'][2:4]
-                    if touch > R + 1e-9 and d > 0:
-                        # TASK-201: capture through the host line (js/portal.js portalZoneTouch): the ball touches A's
-                        # host line (closest point within r) at a point within h + r of A's centre along t, and its
-                        # straight path to A's plane comes within r of the opening (it would touch it if it went on)
-                        hl = cfg['lines'][A['line']]
-                        hd = seg_dist(t['before'][:2], hl[:2], hl[2:])
-                        vn = vb[0] * anx + vb[1] * any_
-                        if hd < R + 1e-9 and vn < 0:
-                            k = d / -vn
-                            pe = (t['before'][0] + k * vb[0], t['before'][1] + k * vb[1])
-                            ra, rb = (A['x'] - any_ * A['h'], A['y'] + anx * A['h']), (A['x'] + any_ * A['h'], A['y'] - anx * A['h'])
-                            path = segseg([t['before'][0], t['before'][1], pe[0], pe[1]], [ra[0], ra[1], rb[0], rb[1]])
-                            if path <= R + 1e-9:
-                                touch = min(touch, R)
-                                c['hostLineTouches'] = c.get('hostLineTouches', 0) + 1
-                    if not (d > 0 and vb[0] * anx + vb[1] * any_ < 0 and touch <= R + 1e-9):
+                    if not (d > 0 and t['before'][2] * anx + t['before'][3] * any_ < 0 and touch <= R + 1e-9):
                         c['notFrontToBack'] += 1
                         case_bad.append(('touch', t['step'], s, d, touch))
                 elif kind != 'cross' or d > 0 or abs(d) > t['speedBefore'] + 1e-9:

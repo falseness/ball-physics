@@ -8,9 +8,6 @@
 // it (v·n < 0) teleports in the first step it touches the opening segment c ± h·t
 // (pointSegDist(centre, opening) <= ball.radius, rims included), so |s| up to h + ball.radius
 // is captured; it is placed at local (-clamp(s, -h, h), d) in front of the exit ('touch').
-// TASK-201: also in the first step it touches the host line next to the opening (contact point within
-// h + ball.radius of c along t) on a straight path that would touch the opening (portalZoneTouch); the
-// ball no longer sinks into the host line until it touches the opening itself.
 // Fallback crossing ('cross', e.g. a ball faster than its radius per step): d went from > 0 to
 // <= 0 since the previous step while |s| <= h (a legacy free-standing portal without `line`
 // also back -> front); it maps (s, d) -> (-s, -d).
@@ -20,10 +17,11 @@
 // a legacy free-standing portal); behind a wall portal (d <= 0) the rims are skipped because the
 // whole host line already collides there (TASK-164); the portal body is not a collider. A wall portal's
 // host line takes part in the ball's contact model (TASK-201, portalHostSegs): as the pieces outside the
-// opening while the ball centre is in front of the portal (d > 0), without the gap edges while the ball
-// moves away from that front, and as the whole line from behind. A ball being captured ignores a host-line
-// contact the capture covers (portalCaptureZone / portalZoneTouch) and is teleported at the step's end;
-// other contacts are resolved like any line (closest point, deepest first, push-out, no energy gain).
+// opening while the ball centre is in front of the portal (d > 0), only at the host line's own ends while the
+// ball moves away from that front, and as the whole line from behind. A ball being captured (front, v·n < 0)
+// ignores a piece / line end whose contact point is within h + ball.radius of the portal centre along t
+// (portalCaptureZone, unchanged); other contacts are resolved like any line (closest point, deepest first,
+// push-out, no energy gain).
 // Other lines may cross an opening (TASK-104) and stay solid: no capture through such a line
 // (portalTouches), and a teleport whose exit centre would be on the far side of a line other than
 // the exit's host line is refused, the ball bounces off the entry plane instead (portalTeleport).
@@ -32,10 +30,12 @@
 // the first RIM_LOG_MAX records, teleport records with blocked: true and the bounced state in after)
 // rims: the first RIM_LOG_MAX rim bounces {step, rim, n, before:[vx,vy], after:[vx,vy]}
 // hostHits: host-line collisions so far; hostHit: the latest {step, line, v: [vx, vy] before}
-// grace (TASK-201): the portal the ball last came out of while the ball still touches its opening (else null):
-// it cannot capture the ball by touch again (the 'cross' fallback stays). A ball leaving an exit with a tiny
-// normal speed (it entered grazing) was pulled back by gravity into the exit's touch in the next step and
-// thrown between the two portals every 2 steps (fuzz --crossing --seed 3 case 1231: 671 teleports in a row).
+// grace (TASK-201): the portal the ball last came out of, while the ball centre is still within the radius of its
+// opening (else null): that portal cannot capture the ball by touch again (the 'cross' fallback stays). A teleport
+// keeps the entry depth d < r, so the ball leaves the exit still touching its opening; one leaving with a tiny normal
+// speed (it entered almost along the plane) was pulled back by gravity into the exit's touch in the next steps and
+// thrown between the two portals every 1-2 steps (fuzz --crossing --seed 3 case 1231 under the contact model:
+// 99 teleports in a row).
 const RIM_LOG_MAX = 64
 const PORTAL_EXIT_MIN_D = 1e-6   // touch teleport: minimum exit distance in front of the exit plane
 const PORTAL_DEFAULT_H = 45      // half-width h of a newly placed portal (physics/drawing always read P.h)
@@ -243,12 +243,12 @@ function portalHosts()
 // and the line is solid as the remaining pieces (lineGapPieces); from behind (no open gap) the whole line
 // is solid (wall portals block from behind). The rims are solid points handled in portalStep, only while
 // the ball is in front of the portal (d > 0): from behind, the whole line is the only collider (TASK-164).
-// For a ball moving away from the front (v·n > 0) the pieces have no gap edges (away: Ball.contacts drops a
-// contact whose closest point is a gap edge, i.e. a rim): a ball that leaves the exit portal near a rim
-// overlaps the rim end of the piece next to the opening without having travelled into it; that contact
-// (normal along the opening) would turn it back through the exit (ping-pong teleport) or push it sideways.
-// The rest of the piece stays solid (before TASK-201 the whole line was dropped, and a ball moving away
-// from the plane far beside the opening slid into the host line's own end).
+// For a ball moving away from the front (v·n > 0) the pieces only collide at the host line's own ends (away:
+// Ball.contacts drops every other piece contact). As in the old portalHostCollision (which dropped the whole line):
+// a ball that leaves the exit portal next to a rim may overlap the piece beside the opening (the exit keeps the
+// entry depth d < r, TASK-074) without having travelled into it; a contact there would push it out sideways or turn
+// it back through the exit. The host line's ends stay solid (a ball moving away from the plane beside the opening
+// could otherwise run into them).
 // Each piece is {posX, posY, posX2, posY2, hostList, endA, endC, away, open} (endA / endC: that end is an
 // end of l itself, not a gap edge); Ball.contacts drops a piece contact in the capture zone of a portal that
 // is capturing the ball (portalCaptureZone).
@@ -304,7 +304,7 @@ function portalHostSegs(b, l, list, out)
 }
 
 // Piece a..c (line parameters) of host line l as a contact segment (portalHostSegs); open: the ball is in
-// front of a portal on l (portalState.hostHit.open); away: the ball moves away from that front (no gap edges)
+// front of a portal on l (portalState.hostHit.open); away: the ball moves away from that front (only l's ends collide)
 function portalHostPiece(l, list, dx, dy, a, c, open, away)
 {
     return {
@@ -321,73 +321,28 @@ function portalHostHit(piece, vx, vy)
     portalState.hostHit = { step: portalState.steps + 1, line: piece.hostList[0].line, v: [vx, vy], open: piece.open }
 }
 
-// True when ball b is being captured by one of `list` and (qx, qy), a contact point of the ball on that
-// portal's host line, is part of the capture (portalZoneTouch): such a contact (the piece next to the
-// opening, its rim end, a host line end) does not act on the ball, which is teleported instead (TASK-074).
-// end (TASK-173): (qx, qy) is an end point of the host line (see portalZoneTouch).
+// True when ball b is being captured by one of `list` (front side d > 0, moving toward it v·n < 0)
+// and the contact point (qx, qy) lies within h + ball.radius of that portal's centre along t:
+// such a contact (the piece next to the opening, its rim end, a host line end) must not bounce
+// the ball, which touches the opening and teleports instead (TASK-074).
+// end (TASK-173): (qx, qy) is an end point of the host line. Such a contact is in the zone only while the
+// ball centre is within h + radius / 2 of P's centre along t: that ball touches the opening before it gets
+// closer than the radius to an end at |s| <= h + radius (the clamped host line end), while a centre farther
+// out reaches the end long before the opening (or never does), so the end stays solid for it.
+// (TASK-201: the same rule, now applied to the contacts of Ball.contacts instead of portalHostPiece.)
 function portalCaptureZone(b, list, qx, qy, end)
 {
     for (let i = 0; i < list.length; ++i)
     {
         // portalLocalD / portalLocalS inline on one frame lookup (TASK-124; same operations)
-        const P = list[i], f = portalFrame(P), dx = b.posX - P.x, dy = b.posY - P.y
-        if (portalZoneTouch(P, b, f, dx * f.nx + dy * f.ny, dx * f.tx + dy * f.ty, qx, qy, end))
+        const P = list[i], f = portalFrame(P)
+        if ((b.posX - P.x) * f.nx + (b.posY - P.y) * f.ny <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
+            continue
+        if (Math.abs((qx - P.x) * f.tx + (qy - P.y) * f.ty) <= P.h + b.radius &&
+            (!end || Math.abs((b.posX - P.x) * f.tx + (b.posY - P.y) * f.ty) <= P.h + 0.5 * b.radius) && !portalTouchExitBlocked(P, b, f))
             return true
     }
     return false
-}
-
-// TASK-201: capture of a ball touching portal P's host line next to the opening ('generous' edge, TASK-074),
-// in the ball's contact model. Ball b (centre local d, ls in P's frame f) touches the host line at the contact
-// point (qx, qy) (end: it is an end point of the host line). It is captured when
-//  - it is on P's front (d > 0) moving toward it (v·n < 0),
-//  - (qx, qy) lies within h + ball.radius of P's centre along t (TASK-074's zone), and for a host line end the
-//    centre within h + radius / 2 (TASK-173: a centre farther out reaches the end long before the opening),
-//  - its straight path from the centre to the opening plane (d = 0) comes within ball.radius of the opening
-//    c ± h·t: it would touch the opening if it went on, so the piece between is not allowed to stop it,
-//  - and the touch would not be refused (portalTouchExitBlocked: a line at the exit spot; portalPathBlocked:
-//    a line between the centre and the opening), so the host line stays solid where the opening is covered.
-// portalStep teleports such a ball ('touch', at the step's end, the same test as Ball.contacts uses to drop the
-// contact): before TASK-201 the contact was only ignored and the ball sank into the host line (up to ~r deep)
-// until it touched the opening itself, or bounced from inside it when its path missed the opening.
-function portalZoneTouch(P, b, f, d, ls, qx, qy, end)
-{
-    const vn = b.speedX * f.nx + b.speedY * f.ny
-    if (!(d > 0) || !(vn < 0) || portalState.grace === P)
-        return false
-    const r = b.radius
-    if (Math.abs((qx - P.x) * f.tx + (qy - P.y) * f.ty) > P.h + r || (end && Math.abs(ls) > P.h + 0.5 * r))
-        return false
-    // the centre path to the plane: c + k v, k in [0, d / -vn]; the opening c ± h t lies in the plane
-    const k = d / -vn, px = b.posX + k * b.speedX, py = b.posY + k * b.speedY
-    const sp = (px - P.x) * f.tx + (py - P.y) * f.ty
-    if (Math.abs(sp) > P.h)
-    {
-        // the path ends beside the opening: its distance to the opening is the distance to the nearer rim
-        // (the path lies on the front side of the plane, the rim is in it)
-        const e = sp > 0 ? 1 : -1, rx = P.x + e * P.h * f.tx, ry = P.y + e * P.h * f.ty
-        if (pointSegDist(rx, ry, b.posX, b.posY, px, py) > r)
-            return false
-    }
-    if (portalTouchExitBlocked(P, b, f))
-        return false
-    const s = Math.max(-P.h, Math.min(P.h, ls))
-    return !(portalPathBlocked(b.posX, b.posY, P.x + s * f.tx, P.y + s * f.ty, P) < Infinity)
-}
-
-// portalStep's capture through the host line (portalZoneTouch): ball b touches P's host line (the closest point
-// within ball.radius, the contact model's test) where the capture applies
-function portalHostTouchAt(P, b, f, d, ls)
-{
-    const l = typeof P.line == 'number' ? curLevel().lines[P.line] : null
-    if (!l || !(d > 0) || !(d < b.radius + CONTACT_SLOP))
-        return false
-    const ex = l.posX2 - l.posX, ey = l.posY2 - l.posY, L2 = ex * ex + ey * ey
-    const k = L2 > 0 ? Math.max(0, Math.min(1, ((b.posX - l.posX) * ex + (b.posY - l.posY) * ey) / L2)) : 0
-    const qx = l.posX + k * ex, qy = l.posY + k * ey
-    if (!(Math.hypot(b.posX - qx, b.posY - qy) < b.radius + CONTACT_SLOP))
-        return false
-    return portalZoneTouch(P, b, f, d, ls, qx, qy, k === 0 || k === 1)
 }
 
 // TASK-124: the last portalTouchExitBlocked result while portalFrozen (cleared by portalFreeze). Its inputs
@@ -627,9 +582,7 @@ function portalTeleport(A, B, s, d, kind)
             // so without this the ball keeps the inward step it made before the bounce. Wedged between that spot and a
             // line end it overlaps (collisionWithDot flips v every step), it then crept 1 inward step per 2 steps into
             // A's plane and stayed there (fuzz --crossing --seed 2 case 1298, embedded).
-            // TASK-201: also beside the opening (|s| > h, a touch through the rim or the host line's capture): the
-            // centre is then inside the host piece by radius - d and the next step's push-out would lift it.
-            if (kind === 'touch' && d < ball.radius)
+            if (kind === 'touch' && Math.abs(s) <= A.h && d < ball.radius)
             {
                 ball.posX += 2 * (ball.radius - d) * fa.nx
                 ball.posY += 2 * (ball.radius - d) * fa.ny
@@ -694,9 +647,7 @@ function portalStep()
         portalState.prevD[i] = Ld
         // wall portal: front -> back only; legacy free-standing portal: either direction
         const crossed = (prev > 0 && Ld <= 0) || (typeof P[i].line != 'number' && prev < 0 && Ld >= 0)
-        // touch: the opening itself, or (TASK-201) the host line where the capture applies (portalHostTouchAt)
-        const kind = !P[i ^ 1] ? null
-                   : portalState.grace !== Pi && (portalTouchesAt(Pi, ball, f, Ld, Ls) || portalHostTouchAt(Pi, ball, f, Ld, Ls)) ? 'touch'
+        const kind = !P[i ^ 1] ? null : portalState.grace !== Pi && portalTouchesAt(Pi, ball, f, Ld, Ls) ? 'touch'
                    : crossed && Math.abs(Ls) <= P[i].h ? 'cross' : null
         if (kind)
         {

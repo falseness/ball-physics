@@ -8,6 +8,14 @@
 // happened in this step, (vmx, vmy) = the velocity right before portalStep() (teleport steps only);
 // post (optional) = [[nx, ny, src], ...] the normals portalStep() reflected about after the move in this
 // step (rim bounces, refused teleports bouncing off the entry plane; TASK-201), taken as contacts.
+// zone (optional, TASK-201) = function (x, y, vx, vy) -> array of seg indices (or null): wall-portal host lines
+// whose contact is part of a portal capture for a ball in that state (the TASK-074/173 'generous edge': a ball
+// being captured is not stopped by the host line next to the opening, it sinks in until it touches the opening
+// and is teleported). Such a line is no contact at the step's start state (I2/I3), and its solid pieces
+// (opts.solidOwner[i] = seg index of solid piece i) do not count for I1 depth at the post-step state
+// (zone(x1, y1, vx1, vy1, true): the browser mode then also lets an exit overlap move out, see there).
+// The browser mode computes it from the portal geometry (tests/physics/invariants_browser.py), not from the game's
+// collision code.
 //
 // Geometry (opts): segs [[x1,y1,x2,y2]] = contact candidates (every line), points [[x,y]] = point
 // colliders (portal rims), solid [[x1,y1,x2,y2]] = what the ball must never sink into (default segs;
@@ -63,6 +71,7 @@ var InvariantsCore = (function ()
     {
         var G = opts.g, R = opts.r
         var segs = opts.segs || [], points = opts.points || [], solid = opts.solid || segs
+        var solidOwner = opts.solidOwner || null, zone = opts.zone || null
         var postMove = !!opts.postMoveContacts, maxEx = opts.maxExamples === undefined ? 5 : opts.maxExamples
         var label = opts.label === undefined ? null : opts.label
         // bounding boxes grown by R + 1 for a cheap reject
@@ -76,7 +85,7 @@ var InvariantsCore = (function ()
         }
         var segBox = boxes(segs), solidBox = boxes(solid)
         var counts = { I1: 0, I2: 0, I3: 0, T: 0 }, sub = {}, examples = { I1: [], I2: [], I3: [], T: [] }
-        var steps = 0, contactSteps = 0, teleports = 0
+        var steps = 0, contactSteps = 0, teleports = 0, zoneSteps = 0
         var insideRun = 0
         var flipRing = new Uint8Array(LIVELOCK_WINDOW), xr = new Float64Array(LIVELOCK_WINDOW), yr = new Float64Array(LIVELOCK_WINDOW)
         var flips = 0, filled = 0, llQuiet = 0
@@ -95,10 +104,11 @@ var InvariantsCore = (function ()
         }
 
         // contact normals at (px, py): [nx, ny, dist, src]
-        function contactsAt(px, py, out)
+        function contactsAt(px, py, out, skip)
         {
             for (var i = 0; i < segs.length; ++i)
             {
+                if (skip && skip.indexOf(i) >= 0) continue
                 var b = segBox[i]
                 if (px < b[0] || px > b[1] || py < b[2] || py > b[3]) continue
                 var c = closest(px, py, segs[i])
@@ -114,11 +124,12 @@ var InvariantsCore = (function ()
             return out
         }
 
-        function minSolidDist(px, py)
+        function minSolidDist(px, py, skip)
         {
             var best = Infinity
             for (var i = 0; i < solid.length; ++i)
             {
+                if (skip && solidOwner && skip.indexOf(solidOwner[i]) >= 0) continue
                 var b = solidBox[i]
                 if (px < b[0] || px > b[1] || py < b[2] || py > b[3]) continue
                 var d = closest(px, py, solid[i])[2]
@@ -146,11 +157,12 @@ var InvariantsCore = (function ()
         {
             ++steps
             // ---- I1a depth (post-step position)
-            if (minSolidDist(x1, y1) < R - STUCK_DEPTH)
+            var skip1 = zone ? zone(x1, y1, vx1, vy1, true) : null
+            if (minSolidDist(x1, y1, skip1) < R - STUCK_DEPTH)
             {
                 ++insideRun
                 if (insideRun === STUCK_STEPS + 1)
-                    report('I1', 'stuck', { pos: [x1, y1], v: [vx1, vy1], depth: R - minSolidDist(x1, y1) })
+                    report('I1', 'stuck', { pos: [x1, y1], v: [vx1, vy1], depth: R - minSolidDist(x1, y1, skip1) })
             }
             else insideRun = 0
             // ---- I1b livelock
@@ -185,7 +197,9 @@ var InvariantsCore = (function ()
                 return
             }
             // ---- I2 / I3
-            var cs = contactsAt(x0, y0, [])
+            var skip0 = zone ? zone(x0, y0, vx0, vy0) : null
+            if (skip0 && skip0.length) ++zoneSteps
+            var cs = contactsAt(x0, y0, [], skip0)
             if (postMove) contactsAt(x1, y1, cs)
             if (post)
                 for (var pi = 0; pi < post.length; ++pi)
@@ -239,7 +253,7 @@ var InvariantsCore = (function ()
 
         function result()
         {
-            return { steps: steps, contactSteps: contactSteps, teleports: teleports, counts: counts, sub: sub, examples: examples }
+            return { steps: steps, contactSteps: contactSteps, teleports: teleports, zoneSteps: zoneSteps, counts: counts, sub: sub, examples: examples }
         }
         return { step: step, result: result }
     }
@@ -248,11 +262,11 @@ var InvariantsCore = (function ()
     function merge(list, maxEx)
     {
         maxEx = maxEx === undefined ? 5 : maxEx
-        var out = { runs: 0, steps: 0, contactSteps: 0, teleports: 0, counts: { I1: 0, I2: 0, I3: 0, T: 0 }, sub: {}, examples: { I1: [], I2: [], I3: [], T: [] } }
+        var out = { runs: 0, steps: 0, contactSteps: 0, teleports: 0, zoneSteps: 0, counts: { I1: 0, I2: 0, I3: 0, T: 0 }, sub: {}, examples: { I1: [], I2: [], I3: [], T: [] } }
         list.forEach(function (x)
         {
             out.runs += x.runs === undefined ? 1 : x.runs
-            out.steps += x.steps; out.contactSteps += x.contactSteps; out.teleports += x.teleports
+            out.steps += x.steps; out.contactSteps += x.contactSteps; out.teleports += x.teleports; out.zoneSteps += x.zoneSteps || 0
             KINDS.forEach(function (k)
             {
                 out.counts[k] += x.counts[k]

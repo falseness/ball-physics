@@ -4,9 +4,13 @@
   python3 tests/portal/embed.py --task TASK-NNN [--out embed.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON); exit 1 when the level 24 repro (a) or the synthetic
          sweep (b) has an embedded run.
-      --baseline (default artifacts/TASK-201/baselines/embed_baseline.json, re-recorded under the contact model; before artifacts/TASK-171/baseline.json; '' = off; TASK-172): every case whose baseline
-         exitOverlap was false must keep its outcome (diffNonOverlap == 0 in the log, else exit 1); TASK-176: runs
-         with a mirrored blocked face touch (record.mirror) are exempt and counted as changedNonOverlapMirrored.
+      --baseline (default artifacts/TASK-201/baselines/embed_head_4deacfa.json, recorded from git archive 4deacfa,
+         the code before TASK-201; before: artifacts/TASK-171/baseline.json, which HEAD's TASK-199 physics no longer
+         matched; '' = off; TASK-172): every case whose baseline exitOverlap was false must keep its outcome
+         (diffNonOverlap == 0 in the log, else exit 1); TASK-176: runs with a mirrored blocked face touch
+         (record.mirror) are exempt and counted as changedNonOverlapMirrored; TASK-201: so are cases in --allowlist
+         (default tests/portal/allow/embed_task201.json, reviewed contact-model changes pinned to their baseline and
+         new outcome, see baseline_allow.py), counted as changedNonOverlapAllowlisted.
   python3 tests/portal/embed.py --task TASK-NNN --controls [--out controls.json]
       -> detector false-positive controls (c); exit 1 if any control is embedded (or level 24 is not won).
 
@@ -45,6 +49,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, 'tests', 'visual'))
 from sim import open_page, wcfg  # noqa: E402
+import baseline_allow  # noqa: E402
 
 PI = math.pi
 H, R = 45, 10
@@ -261,10 +266,11 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 5 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
-    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-201', 'baselines', 'embed_baseline.json'),
-                    help="diff outcomes of cases whose baseline exitOverlap was false ('' = no diff). Default: TASK-201, "
-                         "re-recorded under the ball contact model (TASK-199..201 changed every line and host-line "
-                         "bounce); before: artifacts/TASK-171/baseline.json (the TASK-171 code, old physics)")
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-201', 'baselines', 'embed_head_4deacfa.json'),
+                    help="embed.json of the code before the change: diff outcomes of cases whose baseline exitOverlap "
+                         "was false ('' = no diff). Never record it from the code under test.")
+    ap.add_argument('--allowlist', default=os.path.join(HERE, 'allow', 'embed_task201.json'),
+                    help="reviewed changed cases (baseline_allow.py; made for this exact --baseline file); '' = none")
     a = ap.parse_args()
     if a.controls:
         return controls(a.task, a.out or 'controls.json')
@@ -304,17 +310,23 @@ def main():
         # TASK-176: a blocked face touch mirrors the ball back about d = r (record.mirror); such a run may change too.
         # Up to its first mirror a run is the TASK-173 code's run, which had diffNonOverlap 0 against this baseline.
         mir = set(doc['mirrored'])
+        al = baseline_allow.load(a.allowlist, a.baseline)
         changed = [k for k in nonov if doc['outcomes'][k] != base[k]]
-        diff = [k for k in changed if k not in mir]
+        allowed = [k for k in changed if k not in mir and baseline_allow.accepted(al, k, base[k], doc['outcomes'][k])]
+        diff = [k for k in changed if k not in mir and k not in set(allowed)]
         ov = [k for k in common if base[k]['exitOverlap']]
         doc['baselineDiff'] = {'baseline': os.path.relpath(a.baseline, ROOT), 'commonCases': len(common),
                                'nonOverlapCases': len(nonov),
                                'diffNonOverlap': len(diff), 'diffNonOverlapCases': diff[:50],
-                               'changedNonOverlapMirrored': len(changed) - len(diff), 'mirroredCases': len(mir),
+                               'changedNonOverlapMirrored': len([k for k in changed if k in mir]), 'mirroredCases': len(mir),
+                               'changedNonOverlap': len(changed), 'changedNonOverlapAllowlisted': len(allowed),
+                               'allowlist': baseline_allow.rel(a.allowlist, ROOT),
                                'overlapCases': len(ov),
                                'overlapChanged': sum(1 for k in ov if doc['outcomes'].get(k) != base[k])}
-        print('baseline=%s nonOverlapCases=%d diffNonOverlap=%d changedNonOverlapMirrored=%d mirroredCases=%d overlapCases=%d overlapChanged=%d'
-              % (doc['baselineDiff']['baseline'], len(nonov), len(diff), len(changed) - len(diff), len(mir), len(ov),
+        print('baseline=%s allowlist=%s nonOverlapCases=%d diffNonOverlap=%d changedNonOverlap=%d changedNonOverlapMirrored=%d '
+              'changedNonOverlapAllowlisted=%d mirroredCases=%d overlapCases=%d overlapChanged=%d'
+              % (doc['baselineDiff']['baseline'], a.allowlist or '-', len(nonov), len(diff), len(changed),
+                 doc['baselineDiff']['changedNonOverlapMirrored'], len(allowed), len(mir), len(ov),
                  doc['baselineDiff']['overlapChanged']))
         fail = fail or len(diff) > 0
     elif a.baseline:
