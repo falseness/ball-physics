@@ -234,8 +234,14 @@ def sc_next_level_order(page, info):
 # TASK-178 saved progress. Each scenario also writes its own compact JSON (PROGRESS_FILES) into the task dir.
 PROGRESS_FILES = {'progress_reload': 'progress_reload.json', 'progress_storage_blocked': 'progress_blocked.json',
                   'progress_garbage': 'progress_garbage.json'}
-PROGRESS_STATE_JS = """() => { let stored = null; try { stored = localStorage.getItem(PROGRESS_STORE) } catch (e) { stored = 'THROWS' }
-    return {solved: progressSolved(), stored, nLevels: levels.length, thisLevel, physics, drawMenu, levelCompletedWindow} }"""
+# TASK-184: 'stored' is read through the platform facade (PLATFORM.storage.getMany); 'raw' is the backend's
+# localStorage value ('THROWS' when blocked; the local backend then keeps the value in memory).
+PROGRESS_STATE_JS = """async () => { let raw = null; try { raw = localStorage.getItem(PROGRESS_STORE) } catch (e) { raw = 'THROWS' }
+    const stored = (await PLATFORM.storage.getMany([PROGRESS_STORE]))[PROGRESS_STORE]
+    return {solved: progressSolved(), stored, raw, platformId: PLATFORM.getPlatformId(), bootComplete,
+        nLevels: levels.length, thisLevel, physics, drawMenu, levelCompletedWindow} }"""
+# Boot (index.html) finishes asynchronously: platform init + storage reads, then the first frame
+BOOT_JS = "typeof bootComplete !== 'undefined' && bootComplete"
 # Every level slot (TASK-181 route map): mapClick (the click handler's map path) at its hit box centre must start it
 # (TASK-182: the first click selects the level and shows its card, the second click on it starts it).
 CLICKABLE_JS = """() => { const out = []; for (let i = 0; i < levels.length; ++i) {
@@ -276,6 +282,7 @@ def sc_progress_reload(page, info):
     afterWin = page.evaluate(PROGRESS_STATE_JS)
     page.reload()  # same page / browser context: localStorage is kept
     page.wait_for_load_state('load')
+    page.wait_for_function(BOOT_JS)
     frames(page, 3)
     restored = page.evaluate(PROGRESS_STATE_JS)
     restored['completedSrcIds'] = page.evaluate("levels.filter(l => l.unlock == 2).map(l => l.srcId)")
@@ -1303,6 +1310,7 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             page.add_init_script(PAGE_INIT[name])
         page.goto(URL)
         page.wait_for_load_state('load')
+        page.wait_for_function(BOOT_JS)
         frames(page)
         SCENARIOS[name](page, info)
         if eval_js:

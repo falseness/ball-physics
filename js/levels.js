@@ -839,20 +839,23 @@ function levelBySrc(n)
 // Every level is open from the start (no need to win the previous one); a win still
 // marks it completed (unlock 2, coral in the level grid).
 for (const l of levels) l.unlock = Math.max(l.unlock || 0, 1)
-// TASK-178: saved progress. The solved levels are stored by srcId (never by play-order index) in
-// localStorage[PROGRESS_STORE] as JSON {solved: [srcId, ...]}. Every storage access is guarded:
-// blocked storage or an invalid value means nothing solved, without console errors.
+// TASK-178: saved progress. The solved levels are stored by srcId (never by play-order index) under
+// the key PROGRESS_STORE as JSON {solved: [srcId, ...]}. TASK-184: storage goes through the platform
+// facade (platform.js, PLATFORM.storage); boot (index.html) reads the key with getMany before the
+// first frame and passes the result to loadProgress. Blocked storage or an invalid value means
+// nothing solved, without console errors.
 const PROGRESS_STORE = 'bp.progress.v1'
 function progressSolved()
 {
     return levels.filter(l => l.unlock == 2).map(l => l.srcId).sort((a, b) => a - b)
 }
-function loadProgress()
+// values: the PLATFORM.storage.getMany result ({key: string | null})
+function loadProgress(values)
 {
     let solved = []
     try
     {
-        const v = JSON.parse(localStorage.getItem(PROGRESS_STORE))
+        const v = JSON.parse(values && values[PROGRESS_STORE])
         if (v && Array.isArray(v.solved)) solved = v.solved
     }
     catch (e) { solved = [] }
@@ -864,7 +867,6 @@ function loadProgress()
 }
 function saveProgress()
 {
-    try { localStorage.setItem(PROGRESS_STORE, JSON.stringify({ solved: progressSolved() })) } catch (e) {}
+    return PLATFORM.storage.setMany({ [PROGRESS_STORE]: JSON.stringify({ solved: progressSolved() }) })
 }
-loadProgress()
 let thisLevel = 0

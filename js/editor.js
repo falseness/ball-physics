@@ -61,11 +61,12 @@ function editorBarRect()
     return [EDITOR_BAR.x - p, EDITOR_BAR.y - p, last.x + last.w - EDITOR_BAR.x + 2 * p, EDITOR_BAR.h + 2 * p]
 }
 
-// The toolbar can be dragged by its background (TASK-117); the position is kept in localStorage
+// The toolbar can be dragged by its background (TASK-117); the position is saved through
+// PLATFORM.storage (TASK-184; read at boot by index.html)
 const EDITOR_BAR_DEFAULT = [EDITOR_BAR.x - EDITOR_BAR.pad, EDITOR_BAR.y - EDITOR_BAR.pad] // panel top-left
 const EDITOR_BAR_EDGE = 14       // snapped panel distance from the top / bottom field edge
 const EDITOR_BAR_SNAP = 24       // snap when the panel's top / bottom is this close to its snapped place
-const EDITOR_BAR_STORE = 'ballPhysics.editorBar'
+const EDITOR_BAR_STORE = 'bp.editorBar.v1'
 // Move the panel so its rect's top-left is (x, y): kept fully inside the field, snapped to the top /
 // bottom edge when close. Buttons are updated in place (same EDITOR_BUTTONS objects).
 function editorBarMoveTo(x, y)
@@ -88,25 +89,36 @@ function editorBarMoveTo(x, y)
     EDITOR_ERROR_POS.x = x + EDITOR_BAR.pad
     EDITOR_ERROR_POS.y = y + h / 2 < GAME_H / 2 ? y + h + 32 : y - 14
 }
+// Last saved / loaded position (JSON string or null): entering the editor re-applies it without a
+// storage read (reads are asynchronous through the facade)
+let editorBarSaved = null
 function editorBarSave()
 {
     const R = editorBarRect()
-    try { localStorage.setItem(EDITOR_BAR_STORE, JSON.stringify({ x: R[0], y: R[1] })) } catch (e) {}
+    editorBarSaved = JSON.stringify({ x: R[0], y: R[1] })
+    return PLATFORM.storage.setMany({ [EDITOR_BAR_STORE]: editorBarSaved })
 }
-// Apply the saved position (missing / unparsable / non-finite -> default)
-function editorBarLoad()
+// Apply editorBarSaved (missing / unparsable / non-finite -> default)
+function editorBarApply()
 {
     let pos = EDITOR_BAR_DEFAULT
     try
     {
-        const v = JSON.parse(localStorage.getItem(EDITOR_BAR_STORE))
+        const v = JSON.parse(editorBarSaved)
         if (v && Number.isFinite(v.x) && Number.isFinite(v.y))
             pos = [v.x, v.y]
     }
     catch (e) {}
     editorBarMoveTo(pos[0], pos[1])
 }
-editorBarLoad()
+// values: the PLATFORM.storage.getMany result ({key: string | null}), read at boot (index.html)
+function editorBarLoad(values)
+{
+    const v = values && values[EDITOR_BAR_STORE]
+    editorBarSaved = typeof v === 'string' ? v : null
+    editorBarApply()
+}
+editorBarLoad(null) // default position until boot applies the saved one
 
 // 'editor' button shared by the pause menu and the level-completed window (same rect in both):
 // top-right corner inside the logo frame (frame x +30..+370, y +70..+285), under the 'Ball physics'
@@ -153,7 +165,7 @@ function editorOpen()
     editor.flagPoly = editorFlagPolygon(editor.level.flagRotate)
     editor.barDrag = null
     editor.barDropAt = null
-    editorBarLoad()
+    editorBarApply()
     editorPreviewClear()
     editorMode = true
 }

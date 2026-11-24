@@ -36,11 +36,15 @@ position (index + 1), not the srcId.
 
 ## Saved progress
 
-Solved levels are stored in `localStorage['bp.progress.v1']` as JSON `{"solved": [srcId, ...]}`
+Solved levels are stored under the key `bp.progress.v1` as JSON `{"solved": [srcId, ...]}`
 (sorted srcIds, never play-order indices, so reordering levels keeps progress). All levels are
 unlocked from the start (`unlock` 1); a solved level has `unlock` 2 (completed flag on the map).
-Reads and writes are guarded: blocked storage or a malformed value means "nothing solved" without
-console errors. To reset progress: `localStorage.removeItem('bp.progress.v1')`.
+All storage goes through the platform facade (`PLATFORM.storage`, see docs/platform-sdk.md): boot
+(index.html `boot()`) awaits `PLATFORM.init()`, reads `bp.progress.v1` and `bp.editorBar.v1` with
+`getMany` before the first frame (`loadProgress`, `editorBarLoad`), and `saveProgress` writes with
+`setMany`. Blocked storage or a malformed value means "nothing solved" without console errors (the
+local backend keeps values in memory). To reset progress with the local backend:
+`localStorage.removeItem('bp.progress.v1')`.
 
 ## Adding a slot for a new level
 

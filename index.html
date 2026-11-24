@@ -28,6 +28,8 @@
 </head>
 <body>
     <canvas id = "canvas" width = "1280" height = "800"></canvas>
+    <script src = "platform/backends/local.js"></script>
+    <script src = "platform.js"></script>
     <script src = "js/theme.js"></script>
     <script src = "js/sketch.js"></script>
     <script src = "js/sprite.js"></script>
@@ -598,7 +600,20 @@
                 document.fonts.load('bold 24px ' + THEME.font)
             ]).catch(function() {})
             : Promise.resolve()
-        fontsReady.then(function() { requestAnimationFrame(gameLoop) })
+        // Boot (TASK-184): platform init, then the saved progress and editor toolbar position are read
+        // through the platform facade, all before the first frame. bootComplete marks the end.
+        let bootComplete = false
+        async function boot()
+        {
+            await PLATFORM.init()
+            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE])
+            loadProgress(saved)
+            editorBarLoad(saved)
+            await fontsReady
+            bootComplete = true
+            requestAnimationFrame(gameLoop)
+        }
+        boot()
     </script>
 </body>
 </html>
