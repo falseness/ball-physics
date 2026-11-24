@@ -10,6 +10,9 @@
 //       F frames (default 600) of 500 steps, real js/ball.js, every step checked; a scene ends early only
 //       when the ball leaves the map (the game restarts the level there). Seeds run as parallel child
 //       processes (--shard SEED internally).
+//       --chains A-B: seeds A..B, N scenes each, each a random chain of 2-5 connected segments (shared end
+//       points; convex and concave joints, segments in random order and direction, a quarter with the joint
+//       end points up to 1 px apart, i.e. within dotRadius) and a ball dropped onto it from above or below.
 //       --levels: every shoot levelNN reference solution inside the game (tests/physics/invariants_browser.py).
 //   Output: compact JSON (counts per invariant, sub-counts, first 5 examples each, per seed / per level).
 //   Exit 1 when any violation is found (or a selftest check fails), 0 otherwise.
@@ -69,6 +72,51 @@ function makeScene(rand)
     }
 }
 
+// A random chain scene (TASK-200): 2-5 segments joined end to end (30-300 px each), the first heading within
+// +-60 deg of horizontal, every joint turning the same way (convex seen from one side, concave from the other)
+// by 3-120 deg, or in a random direction per joint (zigzag) in a third of the chains. The segments are shuffled
+// and randomly reversed (the contact model must not depend on line order or direction). In a quarter of the
+// chains each joint's second end point is moved by up to 1 px (joined within dotRadius, not exactly). The ball
+// is dropped from above or below a random point of a random segment like makeScene, clear of every line.
+function makeChainScene(rand)
+{
+    const n = 2 + Math.floor(rand() * 4), zig = rand() < 1 / 3, sign = rand() < 0.5 ? -1 : 1, jitter = rand() < 0.25
+    const rnd = (v) => Math.round(v * 100) / 100
+    for (let tries = 0; ; ++tries)
+    {
+        let x = 120 + rand() * 1040, y = 200 + rand() * 480, a = (rand() * 2 - 1) * Math.PI / 3
+        if (rand() < 0.5) a += Math.PI
+        const pts = [[rnd(x), rnd(y)]]
+        let ok = true
+        for (let i = 0; i < n; ++i)
+        {
+            if (i > 0) a += (zig ? (rand() < 0.5 ? -1 : 1) : sign) * (3 + rand() * 117) * Math.PI / 180
+            const L = 30 + rand() * 270
+            x += L * Math.cos(a); y += L * Math.sin(a)
+            if (x < 60 || x > 1220 || y < 120 || y > 760) { ok = false; break }
+            pts.push([rnd(x), rnd(y)])
+        }
+        if (!ok) { if (tries > 1000) return makeChainScene(rand); continue }
+        let segs = []
+        for (let i = 0; i < n; ++i)
+        {
+            const p = pts[i].slice()
+            if (jitter && i > 0) { p[0] = rnd(p[0] + rand() * 2 - 1); p[1] = rnd(p[1] + rand() * 2 - 1) }
+            segs.push(rand() < 0.5 ? [p[0], p[1], pts[i + 1][0], pts[i + 1][1]] : [pts[i + 1][0], pts[i + 1][1], p[0], p[1]])
+        }
+        for (let i = segs.length - 1; i > 0; --i) { const j = Math.floor(rand() * (i + 1)), t = segs[i]; segs[i] = segs[j]; segs[j] = t }
+        // a near-degenerate zigzag (a later segment crossing an earlier one) is fine: still a valid level geometry
+        for (let k = 0; k < 1000; ++k)
+        {
+            const s = segs[Math.floor(rand() * segs.length)], t = rand(), up = rand() < 0.75
+            const bx = s[0] + t * (s[2] - s[0]) + (rand() * 40 - 20), by = s[1] + t * (s[3] - s[1]) + (up ? -1 : 1) * (20 + rand() * 280)
+            const vx = rand() < 0.5 ? 0 : (rand() < 0.5 ? -0.01 : 0.01)
+            if (by > R && by < 800 - R && bx > R && bx < 1280 - R && h.distToSegments(bx, by, segs) >= R + 1)
+                return { segs, ball: [rnd(bx), rnd(by), vx, 0], chain: { n, zig, sign, jitter } }
+        }
+    }
+}
+
 function runScene(scene, frames, label, makeWorld)
 {
     const w = (makeWorld || h.makeFastWorld)(scene.segs)
@@ -88,14 +136,15 @@ function runScene(scene, frames, label, makeWorld)
     return res
 }
 
-function shard(seed, scenes, frames)
+function shard(seed, scenes, frames, kind)
 {
-    const rand = rng(seed), results = [], perScene = []
+    const rand = rng(kind === 'chains' ? 0x5EED0000 + seed : seed), results = [], perScene = []
+    const gen = kind === 'chains' ? makeChainScene : makeScene
     let offMap = 0
     const t0 = Date.now()
     for (let i = 0; i < scenes; ++i)
     {
-        const sc = makeScene(rand), label = 's' + seed + '#' + i
+        const sc = gen(rand), label = (kind === 'chains' ? 'c' : 's') + seed + '#' + i
         const res = runScene(sc, frames, label)
         if (res.offMap) ++offMap
         const tot = res.counts.I1 + res.counts.I2 + res.counts.I3 + res.counts.T
@@ -105,16 +154,16 @@ function shard(seed, scenes, frames)
         results.push(res)
     }
     const m = Core.merge(results)
-    return { seed, scenes, frames, scenesOffMap: offMap, scenesWithViolations: perScene.length,
+    return { seed, kind: kind || 'fuzz', scenes, frames, scenesOffMap: offMap, scenesWithViolations: perScene.length,
         seconds: (Date.now() - t0) / 1000, ...m, violatingScenes: perScene.slice(0, 50) }
 }
 
-function runShards(seeds, scenes, frames)
+function runShards(seeds, scenes, frames, kind)
 {
     return Promise.all(seeds.map(seed => new Promise((resolve, reject) =>
     {
         const p = spawn(process.execPath, [fileURLToPath(import.meta.url), '--shard', String(seed), '--scenes', String(scenes),
-            '--frames', String(frames)], { stdio: ['ignore', 'pipe', 'inherit'] })
+            '--frames', String(frames), '--kind', kind || 'fuzz'], { stdio: ['ignore', 'pipe', 'inherit'] })
         let out = ''
         p.stdout.on('data', d => { out += d })
         p.on('close', code => code === 0 ? resolve(JSON.parse(out)) : reject(new Error('shard ' + seed + ' exit ' + code)))
@@ -270,7 +319,7 @@ async function main()
 {
     if (has('--shard'))
     {
-        const r = shard(+arg('--shard'), +arg('--scenes', 2000), +arg('--frames', 600))
+        const r = shard(+arg('--shard'), +arg('--scenes', 2000), +arg('--frames', 600), arg('--kind', 'fuzz'))
         process.stdout.write(JSON.stringify(r))
         return 0
     }
@@ -290,13 +339,17 @@ async function main()
     const fz = arg('--fuzz', null)
     const scenes = +arg('--scenes', 2000), frames = +arg('--frames', 600)
     const jobs = []
-    if (fz)
+    const seedList = (spec) =>
     {
-        const [a, b] = fz.split('-').map(Number)
-        const seeds = []
+        const [a, b] = spec.split('-').map(Number), seeds = []
         for (let s = a; s <= (b || a); ++s) seeds.push(s)
-        jobs.push(runShards(seeds, scenes, frames).then(r => { out.fuzz = { scenesPerSeed: scenes, frames, seeds: r, total: Core.merge(r) } }))
+        return seeds
     }
+    if (fz)
+        jobs.push(runShards(seedList(fz), scenes, frames, 'fuzz').then(r => { out.fuzz = { scenesPerSeed: scenes, frames, seeds: r, total: Core.merge(r) } }))
+    const ch = arg('--chains', null)
+    if (ch)
+        jobs.push(runShards(seedList(ch), scenes, frames, 'chains').then(r => { out.chains = { scenesPerSeed: scenes, frames, seeds: r, total: Core.merge(r) } }))
     if (has('--levels'))
         jobs.push(runLevels(arg('--level-frames', null)).then(r =>
         {
@@ -308,6 +361,12 @@ async function main()
         out.fuzz.seeds.forEach(s => console.log(summary('fuzz seed ' + s.seed + ' (' + s.scenes + ' scenes, ' + s.scenesWithViolations + ' violating)', s)))
         console.log(summary('fuzz total', out.fuzz.total))
         parts.push(out.fuzz.total)
+    }
+    if (out.chains)
+    {
+        out.chains.seeds.forEach(s => console.log(summary('chains seed ' + s.seed + ' (' + s.scenes + ' scenes, ' + s.scenesWithViolations + ' violating)', s)))
+        console.log(summary('chains total', out.chains.total))
+        parts.push(out.chains.total)
     }
     if (out.levels)
     {

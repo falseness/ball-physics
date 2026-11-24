@@ -33,6 +33,10 @@ const CONTACT_SLOP = 1e-9        // px: a ball touching a line (distance == radi
 // edge_cases v_corner reaches the other wall at ~0.0079 and must not bounce back up) and 0.0087 (the lowest
 // normal speed of edge_cases graze, d = 9, which must still reflect); see TASK-199.
 const REST_SPEED = 0.0083
+// px: line end points closer than this form a joint (a chain), = dotRadius of js/line.js, the editor's snap radius
+const CHAIN_JOIN = 5
+// contact record in the scratch buffer: nx, ny, dist, qx, qy, line index (in segs), end (0 interior, 1 start, 2 end)
+const CS = 7
 
 class Ball extends Sprite
 {
@@ -133,6 +137,11 @@ class Ball extends Sprite
     //    - moving away (v.n > 0): untouched.
     // 2. Position: the deepest overlap is pushed out to exactly radius along its n, re-tested, up to
     //    CONTACT_ITERATIONS times (two overlapping lines at once: both solved together, p' = p + a n1 + b n2).
+    // Joints (TASK-200, ghost vertices): lines whose end points coincide within CHAIN_JOIN form chains. A contact
+    // whose closest point is a joint end is ignored when its normal lies outside the cone between the outward
+    // normals of the joined segments (the Box2D chain rule, https://box2d.org/posts/2020/06/ghost-collisions/),
+    // i.e. when the centre projects into a joined segment that is at least as close: that segment's own contact
+    // then carries the collision, so a ball sliding over a seam or into a concave joint never gets an internal normal.
     // 3. Energy: a contact never adds energy (E = |v|^2/2 + g vy/2 - g y, the integrator's free-flight invariant):
     //    if E grew, the outgoing normal speed along the last resolved normal is lowered until E is back at E0.
     contactCollision(segs)
@@ -141,10 +150,7 @@ class Ball extends Sprite
         const E0 = 0.5 * (this.speedX * this.speedX + this.speedY * this.speedY) + 0.5 * g * this.speedY - g * this.posY
         // contacts at the start position: normal, distance, closest point (scratch arrays reused)
         const cn = Ball.scratch(n)
-        let k = 0
-        for (let i = 0; i < n; ++i)
-            if (this.segContact(segs[i], cn, k))
-                ++k
+        let k = this.contacts(segs, cn)
         if (k === 0)
             return
         // ---- 1. velocity
@@ -155,7 +161,7 @@ class Ball extends Sprite
             let best = -1, bd = Infinity
             for (let j = 0; j < k; ++j)
             {
-                const o = j * 5
+                const o = j * CS
                 if (cn[o + 2] < bd && vx * cn[o] + vy * cn[o + 1] <= 0)
                 {
                     best = j; bd = cn[o + 2]
@@ -163,7 +169,7 @@ class Ball extends Sprite
             }
             if (best < 0)
                 break
-            const bnx = cn[best * 5], bny = cn[best * 5 + 1], vn = vx * bnx + vy * bny
+            const bnx = cn[best * CS], bny = cn[best * CS + 1], vn = vx * bnx + vy * bny
             const bit = best < 30 ? (1 << best) : 0
             if (vn < -REST_SPEED && !(hitMask & bit))
             {
@@ -201,22 +207,16 @@ class Ball extends Sprite
         let pi = -1
         for (let it = 0; it < CONTACT_ITERATIONS; ++it)
         {
-            k = 0
+            k = this.contacts(segs, cn)
             let best = -1, bd = r
-            for (let i = 0; i < n; ++i)
-                if (this.segContact(segs[i], cn, k))
+            for (let j = 0; j < k; ++j)
+                if (cn[j * CS + 2] < bd)
                 {
-                    const d = cn[k * 5 + 2]
-                    if (d < bd)
-                    {
-                        best = k; bd = d
-                    }
-                    cn[(n + k) * 5] = i     // which line contact k belongs to
-                    ++k
+                    best = j; bd = cn[j * CS + 2]
                 }
             if (best < 0)
                 break
-            const o = best * 5, nx = cn[o], ny = cn[o + 1], seg = cn[(n + best) * 5]
+            const o = best * CS, nx = cn[o], ny = cn[o + 1], seg = cn[o + 5]
             let dx = (r - bd) * nx, dy = (r - bd) * ny
             // still touching the line pushed out just before (the push into this one came from there): push out of
             // both at once, keeping that one at radius
@@ -224,12 +224,12 @@ class Ball extends Sprite
             {
                 let other = -1
                 for (let j = 0; j < k; ++j)
-                    if (cn[(n + j) * 5] === pi)
+                    if (cn[j * CS + 5] === pi)
                         other = j
                 if (other >= 0)
                 {
-                    const ux = cn[other * 5], uy = cn[other * 5 + 1], c = ux * nx + uy * ny, det = 1 - c * c
-                    const r1 = r - cn[other * 5 + 2], r2 = r - bd
+                    const ux = cn[other * CS], uy = cn[other * CS + 1], c = ux * nx + uy * ny, det = 1 - c * c
+                    const r1 = r - cn[other * CS + 2], r2 = r - bd
                     const a = (r1 - c * r2) / det, b = (r2 - c * r1) / det
                     if (det > 1e-9 && a >= 0 && b >= 0)
                     {
@@ -262,8 +262,65 @@ class Ball extends Sprite
             }
         }
     }
+    // Contacts with segs at the current position, ghost joint contacts removed (see contactCollision); returns
+    // their count, records at out[j * CS]
+    contacts(segs, out)
+    {
+        const n = segs.length
+        let k = 0
+        for (let i = 0; i < n; ++i)
+            if (this.segContact(segs[i], out, k))
+            {
+                out[k * CS + 5] = i
+                ++k
+            }
+        let m = 0
+        for (let j = 0; j < k; ++j)
+        {
+            if (out[j * CS + 6] !== 0 && this.ghostContact(segs, out, j))
+                continue
+            if (m !== j)
+                for (let q = 0; q < CS; ++q)
+                    out[m * CS + q] = out[j * CS + q]
+            ++m
+        }
+        return m
+    }
+    // Contact j lies on an end V of its line: it is a ghost when another line joined at V (an end within CHAIN_JOIN)
+    // has the centre projecting into it (past its joined end: the normal (c - V) is outside the joint's cone) and is
+    // at least as close as V and itself a contact (with exactly shared ends it always is; for ends up to CHAIN_JOIN
+    // apart, a V that sticks out deeper is a real step and stays)
+    ghostContact(segs, out, j)
+    {
+        const o = j * CS, l = segs[out[o + 5]], d = out[o + 2], x0 = this.posX, y0 = this.posY
+        const vx = out[o + 6] === 1 ? l.posX : l.posX2, vy = out[o + 6] === 1 ? l.posY : l.posY2
+        const J2 = CHAIN_JOIN * CHAIN_JOIN
+        for (let i = 0; i < segs.length; ++i)
+        {
+            const s = segs[i]
+            if (s === l)
+                continue
+            for (let e = 0; e < 2; ++e)
+            {
+                const ex = e ? s.posX2 : s.posX, ey = e ? s.posY2 : s.posY
+                if ((ex - vx) * (ex - vx) + (ey - vy) * (ey - vy) > J2)
+                    continue
+                const fx = (e ? s.posX : s.posX2) - ex, fy = (e ? s.posY : s.posY2) - ey
+                const p = (x0 - ex) * fx + (y0 - ey) * fy
+                if (!(p > 0))
+                    continue
+                // the joined line must itself be a contact (so it carries the collision) and not farther than V
+                const L2 = fx * fx + fy * fy, t = p < L2 ? p / L2 : 1
+                const dO = Math.hypot(x0 - ex - t * fx, y0 - ey - t * fy)
+                if (dO <= d + CONTACT_SLOP && dO < this.radius + CONTACT_SLOP)
+                    return true
+            }
+        }
+        return false
+    }
     // Contact of this ball with segment l at its current position: when |c - q| < radius + CONTACT_SLOP, writes
-    // [nx, ny, dist, qx, qy] at out[k * 5] and returns true
+    // [nx, ny, dist, qx, qy, -, end] at out[k * CS] (end: 1 = q is the start point, 2 = the end point, else 0)
+    // and returns true
     segContact(l, out, k)
     {
         const x0 = this.posX, y0 = this.posY, x1 = l.posX, y1 = l.posY, ex = l.posX2 - x1, ey = l.posY2 - y1
@@ -289,15 +346,16 @@ class Ball extends Sprite
                 nx = -nx; ny = -ny
             }
         }
-        const o = k * 5
+        const o = k * CS
         out[o] = nx; out[o + 1] = ny; out[o + 2] = d; out[o + 3] = qx; out[o + 4] = qy
+        out[o + 6] = L2 > 0 && t > 0 && t < 1 ? 0 : (t <= 0 ? 1 : 2)
         return true
     }
-    // shared scratch buffer: 5 numbers per contact + 5 per line index slot
+    // shared scratch buffer: CS numbers per contact
     static scratch(n)
     {
-        if (!Ball._scratch || Ball._scratch.length < (2 * n + 2) * 5)
-            Ball._scratch = new Float64Array((2 * n + 8) * 5)
+        if (!Ball._scratch || Ball._scratch.length < (n + 2) * CS)
+            Ball._scratch = new Float64Array((n + 8) * CS)
         return Ball._scratch
     }
     collision()

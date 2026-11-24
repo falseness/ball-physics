@@ -146,6 +146,51 @@ const CASES = {
         return { pass: kick <= 1e-6 && minVx > 0, limit: 1e-6, kick: r6(kick, 9), seamMaxAbsVy: r6(seamVy, 9), floorMaxAbsVy: r6(refVy, 9),
             seamMaxDvyPerStep: r6(seamDv, 9), floorMaxDvyPerStep: r6(refDv, 9), minVxAtSeam: r6(minVx, 6), endX: r6(b.posX, 3) }
     },
+    // TASK-200 ghost vertices: a straight slope split in two at its middle (shared end point) must act like one
+    // line: every contact impulse J = (v1 - v0) - (0, g) is along the slope normal, so |J . t| (t = slope
+    // direction) <= 1e-12 px/step on every step. An end-point contact at the joint (normal (c - V)/|c - V|, outside
+    // the joint's cone) would be a tangential kick. Slopes of 8, 20 and 40 degrees, both line orders and one line
+    // reversed; balls dropped 15 / 40 px above the slope 2 / 4 / 8 px either side of the joint, and one released
+    // 60 px up the slope; each runs until it leaves x 120..680 (max 4 s) and must end below-left of the joint.
+    slope_seam()
+    {
+        const sub = []
+        let worst = 0
+        for (const deg of [8, 20, 40])
+        {
+            const a = deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a)
+            const P0 = [400 - 250 * c, 300 + 250 * sn], V = [400, 300], P1 = [400 + 250 * c, 300 - 250 * sn]
+            const nx = -sn, ny = -c   // upward normal of the slope
+            const starts = []
+            for (const dx of [-8, -4, -2, 2, 4, 8])
+                for (const hgt of [15, 40])
+                    starts.push([V[0] + dx * c + (R + hgt) * nx, V[1] - dx * sn + (R + hgt) * ny])
+            starts.push([V[0] + 60 * c + R * nx, V[1] - 60 * sn + R * ny])
+            for (const order of ['low_first', 'high_first', 'reversed'])
+            {
+                const A = [...P0, ...V], B = order === 'reversed' ? [...P1, ...V] : [...V, ...P1]
+                const w = h.makeFastWorld(order === 'high_first' ? [B, A] : [A, B])
+                let maxJt = 0, kicks = 0, rolledDown = true, first = null
+                for (const st of starts)
+                {
+                    const b = w.ball(st[0], st[1], 0, 0)
+                    for (let s = 0; s < 4 * STEPS_PER_SECOND; ++s)
+                    {
+                        const vx0 = b.speedX, vy0 = b.speedY
+                        w.step(b)
+                        const jt = Math.abs((b.speedX - vx0) * c - (b.speedY - vy0 - G) * sn)
+                        if (jt > maxJt) maxJt = jt
+                        if (jt > 1e-12) { ++kicks; if (!first) first = { start: st.map(v => r6(v, 3)), step: s, jt, at: [r6(b.posX, 4), r6(b.posY, 4)] } }
+                        if (b.posX < 120 || b.posX > 680) break
+                    }
+                    if (!(b.posX < V[0] && b.posY > V[1])) rolledDown = false
+                }
+                worst = Math.max(worst, maxJt)
+                sub.push({ deg, order, starts: starts.length, maxTangentialJ: maxJt, kickSteps: kicks, first, rolledDown, pass: maxJt <= 1e-12 && rolledDown })
+            }
+        }
+        return { pass: sub.every(s => s.pass), limit: 1e-12, maxTangentialJ: worst, failingSub: sub.filter(s => !s.pass).map(s => `${s.deg}deg/${s.order}`), sub }
+    },
     // Dropped into the V (300,200)-(500,400)-(700,200): at rest (inside a 2 px box for 0.5 s, within 3 px of the
     // analytic rest point (500, 400 - R*sqrt2)) starting at some t <= 2 s.
     v_corner()
