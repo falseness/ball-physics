@@ -1,6 +1,6 @@
 'use strict'
-// TASK-180: full-screen level route map (concept artifacts/concepts/routemap/305-wall-full.png), drawing only
-// (input comes later). Data: js/routemap.js (ROUTEMAP slots/branches/wall/portals/obstacles/hops, routeAssign).
+// TASK-180: full-screen level route map (concept artifacts/concepts/routemap/305-wall-full.png). Input (TASK-181):
+// mapOpen() from the pause menu's 'Levels' button, mapClick() for clicks / taps while the map is shown. Data: js/routemap.js (ROUTEMAP slots/branches/wall/portals/obstacles/hops, routeAssign).
 // The whole map (background, floor, wall, portals, obstacles, hops, platforms, flags, lamp, ball) is rendered into
 // an offscreen layer that is rebuilt only when the progress or the backing size changes, then blitted each frame.
 // Level numbers on the map are the play-order numbers (index + 1); solved = levels[i].unlock == 2; the next level
@@ -319,4 +319,30 @@ window.mapDebug = function(solvedSrcIds)
     drawMenuIcon = true
     levelCompletedWindow = false
     return mapLevelStates().next + 1
+}
+
+// TASK-181: the pause menu's 'Levels' button opens the map (the HUD menu icon on it leads back)
+function mapOpen()
+{
+    drawMap = true
+    drawMenu = false
+    levelCompletedWindow = false
+    drawMenuIcon = true
+    physics = false
+}
+
+// A click or tap at logical coords while the map is shown: the menu icon goes back to the pause menu, a level's
+// platform / flag hit box (routeSlotBox) starts that level through levelPick (js/levelsRects.js).
+function mapClick(coords)
+{
+    if (inMenuIcon(coords))
+    {
+        drawMap = false
+        drawMenu = true
+        drawMenuIcon = false
+        return
+    }
+    const i = routeLevelAt(levels, coords[0], coords[1])
+    if (i >= 0)
+        levelPick(i)
 }

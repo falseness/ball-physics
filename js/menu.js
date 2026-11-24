@@ -1,7 +1,9 @@
 let menuTextRect = [250, 50]
 let menuCoords = [GAME_W / 2, 20]
-// tall enough for 4 rows of 7 level squares (up to 28 levels): grid +525..+731, panel y 20..790 (canvas 800)
-let menuSize = [400, 770]
+// TASK-181: no level grid any more; the panel ends below the last button ('Levels' +470..+520 in the pause
+// menu, 'restart' +455..+505 in the level-complete window)
+let menuSize = [400, 540]
+// buttons at +300 + i * 85; 'Levels' opens the route map (js/mapdraw.js mapOpen)
 let menuButtons = ['resume', 'restart', 'Levels']
 
 // Translucent navy overlay behind the pause menu / level-complete window.
@@ -63,15 +65,8 @@ function menu()
         glassPanel(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
         for (let i = 0; i < menuButtons.length; ++i)
         {
-            if (i == 2)
-            {
-                // 'Levels' heading above the level grid (no button rect, as before)
-                menuLabel(menuButtons[i], menuCoords[0] + menuSize[0] / 2, menuCoords[1] + 335 + 85 * i - 10, 34, THEME.soft)
-                continue
-            }
             menuButton(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + 300 + i * 85, menuTextRect[0], menuTextRect[1], menuButtons[i])
         }
-        drawLevels()
         drawLogo()
         const er = editorButtonRect()  // drawn after the logo: it sits inside the logo frame
         menuButton(er[0], er[1], er[2], er[3], 'editor')

@@ -75,8 +75,7 @@ def wait_idle(page, limit=900):
 
 
 def choose_level(page, i):
-    shoot.click(page, *page.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"))
-    shoot.click(page, *page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", i))
+    shoot.pick_level(page, i)  # menu -> 'Levels' -> route map slot (TASK-181)
 
 
 def level_run(page, src, expected):

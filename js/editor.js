@@ -112,8 +112,7 @@ editorBarLoad()
 // top-right corner inside the logo frame (frame x +30..+370, y +70..+285), under the 'Ball physics'
 // title (bottom ~+64) and above the logo drawing (line/ball start at y +120/+150). The old spot at
 // the right end of the pause menu's 'Levels' row overlapped the win window's 'restart' button
-// (+455..+505). Independent of levels.length, so it never collides with a level square (the grid's
-// 4 rows from +rectMarginTop hold up to 20 levels) and fits the 34 px 'editor' label (~65 px).
+// (+455..+505). Independent of levels.length (levels are picked on the route map since TASK-181) and fits the 34 px 'editor' label (~65 px).
 const EDITOR_BUTTON_W = 120, EDITOR_BUTTON_H = 40
 function editorButtonRect()
 {

@@ -133,3 +133,36 @@ function routeAssign(levels, map = ROUTEMAP)
     }
     return out
 }
+
+// TASK-181: click / tap hit box of a slot = the union of its platform box and its flag box (the same boxes
+// tests/visual/map_check.mjs checks for overlaps): [x1, y1, x2, y2] in game coordinates.
+function routeSlotBox(id, map = ROUTEMAP)
+{
+    const [cx, top, w] = map.slots[id], B = map.box, hw = Math.max(w, B.flagW) / 2
+    return [cx - hw, top - B.flagH, cx + hw, top + B.platformDepth]
+}
+
+// Play-order index of the level whose slot hit box contains (x, y), or -1
+function routeLevelAt(levels, x, y, map = ROUTEMAP)
+{
+    const assign = routeAssign(levels, map)
+    for (const id in assign)
+    {
+        const b = routeSlotBox(id, map)
+        if (b[0] < x && x < b[2] && b[1] < y && y < b[3]) return assign[id]
+    }
+    return -1
+}
+
+// Centre of level i's hit box (tests click here), or null when the level has no slot
+function routeLevelPoint(levels, i, map = ROUTEMAP)
+{
+    const assign = routeAssign(levels, map)
+    for (const id in assign)
+        if (assign[id] === i)
+        {
+            const b = routeSlotBox(id, map)
+            return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]
+        }
+    return null
+}

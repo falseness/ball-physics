@@ -25,7 +25,6 @@ function levelCompleted()
         else
             menuLabel('Thanks for playing!', cx, menuCoords[1] + blocks[1] + menuTextRect[1] / 2, 34, THEME.soft)
         menuButton(bx, menuCoords[1] + blocks[2], menuTextRect[0], menuTextRect[1], 'restart')
-        drawLevels()
         drawLogo()
         // same small 'editor' button and rect as the pause menu; in play-test the 'editor' button
         // above (in place of 'next level') is the way back, so no duplicate

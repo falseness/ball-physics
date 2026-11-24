@@ -121,6 +121,31 @@ def open_menu(page):
     click(page, x, y)
 
 
+# TASK-181: the pause menu's 'Levels' button (i = 2, same rect expressions as the click handler) opens the route map;
+# a level is picked by clicking the centre of its slot hit box (routeLevelPoint -> routeSlotBox, js/routemap.js).
+LEVELS_BUTTON_JS = """[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+    menuCoords[1] + 300 + 2 * 85 + menuTextRect[1] / 2]"""
+LEVEL_POINT_JS = "i => routeLevelPoint(levels, i)"
+
+
+def open_map(page):
+    # pause menu (HUD menu icon) -> 'Levels' button, real clicks
+    open_menu(page)
+    click(page, *page.evaluate(LEVELS_BUTTON_JS))
+    if not page.evaluate("drawMap"):
+        raise RuntimeError('Levels button did not open the route map')
+
+
+def pick_level(page, i):
+    # menu -> 'Levels' -> the level's slot on the map (real clicks); returns the clicked point
+    open_map(page)
+    pt = page.evaluate(LEVEL_POINT_JS, i)
+    if pt is None:
+        raise RuntimeError('level index %s has no slot on the route map' % i)
+    click(page, *pt)
+    return pt
+
+
 def sc_menu_restart(page, info):
     # Place a line on level3 first so the restart has something to reset.
     sc_placed(page, info)
@@ -135,13 +160,16 @@ def sc_menu_restart(page, info):
 
 def sc_menu_level(page, info):
     frames(page)
-    # Every level is open from the start (js/levels.js), so level 2's square is clickable as is.
-    open_menu(page)
-    info['before'] = page.evaluate("({thisLevel, drawMenu})")
-    # Centre of level square 2 (i = 1), from levelRectXY() like levelsRectCollision().
-    x, y = page.evaluate("() => { const r = levelRectXY(1); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }")
+    # Every level is open from the start (js/levels.js). TASK-181: menu -> 'Levels' -> route map -> level 2's slot
+    # (i = 1, centre of its routeSlotBox hit box).
+    open_map(page)
+    info['before'] = page.evaluate("({thisLevel, drawMenu, drawMap})")
+    x, y = page.evaluate(LEVEL_POINT_JS, 1)
     info['click'] = [x, y]
     click(page, x, y)
+    info['after'] = page.evaluate("({thisLevel, drawMenu, drawMap, levelCompletedWindow})")
+    if info['after'] != {'thisLevel': 1, 'drawMenu': False, 'drawMap': False, 'levelCompletedWindow': False}:
+        raise RuntimeError('menu_level: level 2 not started from the map: %s' % info['after'])
 
 
 def sc_complete(page, info):
@@ -174,10 +202,8 @@ def sc_next_level_order(page, info):
     # physics is turned on, so gameMechanics' flagCollision opens the level-complete window. Then a real click
     # on the 'next level' rect (same expressions as the click handler, blocks[1]).
     frames(page)
-    open_menu(page)
     i2 = page.evaluate("levelBySrc(2)")
-    x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", i2)
-    click(page, x, y)
+    pick_level(page, i2)
     info['level2'] = page.evaluate("({thisLevel, srcId: levels[thisLevel].srcId, drawMenu})")
     if info['level2'] != {'thisLevel': i2, 'srcId': 2, 'drawMenu': False}:
         raise RuntimeError('level 2 not loaded: %s' % info['level2'])
@@ -202,11 +228,10 @@ PROGRESS_FILES = {'progress_reload': 'progress_reload.json', 'progress_storage_b
                   'progress_garbage': 'progress_garbage.json'}
 PROGRESS_STATE_JS = """() => { let stored = null; try { stored = localStorage.getItem(PROGRESS_STORE) } catch (e) { stored = 'THROWS' }
     return {solved: progressSolved(), stored, nLevels: levels.length, thisLevel, physics, drawMenu, levelCompletedWindow} }"""
-# Every level square: levelsRectCollision (the click handler's level picker) at the square's centre must select it.
+# Every level slot (TASK-181 route map): mapClick (the click handler's map path) at its hit box centre must start it.
 CLICKABLE_JS = """() => { const out = []; for (let i = 0; i < levels.length; ++i) {
-        const r = levelRectXY(i); drawMenu = true
-        const hit = levelsRectCollision(r[0] + rectSize / 2, r[1] + rectSize / 2)
-        out.push({i, srcId: levels[i].srcId, clickable: hit && thisLevel === i}) }
+        mapOpen(); const p = routeLevelPoint(levels, i); if (p) mapClick(p)
+        out.push({i, srcId: levels[i].srcId, clickable: !!p && thisLevel === i && !drawMap}) }
     thisLevel = 0; levelChoosed(0); return out }"""
 # Overrides localStorage get/set to throw (installed before any page script runs).
 # Counts game-loop frames (gameLoop re-schedules itself by name, so the wrapper sees every frame).
@@ -223,11 +248,9 @@ def progress_out(info, name, data):
 
 
 def win_level_src(page, src):
-    # Menu -> level square (real click); real win through gameMechanics' flagCollision (ball on the flag).
-    open_menu(page)
+    # Menu -> 'Levels' -> map slot (real clicks); real win through gameMechanics' flagCollision (ball on the flag).
     i = page.evaluate("n => levelBySrc(n)", src)
-    x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", i)
-    click(page, x, y)
+    pick_level(page, i)
     st = page.evaluate("({thisLevel, srcId: levels[thisLevel].srcId, drawMenu})")
     if st != {'thisLevel': i, 'srcId': src, 'drawMenu': False}:
         raise RuntimeError('level %s not loaded: %s' % (src, st))
@@ -248,7 +271,7 @@ def sc_progress_reload(page, info):
     restored = page.evaluate(PROGRESS_STATE_JS)
     restored['completedSrcIds'] = page.evaluate("levels.filter(l => l.unlock == 2).map(l => l.srcId)")
     clickable = page.evaluate(CLICKABLE_JS)
-    open_menu(page)  # screenshot: level grid with level 1 completed (coral) after the reload
+    open_map(page)  # screenshot: route map with level 1 completed (coral) after the reload
     allClickable = all(c['clickable'] for c in clickable)
     data = {'before': before, 'won': won, 'afterWin': afterWin, 'restored': restored,
             'restoredSolved': restored['solved'], 'contains1': 1 in restored['solved'],
@@ -622,17 +645,15 @@ def play_solution(page, info, src, segments, max_frames, key, via=('A', 'B')):
 
 
 def place_and_start(page, info, src, segments, key, before_draw_js=None):
-    # play_solution's input part: menu -> level, draw the lines with real clicks, start physics.
+    # play_solution's input part: menu -> 'Levels' -> map slot, draw the lines with real clicks, start physics.
     # before_draw_js runs right after the frame counter is installed (before any line is drawn).
-    # src is the level's source id (definition number, TASK-177); its grid square is levelBySrc(src).
+    # src is the level's source id (definition number, TASK-177); its map slot holds levelBySrc(src).
     # Returns the play-order index.
     frames(page)
     index = page.evaluate("n => levelBySrc(n)", src)
     if index < 0:
         raise RuntimeError('%s: no level with srcId %s' % (key, src))
-    open_menu(page)
-    x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", index)
-    click(page, x, y)
+    pick_level(page, index)
     st = page.evaluate("({thisLevel, drawMenu, portals: (curLevel().portals || []).length})")
     info[key] = st
     info['srcId'] = page.evaluate("levels[thisLevel].srcId")
@@ -917,6 +938,115 @@ def sc_map_progress(page, info):
         return ids.concat(extra.map(i => levels[i].srcId)) })()""")
 
 
+# TASK-181 route map input. Each scenario writes <scenario>.json (compact) into the task dir; run_scenario adds
+# the page's console error count and the final pass.
+MAP_INPUT_FILES = {'map_open': 'map_open.json', 'map_play': 'map_play.json', 'map_touch': 'map_touch.json',
+                   'map_close': 'map_close.json'}
+MAP_UI_JS = """() => ({drawMap, drawMenu, drawMenuIcon, levelCompletedWindow, physics, thisLevel,
+    srcId: levels[thisLevel].srcId, playtest: !!playtestLevel})"""
+# counts the real DOM input events reaching the page (capture phase, before the game's handlers)
+INPUT_COUNTER_JS = """() => { window.__inputs = {click: 0, mousedown: 0, touchstart: 0, touchend: 0};
+    for (const t in window.__inputs) document.addEventListener(t, () => ++window.__inputs[t], true) }"""
+# play-order index 7 = new level 8 (srcId 16 at TASK-177's order)
+MAP_PLAY_INDEX = 7
+MAP_PLAY_SRC = 16
+
+
+def slot_info(page, i):
+    return page.evaluate("""i => { const a = routeAssign(levels); const id = Object.keys(a).find(k => a[k] === i);
+        return {index: i, number: i + 1, srcId: levels[i].srcId, slot: id || null, box: id ? routeSlotBox(id) : null,
+            point: routeLevelPoint(levels, i), hitAtPoint: routeLevelAt(levels, ...routeLevelPoint(levels, i))} }""", i)
+
+
+def sc_map_open(page, info):
+    frames(page)
+    page.evaluate(INPUT_COUNTER_JS)
+    open_menu(page)
+    menu = page.evaluate(MAP_UI_JS)
+    btn = page.evaluate(LEVELS_BUTTON_JS)
+    click(page, *btn)
+    frames(page, 3)
+    st = page.evaluate(MAP_UI_JS)
+    ms = page.evaluate("window.mapState && {next: mapState.next, platforms: mapState.platforms, flags: mapState.flags}")
+    d = {'menuOpened': menu, 'levelsButton': btn, 'state': st, 'mapState': ms, 'inputs': page.evaluate("window.__inputs"),
+         'gridGone': page.evaluate("typeof drawLevels === 'undefined' && typeof levelsRectCollision === 'undefined'")}
+    d['pass'] = bool(menu['drawMenu'] and st['drawMap'] and not st['drawMenu'] and st['drawMenuIcon'] and d['gridGone']
+                     and ms and ms['platforms'] == page.evaluate("levels.length"))
+    info['mapinput'] = d
+
+
+def map_play_common(page, info, tap):
+    frames(page)
+    page.evaluate(INPUT_COUNTER_JS)
+    before = page.evaluate(MAP_UI_JS)
+    if tap:  # the whole flow by touch: tap the menu icon, tap 'Levels'
+        for pt in (page.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"), page.evaluate(LEVELS_BUTTON_JS)):
+            page.touchscreen.tap(*to_client(page, *pt))
+            frames(page)
+        opened = page.evaluate("window.__inputs")
+    else:
+        open_map(page)
+        opened = None
+    onMap = page.evaluate(MAP_UI_JS)
+    si = slot_info(page, MAP_PLAY_INDEX)
+    page.evaluate("() => { window.__inputs = {click: 0, mousedown: 0, touchstart: 0, touchend: 0} }")
+    if tap:
+        page.touchscreen.tap(*to_client(page, *si['point']))
+        frames(page)
+    else:
+        click(page, *si['point'])
+    frames(page, 3)
+    after = page.evaluate(MAP_UI_JS)
+    inputs = page.evaluate("window.__inputs")
+    d = {'before': before, 'openInputs': opened, 'onMap': onMap, 'slot': si, 'after': after, 'inputs': inputs,
+         'levelLoaded': page.evaluate("({ball: [ball.posX, ball.posY], start: [curLevel().ballX, curLevel().ballY], linesK, nLines: lines.length})")}
+    ok = (onMap['drawMap'] and si['slot'] is not None and si['hitAtPoint'] == MAP_PLAY_INDEX
+          and after['thisLevel'] == MAP_PLAY_INDEX and after['srcId'] == MAP_PLAY_SRC
+          and not after['drawMap'] and not after['drawMenu'] and not after['levelCompletedWindow']
+          and after['drawMenuIcon'] and not after['playtest'])
+    if tap:  # the tap went through the touch handlers (no mouse click event)
+        ok = ok and inputs['touchstart'] == 1 and inputs['touchend'] == 1 and inputs['click'] == 0 and opened == {
+            'click': 0, 'mousedown': 0, 'touchstart': 2, 'touchend': 2}
+    else:
+        ok = ok and inputs['click'] == 1 and inputs['touchstart'] == 0
+    d['pass'] = bool(ok)
+    info['mapinput'] = d
+
+
+def sc_map_play(page, info):
+    map_play_common(page, info, tap=False)
+
+
+def sc_map_touch(page, info):
+    map_play_common(page, info, tap=True)
+
+
+def sc_map_close(page, info):
+    frames(page)
+    open_map(page)
+    onMap = page.evaluate(MAP_UI_JS)
+    # a click on empty map space (between slots) does nothing
+    empty = [40, 40]
+    emptyHit = page.evaluate("p => routeLevelAt(levels, p[0], p[1])", empty)
+    click(page, *empty)
+    afterEmpty = page.evaluate(MAP_UI_JS)
+    icon = page.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]")
+    click(page, *icon)
+    frames(page, 2)
+    after = page.evaluate(MAP_UI_JS)
+    # and the menu's 'resume' still works afterwards
+    click(page, *page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
+        menuCoords[1] + 300 + menuTextRect[1] / 2]"""))
+    resumed = page.evaluate(MAP_UI_JS)
+    d = {'onMap': onMap, 'emptyClick': {'point': empty, 'hit': emptyHit, 'after': afterEmpty}, 'menuIcon': icon,
+         'after': after, 'resumed': resumed}
+    d['pass'] = bool(onMap['drawMap'] and emptyHit == -1 and afterEmpty['drawMap'] and afterEmpty['thisLevel'] == onMap['thisLevel']
+                     and not after['drawMap'] and after['drawMenu'] and not after['drawMenuIcon']
+                     and after['thisLevel'] == onMap['thisLevel']
+                     and not resumed['drawMenu'] and not resumed['drawMap'] and resumed['drawMenuIcon'])
+    info['mapinput'] = d
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3': sc_level3,
@@ -963,11 +1093,16 @@ SCENARIOS = {
     'progress_garbage': sc_progress_garbage,
     'map': sc_map,
     'map_progress': sc_map_progress,
+    'map_open': sc_map_open,
+    'map_play': sc_map_play,
+    'map_touch': sc_map_touch,
+    'map_close': sc_map_close,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
 PAGE_OPTIONS = {
     'touch_line': {'has_touch': True},
+    'map_touch': {'has_touch': True},
 }
 # Scripts added with page.add_init_script() before the first load (they run before every page script).
 PAGE_INIT = {
@@ -1023,6 +1158,17 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
             json.dump(d, f, separators=(',', ':'))
         if not d['pass']:
             errors.append('progress check failed: %s' % PROGRESS_FILES[name])
+    if name in MAP_INPUT_FILES and 'mapinput' in info:  # TASK-181: map input + the page's final console error count
+        d = info['mapinput']
+        d['consoleErrors'] = len(errors)
+        d['errors'] = list(errors)
+        d['pass'] = bool(d['pass'] and not errors)
+        with open(os.path.join(out_dir, MAP_INPUT_FILES[name]), 'w') as f:
+            json.dump(d, f, separators=(',', ':'))
+        if not d['pass']:
+            errors.append('map input check failed: %s' % MAP_INPUT_FILES[name])
+    elif name in MAP_INPUT_FILES:
+        errors.append('map input scenario wrote no data: %s' % name)
     if 'mapstate' in info:  # TASK-180: route map state + the page's final console error count
         d = info['mapstate']
         d['consoleErrors'] = len(errors)

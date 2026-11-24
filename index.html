@@ -204,8 +204,11 @@
         // One click (mouse) or tap (touch) at logical coords
         function handleClick(coords)
         {
-            if (drawMap)
-                return // route map: drawing only for now (map input: TASK-181)
+            if (drawMap && !editorMode)
+            {
+                mapClick(coords) // route map (js/mapdraw.js): menu icon -> pause menu, level slot -> that level
+                return
+            }
             if (editorMode)
             {
                 editorClick(coords)
@@ -221,10 +224,6 @@
                 levelCompletedWindow = false
                 editorOpen() // edit the level just won
                 return
-            }
-            if ((levelCompletedWindow || drawMenu) && levelsRectCollision(coords[0], coords[1]))
-            {
-                return    
             }
             if (levelCompletedWindow)
             {
@@ -264,7 +263,7 @@
                         editorOpen()
                     return
                 }
-                for (let i = 0; i < menuButtons.length - 1; ++i)
+                for (let i = 0; i < menuButtons.length; ++i)
                 {
                     if (collisionWithRect(
                         coords[0], coords[1], 
@@ -273,6 +272,11 @@
                         menuTextRect[0] + menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, 
                         menuTextRect[1] + menuCoords[1] + 300 + i * 85))
                         {
+                            if (menuButtons[i] == 'Levels')
+                            {
+                                mapOpen() // full-screen route map replaces the old level grid
+                                return
+                            }
                             drawMenu = false
                             drawMenuIcon = true
                             if (menuButtons[i] == 'restart')
@@ -364,6 +368,8 @@
             if (editorMode)
                 return editorMouseDown(mouseCoords(event))
             suppressClick = false
+            if (drawMap)
+                return // route map: only the click counts (handleClick -> mapClick)
             if (event.button == 0 && !dragStart(mouseCoords(event)))
                 lockPress(mouseCoords(event)) // locked after a run: hint only
         })
@@ -403,7 +409,7 @@
         // Would a click at coords start a new line? (same conditions as handleClick)
         function lineStartAccepted(coords)
         {
-            if (editorMode || levelCompletedWindow || drawMenu || line || levelStarted)
+            if (editorMode || drawMap || levelCompletedWindow || drawMenu || line || levelStarted)
                 return false
             if (inMenuIcon(coords) || inPlayIcon(coords) || (playtestLevel && inEditIcon(coords)) || (restartIconVisible() && inRestartIcon(coords)))
                 return false
@@ -446,6 +452,8 @@
             touch = {id: t.identifier, start: coords, last: coords, moved: false, startedLine: false, drag: false}
             if (editorMode)
                 editorMouseDown(coords)
+            else if (drawMap)
+                {} // route map: the tap at touchend goes through handleClick -> mapClick
             else if (dragStart(coords))
                 touch.drag = true // on a player line end: drag it instead of starting a line
             else
