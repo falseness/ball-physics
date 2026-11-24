@@ -50,7 +50,7 @@ local backend keeps values in memory). To reset progress with the local backend:
 
 The game never touches `localStorage` directly; every read and write goes through `PLATFORM.storage`
 (`platform.js` + one backend under `platform/backends/`, copied as-is from grapnelninja c61a049).
-Boot (`boot()` in index.html) awaits `PLATFORM.init()`, then reads all three keys in one
+Boot (`boot()` in index.html) awaits `PLATFORM.init()`, then reads all four keys in one
 `PLATFORM.storage.getMany([...])` call before the first frame and sets `bootComplete = true`.
 
 | key | owner | value |
@@ -58,6 +58,7 @@ Boot (`boot()` in index.html) awaits `PLATFORM.init()`, then reads all three key
 | `bp.progress.v1` | js/levels.js (`PROGRESS_STORE`, `loadProgress` / `saveProgress`) | `{"solved": [srcId, ...]}` |
 | `bp.lines.v1` | js/linestore.js (`LINES_STORE`, `linesLoad` / `linesSaveDraft` / `linesSavePassed`) | `{[srcId]: {draft, passed, sha}}`, see Saved lines |
 | `bp.editorBar.v1` | js/editor.js (`EDITOR_BAR_STORE`, `editorBarLoad` / `editorBarSave`) | editor toolbar position |
+| `bp.speed.v1` | index.html (`SPEED_STORE`, `speedLoad` / `speedToggle`) | `'3'` = 3x, anything else 1x; see Speed button |
 
 Writes use `PLATFORM.storage.setMany`; a throwing or rejecting backend (blocked storage) is swallowed,
 so the game keeps playing with in-memory values and no console errors.
@@ -99,6 +100,32 @@ Restart: the menu 'restart', the win-window 'restart' and a ball falling off the
 `linesK`) are kept, not reloaded from storage. `restart()` (used by tests/portal/sim.py) is
 `levelChoosed(thisLevel)` and restores the saved lines. Checked by the `lines_*` scenarios of
 tests/visual/shoot.py.
+
+## Speed button
+
+Placement and visibility: a square 63x63 HUD box with two arrows and a "3x" label (concept
+artifacts/concepts/speed/14-arrow-centre-big3x-v2.png), drawn by `drawSpeedIcon()` in js/menu.js.
+`speedIconRect()` in index.html is the restart box shifted 73 px left (63 px box + 10 px gap), i.e.
+`(978, 20, 63, 63)`, left of the restart box; the run/play box is unchanged. `speedIconVisible()` is
+`restartIconVisible()`: shown only after 'run' was clicked (`levelStarted`), and hidden in the editor,
+the level menu and the win window. Off = plain HUD box and ink; on = coral box with green arrows. A
+click or tap toggles `speedMul` 1 <-> 3 (`speedToggle()`); it is checked before the restart box and
+never starts a player line. The play-test 'edit' box moved to `x-292` to make room.
+
+Storage: key `bp.speed.v1` via `PLATFORM.storage` (`'3'` or `'1'`). `speedLoad()` reads it in the
+boot `getMany`, so the choice survives a reload; a blocked backend is swallowed and the game keeps the
+in-memory value.
+
+Chunked stepping: `gameMechanics()` runs `speedMul` chunks per frame; each chunk is exactly one 1x
+frame (`cyclesPerTact` physics steps with the same per-step flag-collision, play-test and off-map
+handling). The frame ends after a chunk with an off-map restart, physics turned off, or a new win
+(`levelCompletedWindow` false -> true), so a 3x run reaches the same state as 1x in ceil(n/3) frames.
+
+Trail rule: one `trailRecord` sample per chunk (a teleport during the chunk starts a new segment),
+so a 3x run draws the same trail points as 1x, only faster.
+
+Checks: `tests/visual/speed_check.py` (srcId 1, 12, 24 win at 1x and 3x, 0 state mismatches,
+identical trails) and the `speed_*` scenarios of tests/visual/shoot.py.
 
 ## Adding a slot for a new level
 
