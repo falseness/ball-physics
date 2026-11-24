@@ -1543,6 +1543,12 @@ def sc_speed_on(page, info):
 def sc_speed_toggle(page, info):
     run = speed_run(page)
     r = run['rect']
+    # TASK-188: 3x really runs 3x faster, so the level-1 ball would leave the map (run over, box hidden) before the
+    # last tap; pause the run with the play box first (levelStarted stays true, the speed box stays visible)
+    click(page, *page.evaluate(PLAY_ICON_JS))
+    frames(page)
+    if page.evaluate("physics") or not speed_state(page)['visible']:
+        raise RuntimeError('speed_toggle: run not paused / speed box hidden')
     one = speed_click(page)   # mouse click: 1 -> 3
     two = speed_click(page)   # mouse click: 3 -> 1
     # the same with two touch taps (touchstart + touchend inside TAP_SLOP -> handleClick)
