@@ -451,12 +451,13 @@ LEVEL14_MAX_FRAMES = 3000
 LEVEL15_LINE = ((207, 547), (1024, 437))
 LEVEL15_MAX_FRAMES = 3000
 
-# Level 16 (srcId 16) solution: one line under the ball sloping down to the left, ending just above portal B.
-# The ball rolls down it into B (on the short wall at the bottom left, facing right), comes out of A (the floor pad,
-# facing up) moving up-left, bounces off the right face of the tall wall x=312, flies right onto the sloped ramp and
-# bounces straight up into the flag (won on physics frame 147). Found by a focused lattice + dense local search with
-# in-page stepped frames (artifacts/TASK-100/search.log); the layout is unchanged. Keep these exact integer coordinates.
-LEVEL16_LINE = ((96, 636), (299, 346))
+# Level 16 (srcId 16) solution: one line low under the ball sloping down to the left towards portal B (on the short
+# wall at the bottom left, facing right). The ball drops beside the tall wall x=312 onto it, bounces down-left into B,
+# comes out of A (the floor pad, facing up) and arcs right onto the flag (won on physics frame 101, one B->A teleport). TASK-205 (contact physics): the TASK-100 line
+# (96,636)-(299,346) no longer wins (the ball bounces off it over B and leaves the map); this one was found by the G4
+# sample of tools/level_search.py and wins with all 8 single-coordinate +-2 px variants
+# (artifacts/TASK-205/gates_16.json). Keep these exact integer coordinates.
+LEVEL16_LINE = ((336, 609), (227, 783))
 LEVEL16_MAX_FRAMES = 3000
 
 # Level 17 (srcId 17) solution: one long ramp under the ball sloping down to the right towards portal A (on the outer,

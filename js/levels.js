@@ -284,7 +284,14 @@ levels.push(
         new Line(633, 90, 633, 791, dotRadius, levelLineColor, 'line'),
         new Line(1239, 623.0504101869152, 1239, 30, dotRadius, levelLineColor, 'line'),
         new Line(1239, 30, 999, 30, dotRadius, levelLineColor, 'line'),
-        new Line(60.01501619660557, 667.9957087306927, 225.98710429701066, 667.9957087306927, dotRadius, levelLineColor, 'line')
+        new Line(60.01501619660557, 667.9957087306927, 225.98710429701066, 667.9957087306927, dotRadius, levelLineColor, 'line'),
+        // TASK-205: a closed block behind portal A (x 570-633, y 240-368). Under the contact physics a player line
+        // sloping down into the wall's left face next to A's back made the ball bounce in place in the wedge
+        // (rim-trap detector: 12 trapped runs in the G4 3000 sample); with the block a ball on the back side stays
+        // more than h + r + 2 px from A's centre.
+        new Line(633, 240, 570, 240, dotRadius, levelLineColor, 'line'),
+        new Line(570, 240, 570, 368, dotRadius, levelLineColor, 'line'),
+        new Line(570, 368, 633, 368, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A on the wall at x 633 facing right (1, 0),
     // B on the floor pad facing up (0, -1)
