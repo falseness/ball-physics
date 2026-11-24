@@ -839,4 +839,32 @@ function levelBySrc(n)
 // Every level is open from the start (no need to win the previous one); a win still
 // marks it completed (unlock 2, coral in the level grid).
 for (const l of levels) l.unlock = Math.max(l.unlock || 0, 1)
+// TASK-178: saved progress. The solved levels are stored by srcId (never by play-order index) in
+// localStorage[PROGRESS_STORE] as JSON {solved: [srcId, ...]}. Every storage access is guarded:
+// blocked storage or an invalid value means nothing solved, without console errors.
+const PROGRESS_STORE = 'bp.progress.v1'
+function progressSolved()
+{
+    return levels.filter(l => l.unlock == 2).map(l => l.srcId).sort((a, b) => a - b)
+}
+function loadProgress()
+{
+    let solved = []
+    try
+    {
+        const v = JSON.parse(localStorage.getItem(PROGRESS_STORE))
+        if (v && Array.isArray(v.solved)) solved = v.solved
+    }
+    catch (e) { solved = [] }
+    for (const id of solved)
+    {
+        const i = Number.isInteger(id) ? levelBySrc(id) : -1
+        if (i >= 0) levels[i].unlock = 2
+    }
+}
+function saveProgress()
+{
+    try { localStorage.setItem(PROGRESS_STORE, JSON.stringify({ solved: progressSolved() })) } catch (e) {}
+}
+loadProgress()
 let thisLevel = 0

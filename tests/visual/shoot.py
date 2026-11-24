@@ -197,6 +197,100 @@ def sc_next_level_order(page, info):
         raise RuntimeError('next level order wrong: %s' % a)
 
 
+# TASK-178 saved progress. Each scenario also writes its own compact JSON (PROGRESS_FILES) into the task dir.
+PROGRESS_FILES = {'progress_reload': 'progress_reload.json', 'progress_storage_blocked': 'progress_blocked.json',
+                  'progress_garbage': 'progress_garbage.json'}
+PROGRESS_STATE_JS = """() => { let stored = null; try { stored = localStorage.getItem(PROGRESS_STORE) } catch (e) { stored = 'THROWS' }
+    return {solved: progressSolved(), stored, nLevels: levels.length, thisLevel, physics, drawMenu, levelCompletedWindow} }"""
+# Every level square: levelsRectCollision (the click handler's level picker) at the square's centre must select it.
+CLICKABLE_JS = """() => { const out = []; for (let i = 0; i < levels.length; ++i) {
+        const r = levelRectXY(i); drawMenu = true
+        const hit = levelsRectCollision(r[0] + rectSize / 2, r[1] + rectSize / 2)
+        out.push({i, srcId: levels[i].srcId, clickable: hit && thisLevel === i}) }
+    thisLevel = 0; levelChoosed(0); return out }"""
+# Overrides localStorage get/set to throw (installed before any page script runs).
+# Counts game-loop frames (gameLoop re-schedules itself by name, so the wrapper sees every frame).
+LOOP_COUNTER_JS = """() => { if (window.__loopFrames === undefined) { window.__loopFrames = 0; const g = gameLoop;
+    gameLoop = function() { ++window.__loopFrames; return g.apply(this, arguments) } } return window.__loopFrames }"""
+STORAGE_THROW_JS = """(() => { const f = () => { throw new DOMException('blocked by test', 'SecurityError') };
+    Storage.prototype.getItem = f; Storage.prototype.setItem = f })()"""
+
+
+def progress_out(info, name, data):
+    info['progress'] = data
+    with open(os.path.join(OUT_DIR, PROGRESS_FILES[name]), 'w') as f:
+        json.dump(data, f, separators=(',', ':'))
+
+
+def win_level_src(page, src):
+    # Menu -> level square (real click); real win through gameMechanics' flagCollision (ball on the flag).
+    open_menu(page)
+    i = page.evaluate("n => levelBySrc(n)", src)
+    x, y = page.evaluate("i => { const r = levelRectXY(i); return [r[0] + rectSize / 2, r[1] + rectSize / 2] }", i)
+    click(page, x, y)
+    st = page.evaluate("({thisLevel, srcId: levels[thisLevel].srcId, drawMenu})")
+    if st != {'thisLevel': i, 'srcId': src, 'drawMenu': False}:
+        raise RuntimeError('level %s not loaded: %s' % (src, st))
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; physics = true }")
+    page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+    frames(page, 5)
+    return page.evaluate("i => ({levelCompletedWindow, thisLevel, srcId: levels[i].srcId, unlock: levels[i].unlock})", i)
+
+
+def sc_progress_reload(page, info):
+    frames(page)
+    before = page.evaluate(PROGRESS_STATE_JS)
+    won = win_level_src(page, 1)
+    afterWin = page.evaluate(PROGRESS_STATE_JS)
+    page.reload()  # same page / browser context: localStorage is kept
+    page.wait_for_load_state('load')
+    frames(page, 3)
+    restored = page.evaluate(PROGRESS_STATE_JS)
+    restored['completedSrcIds'] = page.evaluate("levels.filter(l => l.unlock == 2).map(l => l.srcId)")
+    clickable = page.evaluate(CLICKABLE_JS)
+    open_menu(page)  # screenshot: level grid with level 1 completed (coral) after the reload
+    allClickable = all(c['clickable'] for c in clickable)
+    data = {'before': before, 'won': won, 'afterWin': afterWin, 'restored': restored,
+            'restoredSolved': restored['solved'], 'contains1': 1 in restored['solved'],
+            'clickableCount': sum(c['clickable'] for c in clickable), 'nLevels': len(clickable),
+            'allClickable': allClickable, 'clickable': clickable}
+    data['pass'] = bool(before['solved'] == [] and won['levelCompletedWindow'] and won['unlock'] == 2
+                        and data['contains1'] and allClickable)
+    progress_out(info, 'progress_reload', data)
+    if not data['pass']:
+        raise RuntimeError('progress_reload failed: %s' % {k: data[k] for k in ('restoredSolved', 'allClickable')})
+
+
+def sc_progress_storage_blocked(page, info):
+    # the init script is installed by run_scenario (PAGE_INIT) before page.goto
+    frames(page)
+    probe = page.evaluate("() => { try { localStorage.getItem('x'); return 'no throw' } catch (e) { return 'throws: ' + e.name } }")
+    before = page.evaluate(PROGRESS_STATE_JS)
+    won = win_level_src(page, 1)
+    after = page.evaluate(PROGRESS_STATE_JS)
+    # still running: the game loop keeps drawing frames after the win
+    page.evaluate(LOOP_COUNTER_JS)
+    frames(page, 10)
+    f1 = page.evaluate("window.__loopFrames")
+    f0 = 0
+    data = {'storageProbe': probe, 'before': before, 'won': won, 'after': after,
+            'frameCount': [f0, f1], 'gameRunning': f1 > f0}
+    progress_out(info, 'progress_storage_blocked', data)  # consoleErrors added by run_scenario
+
+
+def sc_progress_garbage(page, info):
+    frames(page)
+    st = page.evaluate(PROGRESS_STATE_JS)
+    page.evaluate(LOOP_COUNTER_JS)
+    frames(page, 10)
+    f1 = page.evaluate("window.__loopFrames")
+    f0 = 0
+    data = {'storedRaw': st['stored'], 'state': st, 'solvedCount': len(st['solved']),
+            'completedCount': page.evaluate("levels.filter(l => l.unlock == 2).length"),
+            'frameCount': [f0, f1], 'gameRunning': f1 > f0}
+    progress_out(info, 'progress_garbage', data)
+
+
 def sc_resized(page, info):
     # Start screen, then grow the window; fitCanvas() re-fits the letterboxed canvas.
     frames(page)
@@ -831,12 +925,21 @@ SCENARIOS = {
     'level32': sc_level32,
     'l19_rim_backside': sc_l19_rim_backside,
     'l24_center_entry': sc_l24_center_entry,
+    'progress_reload': sc_progress_reload,
+    'progress_storage_blocked': sc_progress_storage_blocked,
+    'progress_garbage': sc_progress_garbage,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
 PAGE_OPTIONS = {
     'touch_line': {'has_touch': True},
 }
+# Scripts added with page.add_init_script() before the first load (they run before every page script).
+PAGE_INIT = {
+    'progress_storage_blocked': STORAGE_THROW_JS,
+    'progress_garbage': "localStorage.setItem('bp.progress.v1', '{solved: [1, 2,')",
+}
+OUT_DIR = None
 
 
 def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
@@ -847,6 +950,8 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
     page.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
     entry = {'errors': errors}
     try:
+        if name in PAGE_INIT:
+            page.add_init_script(PAGE_INIT[name])
         page.goto(URL)
         page.wait_for_load_state('load')
         frames(page)
@@ -865,6 +970,22 @@ def run_scenario(browser, name, out_dir, eval_js, viewport=VIEWPORT, dpr=1):
     finally:
         page.close()
     entry.update(info)
+    if name in PROGRESS_FILES and 'progress' in info:  # final error count of the whole page lifetime
+        d = info['progress']
+        d['consoleErrors'] = len(errors)
+        d['errors'] = list(errors)
+        if name == 'progress_storage_blocked':
+            d['pass'] = bool(not errors and d['storageProbe'].startswith('throws') and d['won']['levelCompletedWindow']
+                             and d['gameRunning'] and d['before']['solved'] == [])
+        elif name == 'progress_garbage':
+            d['pass'] = bool(not errors and d['solvedCount'] == 0 and d['completedCount'] == 0 and d['gameRunning']
+                             and d['storedRaw'] not in (None, 'THROWS'))
+        else:
+            d['pass'] = bool(d['pass'] and not errors)
+        with open(os.path.join(out_dir, PROGRESS_FILES[name]), 'w') as f:
+            json.dump(d, f, separators=(',', ':'))
+        if not d['pass']:
+            errors.append('progress check failed: %s' % PROGRESS_FILES[name])
     return entry
 
 
@@ -888,6 +1009,8 @@ def main():
 
     out_dir = os.path.join(ROOT, 'artifacts', args.task)
     os.makedirs(out_dir, exist_ok=True)
+    global OUT_DIR
+    OUT_DIR = out_dir
 
     result = {}
     with sync_playwright() as p:

@@ -548,9 +548,8 @@
                             levelCompletedWindow = true // play-test: no unlock bookkeeping
                             continue
                         }
-                        levels[thisLevel].unlock = 2
-                        if (thisLevel + 1 < levels.length)
-                            levels[thisLevel + 1].unlock = (levels[thisLevel + 1].unlock == 2)?2:1 
+                        levels[thisLevel].unlock = 2 // completed; saved by srcId (TASK-178)
+                        saveProgress()
                         levelCompletedWindow = true
                     }
                     if (!ball.onMap())
