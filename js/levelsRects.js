@@ -6,6 +6,7 @@ function levelPick(i)
     thisLevel = i
     playtestLevel = null // picking a real level ends a play-test
     levelChoosed(thisLevel)
+    TELEMETRY.levelStart('map') // TASK-191: a level opened from the map is an attempt (js/telemetry.js)
     drawMenu = false
     drawMap = false
     levelCompletedWindow = false

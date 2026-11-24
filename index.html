@@ -34,6 +34,7 @@
     <script src = "analytics/vendor/GameAnalytics.min.js"></script>
     <script src = "analytics/backends/gameanalytics.js"></script>
     <script src = "analytics.js"></script>
+    <script src = "js/telemetry.js"></script>
     <script src = "js/theme.js"></script>
     <script src = "js/sketch.js"></script>
     <script src = "js/sprite.js"></script>
@@ -272,6 +273,7 @@
             if (levelCompletedWindow && !playtestLevel && inEditorButton(coords))
             {
                 levelCompletedWindow = false
+                TELEMETRY.close()
                 editorOpen() // edit the level just won
                 return
             }
@@ -291,6 +293,7 @@
                     }
                     levelChoosed(++thisLevel)
                     levelCompletedWindow = false
+                    TELEMETRY.levelStart('next') // TASK-191 (js/telemetry.js)
                 }
                 else if (collisionWithRect(
                         coords[0], coords[1],
@@ -301,6 +304,7 @@
                 {
                     levelCompletedWindow = false
                     restartKeepLines() // restart: ball back to the start, the player's lines kept
+                    TELEMETRY.restart()
                 }
             }
             else if (drawMenu)
@@ -310,7 +314,10 @@
                     if (playtestLevel)
                         editorEndPlaytest() // back to the same working copy
                     else
+                    {
+                        TELEMETRY.close() // the attempt ends without an event
                         editorOpen()
+                    }
                     return
                 }
                 for (let i = 0; i < menuButtons.length; ++i)
@@ -324,6 +331,7 @@
                         {
                             if (menuButtons[i] == 'Levels')
                             {
+                                TELEMETRY.leave() // an unwon attempt is abandoned (js/telemetry.js)
                                 mapOpen() // full-screen route map replaces the old level grid
                                 return
                             }
@@ -332,6 +340,7 @@
                             if (menuButtons[i] == 'restart')
                             {
                                 restartKeepLines() // ball back to the start, the player's lines kept
+                                TELEMETRY.restart()
                             }
                         }
                 }
@@ -347,6 +356,7 @@
                 {
                     selectionClear()
                     restartKeepLines() // ball back to the start, lines kept and editable again
+                    TELEMETRY.restart()
                     return
                 }
                 if (line)
@@ -362,6 +372,7 @@
                         bounce.setDrawEnable(false)
                         physics = true
                         levelStarted = true
+                        TELEMETRY.run()
                     }
                 }
                 else
@@ -382,6 +393,7 @@
                         selectionClear()
                         physics = !physics
                         levelStarted = true
+                        TELEMETRY.run()
                     }
                     else if (levelStarted)
                     {
@@ -631,12 +643,14 @@
                                 levels[thisLevel].unlock = 2 // completed; saved by srcId (TASK-178)
                                 saveProgress()
                                 linesSavePassed() // TASK-185: the lines that won this level
+                                TELEMETRY.win() // TASK-191
                             }
                             levelCompletedWindow = true
                         }
                         if (!ball.onMap())
                         {
                             restartKeepLines() // reset level, keep player lines: no more physics steps this frame
+                            TELEMETRY.offMap() // Fail + fail:offmap, then the next attempt (js/telemetry.js)
                             offMap = true
                             break
                         }
@@ -692,6 +706,7 @@
             // Added before ANALYTICS.init: the gameanalytics backend's own pagehide handler runs after this one
             window.addEventListener('pagehide', function()
             {
+                TELEMETRY.leave() // TASK-191: an unwon attempt is abandoned before the flush
                 ANALYTICS.flush()
                 ANALYTICS.sessionEnd()
             })
@@ -709,13 +724,17 @@
         {
             analyticsStart()
             await PLATFORM.init()
-            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE, SPEED_STORE])
+            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE, SPEED_STORE, STATS_STORE])
             loadProgress(saved)
             editorBarLoad(saved)
             linesLoad(saved)
             speedLoad(saved)
+            TELEMETRY.load(saved)
             if (!levelStarted && !line && !editorMode && !playtestLevel)
+            {
                 levelChoosed(thisLevel) // the current level with its saved lines
+                TELEMETRY.levelStart('boot') // TASK-191: opening the page starts an attempt
+            }
             await fontsReady
             bootComplete = true
             requestAnimationFrame(gameLoop)

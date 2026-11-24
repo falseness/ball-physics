@@ -1616,6 +1616,131 @@ def sc_speed_reload(page, info):
     speed_out(info, 'speed_reload', d)
 
 
+# TASK-191: level telemetry (js/telemetry.js) with the none analytics backend. The scenario opens its own context on a
+# local http server whose index.html has the GameAnalytics SDK tag dropped and the gameanalytics backend tag swapped for
+# analytics/backends/none.js (tests/platform/test_analytics.py), plays the script in tests/visual/telemetry_expected_levels.json
+# with real input, compares the filtered ANALYTICS.debugLog with the expected list, reloads and reads bp.stats.v1.
+# Writes sequence.json and counters.json (compact) next to the screenshots.
+TELEMETRY_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_levels.json')
+TELEMETRY_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addProgressionEvent'
+    || (e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('level:')))
+    .map(e => e.fn == 'addProgressionEvent' ? [e.fn, e.args[0], e.args[1]] : [e.fn, e.args[0], e.args[1] ?? null])"""
+WIN_RESTART_JS = """[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2, menuCoords[1] + blocks[2] + menuTextRect[1] / 2]"""
+
+
+def telemetry_match(actual, expected):
+    if len(actual) != len(expected):
+        return False
+    for a, e in zip(actual, expected):
+        if e[2] == 'time>0':
+            if a[:2] != e[:2] or not (isinstance(a[2], (int, float)) and a[2] > 0):
+                return False
+        elif a != e:
+            return False
+    return True
+
+
+def telemetry_run(p):
+    # a run: the last line starts it, else the play box
+    if not p.evaluate("levelStarted && physics"):
+        click(p, *p.evaluate(PLAY_ICON_JS))
+    if not p.evaluate("levelStarted && physics"):
+        raise RuntimeError('run did not start')
+
+
+def sc_telemetry_levels(page, info):
+    sys.path.insert(0, os.path.join(ROOT, 'tests', 'platform'))
+    import test_analytics as ta
+    from functools import partial
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+    with open(TELEMETRY_EXPECTED) as f:
+        want = json.load(f)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(ta.QuietHandler, directory=ROOT))
+    Thread(target=server.serve_forever, daemon=True).start()
+    url = 'http://127.0.0.1:%d/index.html' % server.server_port
+    errors, steps = [], []
+
+    def rewrite(route):
+        resp = route.fetch()
+        body = resp.text().replace(ta.SDK_TAG + '\n', '').replace(ta.GA_TAG, ta.NONE_TAG)
+        route.fulfill(response=resp, body=body)
+    ctx = page.context.browser.new_context(viewport=VIEWPORT)
+    try:
+        ctx.route('**/index.html', rewrite)
+        p = ctx.new_page()
+        p.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
+        p.on('pageerror', lambda e: errors.append(str(e)))
+        p.goto(url)
+        p.wait_for_function(BOOT_JS, timeout=15000)
+        frames(p)
+        backend = p.evaluate("ANALYTICS_BACKEND.backendId")
+
+        def step(name):
+            steps.append({'step': name, 'srcId': p.evaluate("levels[thisLevel].srcId"),
+                          'attempt': p.evaluate("TELEMETRY.attempt() && TELEMETRY.attempt().n")})
+        step('boot')
+        if p.evaluate("levels[thisLevel].srcId") != 1:
+            raise RuntimeError('boot did not open srcId 1')
+        draw_seg(p, LINE_X)  # line X is away from the ball: the ball falls off the map
+        telemetry_run(p)
+        step('run1')
+        p.wait_for_function("TELEMETRY.attempt().n == 2 && !levelStarted", timeout=30000, polling=50)
+        step('offmap')
+        telemetry_run(p)
+        frames(p, 3)
+        r = p.evaluate("restartIconRect()")
+        if not p.evaluate("restartIconVisible()"):
+            raise RuntimeError('restart box hidden')
+        click(p, r[0] + r[2] / 2, r[1] + r[3] / 2)
+        step('restart')
+        telemetry_run(p)
+        # the run goes through gameMechanics' flagCollision: the ball is put on the flag (as win_level_src)
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0 }")
+        p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+        step('win')
+        click(p, *p.evaluate(WIN_RESTART_JS))  # the completion window has no map button
+        step('winRestart')
+        pick_level(p, 1)
+        step('level2')
+        open_map(p)
+        step('map')
+        actual = p.evaluate(TELEMETRY_LOG_JS)
+        stats_before = p.evaluate("JSON.parse(JSON.stringify(TELEMETRY.stats()))")
+        reload_page(p)
+        after = p.evaluate(TELEMETRY_LOG_JS)
+        stored = p.evaluate("async () => (await PLATFORM.storage.getMany([STATS_STORE]))[STATS_STORE]")
+        mem = p.evaluate("JSON.parse(JSON.stringify(TELEMETRY.stats()))")
+        backend_after = p.evaluate("ANALYTICS_BACKEND.backendId")
+    finally:
+        ctx.close()
+        server.shutdown()
+        server.server_close()
+    seq = {'backend': [backend, backend_after], 'steps': steps, 'expected': want['events'], 'debugLog': actual,
+           'expectedAfterReload': want['afterReload'], 'debugLogAfterReload': after, 'consoleErrors': len(errors), 'errors': errors}
+    seq['matchExpected'] = telemetry_match(actual, want['events'])
+    seq['matchAfterReload'] = telemetry_match(after, want['afterReload'])
+    seq['pass'] = bool(seq['matchExpected'] and seq['matchAfterReload'] and backend == backend_after == 'none' and not errors)
+    parsed = json.loads(stored) if stored else None
+    rows = {}
+    for sid, exp in want['counters'].items():
+        got = (parsed or {}).get(sid, {})
+        rows[sid] = {'expected': exp, 'stored': got, 'match': all(got.get(k) == v for k, v in exp.items()),
+                     'secondsPositive': isinstance(got.get('seconds'), (int, float)) and got['seconds'] > 0}
+    cnt = {'key': 'bp.stats.v1', 'storedRaw': stored, 'statsBeforeReload': stats_before, 'inMemoryAfterReload': mem,
+           'note': 'read after the reload; the reload boot opens level 1 again (attempt 5 of srcId 1)', 'rows': rows}
+    cnt['pass'] = bool(parsed is not None and all(r['match'] and r['secondsPositive'] for r in rows.values()))
+    with open(os.path.join(OUT_DIR, 'sequence.json'), 'w') as f:
+        json.dump(seq, f, separators=(',', ':'))
+    with open(os.path.join(OUT_DIR, 'counters.json'), 'w') as f:
+        json.dump(cnt, f, separators=(',', ':'))
+    info['telemetry'] = {'sequencePass': seq['pass'], 'countersPass': cnt['pass'], 'events': len(actual)}
+    if not seq['pass']:
+        raise RuntimeError('telemetry sequence mismatch (sequence.json)')
+    if not cnt['pass']:
+        raise RuntimeError('telemetry counters mismatch (counters.json)')
+
+
 SPEED_CONCEPT = os.path.join(ROOT, 'artifacts', 'concepts', 'speed', '14-arrow-centre-big3x-v2.png')
 
 
@@ -1741,6 +1866,7 @@ SCENARIOS = {
     'speed_toggle': sc_speed_toggle,
     'speed_hidden': sc_speed_hidden,
     'speed_reload': sc_speed_reload,
+    'telemetry_levels': sc_telemetry_levels,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).
