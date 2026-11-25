@@ -76,6 +76,16 @@ from rimtrap import install as install_trap  # noqa: E402  shared livelock detec
 from embed import install as install_embed  # noqa: E402  shared embedded-ball detector (TASK-171/173)
 URL = 'file://' + os.path.join(ROOT, 'index.html')
 FIELD = (1280, 800)
+# TASK-215: the page's telemetry relay / GameAnalytics hosts. A search must send nothing to them: every request is
+# counted (attempted) and the ones that actually left the page (requestfinished) are counted as sent.
+RELAY_HOSTS = ('stats.playdiplomacy.online', 'gameanalytics.com')
+RELAY = {'attempted': 0, 'sent': 0}  # per process; workers return theirs, the main process sums them
+
+
+def is_relay(url):
+    from urllib.parse import urlsplit
+    h = (urlsplit(url).hostname or '').lower()
+    return any(h == d or h.endswith('.' + d) for d in RELAY_HOSTS)
 
 # In-page evaluation of a batch of candidates. args: [idx, cands, maxF, still, simulate]
 EVAL_JS = r"""([idx, cands, maxF, still, simulate]) => {
@@ -148,6 +158,9 @@ def open_page(pw, args):
     pg = b.new_page(viewport={'width': FIELD[0], 'height': FIELD[1]})
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
+    pg.on('request', lambda r: RELAY.__setitem__('attempted', RELAY['attempted'] + 1) if is_relay(r.url) else None)
+    pg.on('requestfinished', lambda r: RELAY.__setitem__('sent', RELAY['sent'] + 1) if is_relay(r.url) else None)
+    pg.route(is_relay, lambda route: route.abort())  # no test traffic to the live relay / GameAnalytics (TASK-215)
     pg.goto(URL)
     pg.wait_for_load_state('load')
     pg.evaluate("new Promise(r => requestAnimationFrame(() => r()))")
@@ -166,6 +179,7 @@ def job(a):
     """Worker: evaluates its slice of candidates in its own browser; returns rows in slice order."""
     wid, cands, args = a
     from playwright.sync_api import sync_playwright
+    base = dict(RELAY)
     rows = []
     t0 = time.time()
     with sync_playwright() as pw:
@@ -178,7 +192,7 @@ def job(a):
         b.close()
     if errors:
         raise RuntimeError('page errors: %s' % errors[:3])
-    return rows
+    return rows, {k: RELAY[k] - base[k] for k in RELAY}
 
 
 def evaluate(cands, args, simulate=True):
@@ -194,7 +208,10 @@ def evaluate(cands, args, simulate=True):
         with Pool(W) as pool:
             parts = pool.map(job, slices)
     rows = [None] * len(cands)
-    for w, part in enumerate(parts):
+    for w, (part, relay) in enumerate(parts):
+        if W > 1:  # Pool workers count in their own process; W == 1 ran here and already counted
+            for k in RELAY:
+                RELAY[k] += relay[k]
         for j, r in enumerate(part):
             rows[w + j * W] = r
     return rows
@@ -457,7 +474,8 @@ def main():
                                    'teleports': ','.join(r.get('teleports', [])) or '-', 'minFlagDist': r.get('minFlagDist')}
                                   for i, r in enumerate(rows[1:])],
                       'allDropsLose': all(r.get('valid') and r.get('win', -1) <= 0 for r in rows[1:])})
-    extra.update({'elapsed_s': round(time.time() - t0, 1), 'workers': ns.workers, 'shard': ns.shard})
+    extra.update({'elapsed_s': round(time.time() - t0, 1), 'workers': ns.workers, 'shard': ns.shard,
+                  'relayRequestsAttempted': RELAY['attempted'], 'relayRequestsSent': RELAY['sent']})
     summ = summarize(rows, args, extra)
     summ['validPerSecond'] = round(summ['simulated'] / max(summ['elapsed_s'], 1e-9), 2)
     write_out(ns.out, rows, summ)
