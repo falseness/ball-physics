@@ -8,7 +8,13 @@ UTC write time, so every day file from the day at start through the day after th
 UTC midnight finds its later events in the next day's file, TASK-230): lines whose path holds the ball-physics game key and whose body events carry
 this build. The design + progression events in the tap must equal the ones the browser sent (ANALYTICS.debugLog).
 
-Usage: python3 tests/platform/live_check.py --out DIR [--scenario telemetry_ui|telemetry_editor] [--build NAME] [--tap-dir DIR]
+With --scenario telemetry_first30 (TASK-242) a real-clock first-30 session is played instead of shoot's page.clock
+script (the SDK's send timer needs real time): visitor 1 (new) presses / moves / draws a line by mouse and taps by touch
+and stays past t0 + 30 s (heartbeats + end), then pagehide; visitor 2 (ret, visitor 1's localStorage carried over) presses once and
+leaves at ~4 s (leave + leave_step). live.json 'first30' = the load:/ctx:/f30: design ids sent vs found in the tap
+(ids and counts, not values: the clock is real).
+
+Usage: python3 tests/platform/live_check.py --out DIR [--scenario telemetry_ui|telemetry_editor|telemetry_first30] [--build NAME] [--tap-dir DIR]
   --build  stamped build (default 'live-<YYYYMMDD>' UTC); a preview uses e.g. 'livepre-<YYYYMMDD>' so its events
            stay out of the proof build's count
 Writes DIR/live.json and DIR/live_excerpt.jsonl (5 tap lines as recorded), DIR/sequence.json (telemetry_ui) or
@@ -33,9 +39,77 @@ KEYS = '/root/credentials/ball-physics/gameanalytics.json'
 GAME_CATEGORIES = ('design', 'progression')
 WAIT_STEPS = {'telemetry_ui': ('touch menu_open', 'map_close'),
               # editor open, nothing running: the SDK's timer sends the batch so far
-              'telemetry_editor': ('export', 'import x3', 'portals')}
-SCENARIOS = {'telemetry_ui': shoot.sc_telemetry_ui, 'telemetry_editor': shoot.sc_telemetry_editor}
+              'telemetry_editor': ('export', 'import x3', 'portals'),
+              'telemetry_first30': ()}  # the first visitor's 30 s window already spans several SDK send timers
 EDITOR_PREFIXES = ('editor:', 'edit:')
+FIRST30_PREFIXES = ('load:', 'ctx:', 'f30:')
+
+
+def sc_first30_live(page, info):
+    """TASK-242: real-clock first-30 session (two visitors) for the live relay check; writes sequence_first30_live.json."""
+    errors, logs, vis = [], [], {}
+    since = "TELEMETRY.sinceT0()"
+
+    def wait_t(p, ms):
+        p.wait_for_function("t => TELEMETRY.sinceT0() !== null && TELEMETRY.sinceT0() >= t", arg=ms, timeout=ms + 30000, polling=100)
+
+    (x1, y1), (x2, y2) = shoot.LINE_X
+    with shoot.telemetry_page(page, errors, has_touch=True) as p:
+        wait_t(p, 0)
+        shoot.move(p, 300, 650)
+        wait_t(p, 1000)
+        shoot.click(p, *p.evaluate("[ball.posX, ball.posY]"))  # press on the ball
+        wait_t(p, 2000)
+        shoot.click(p, x1, y1)  # point 1
+        wait_t(p, 3000)
+        shoot.move(p, x2, y2)
+        shoot.click(p, x2, y2)  # point 2: the line is placed, auto-run
+        cdp = p.context.new_cdp_session(p)
+        cx, cy = shoot.to_client(p, 300, 700)
+        wait_t(p, 4000)
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': cx, 'y': cy}]})
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+        wait_t(p, 31500)  # past the 30 s beat and 'end'
+        p.evaluate(shoot.F30_PAGEHIDE_JS)
+        vis['1'] = {'visitor': p.evaluate("TELEMETRY.firstVisitor()"), 'sinceT0': p.evaluate(since)}
+        logs.append(p.evaluate(shoot.FULL_LOG_JS))
+        # each telemetry_page serves on its own port (own origin): carry visitor 1's localStorage (bp.first.v1 via
+        # PLATFORM.storage, the SDK's user id) into visitor 2's origin before its first load
+        stored = p.evaluate("() => Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)]))")
+
+    def carry(p):
+        p.add_init_script("(s => { if (!sessionStorage.getItem('__carried')) { for (const k in s) localStorage.setItem(k, s[k]);"
+                          " sessionStorage.setItem('__carried', '1') } })(%s)" % json.dumps(stored))
+    with shoot.telemetry_page(page, errors, has_touch=True, init=carry) as p:
+        wait_t(p, 1000)
+        shoot.click(p, 300, 700)  # field press
+        wait_t(p, 4000)
+        p.evaluate(shoot.F30_PAGEHIDE_JS)  # leave inside the window
+        vis['2'] = {'visitor': p.evaluate("TELEMETRY.firstVisitor()"), 'sinceT0': p.evaluate(since)}
+        logs.append(p.evaluate(shoot.FULL_LOG_JS))
+    shoot.TELEMETRY_LOGS['telemetry_first30'] = logs[0] + logs[1]
+    ids = [[str(e[1]) for e in lg if e[0] == 'addDesignEvent' and str(e[1]).startswith(FIRST30_PREFIXES)] for lg in logs]
+    seq = {'visitors': vis, 'ids': ids, 'errors': errors, 'clock': 'real'}
+    need = {'1': ['ctx:visitor:new', 'f30:new:first_press', 'f30:new:point1', 'f30:new:point2', 'f30:new:run', 'f30:new:end',
+                  'f30:hb:30:step'],
+            '2': ['ctx:visitor:ret', 'f30:ret:first_press', 'f30:ret:leave']}
+    seq['checks'] = {'visitors': vis['1']['visitor'] == 'new' and vis['2']['visitor'] == 'ret',
+                     'steps': all(i in ids[int(n) - 1] for n, l in need.items() for i in l),
+                     'touchPress': any(i.startswith('f30:press:field:') for i in ids[0][ids[0].index('f30:new:run'):])
+                     if 'f30:new:run' in ids[0] else False,
+                     'leaveStep': any(i.startswith('f30:ret:leave_step:') for i in ids[1]),
+                     'noConsoleErrors': not errors}
+    seq['pass'] = all(seq['checks'].values())
+    with open(os.path.join(shoot.OUT_DIR, 'sequence_first30_live.json'), 'w') as f:
+        json.dump(seq, f, separators=(',', ':'))
+    if not seq['pass']:
+        raise RuntimeError('first30 live session: %s' % [k for k, v in seq['checks'].items() if not v])
+
+
+SCENARIOS = {'telemetry_ui': shoot.sc_telemetry_ui, 'telemetry_editor': shoot.sc_telemetry_editor,
+             'telemetry_first30': sc_first30_live}
+SEQ_FILES = {'telemetry_ui': 'sequence.json', 'telemetry_editor': 'sequence_editor.json',
+             'telemetry_first30': 'sequence_first30_live.json'}
 
 
 def tap_lines(tap_file, key, build):
@@ -177,7 +251,19 @@ def main():
                   'missingInTap': sorted(set(sent_ed) - set(tap_ed)), 'source': 'tap file body events, category design'}
         checks['editorSent'] = editor['sentEditor'] > 0 and editor['sentEdit'] > 0
         checks['editorTapEqualsSent'] = tap_ed == sent_ed
-    seq_file = 'sequence.json' if args.scenario == 'telemetry_ui' else 'sequence_editor.json'
+    first30 = None
+    if args.scenario == 'telemetry_first30':
+        # TASK-242: the load:/ctx:/f30: design ids, counted from the tap file (not from debugLog)
+        sent_f = sorted(i for i in sent_design if i.startswith(FIRST30_PREFIXES))
+        tap_f = sorted(i for i in tap_design if i.startswith(FIRST30_PREFIXES))
+        first30 = {'sent': len(sent_f), 'tap': len(tap_f),
+                   **{'sent_' + p[:-1]: sum(i.startswith(p) for i in sent_f) for p in FIRST30_PREFIXES},
+                   **{'tap_' + p[:-1]: sum(i.startswith(p) for i in tap_f) for p in FIRST30_PREFIXES},
+                   'missingInTap': sorted(set(sent_f) - set(tap_f)), 'extraInTap': sorted(set(tap_f) - set(sent_f)),
+                   'source': 'tap file body events, category design', 'sentIds': sent_f}
+        checks['first30Sent'] = all(first30['sent_' + p[:-1]] > 0 for p in FIRST30_PREFIXES)
+        checks['first30TapEqualsSent'] = tap_f == sent_f
+    seq_file = SEQ_FILES[args.scenario]
     try:
         with open(os.path.join(args.out, seq_file)) as f:
             seq_pass = json.load(f).get('pass')
@@ -187,6 +273,7 @@ def main():
         'scenario': args.scenario, 'build': want_build, 'gameKey': key, 'tapFiles': files, 'runSeconds': run_seconds, 'error': error,
         'sent': {'total': len(sent), **sent_counts, 'source': 'ANALYTICS.debugLog (%s)' % args.scenario},
         'editor': editor,
+        'first30': first30,
         'tap': {'linesBefore': before, 'lines': len(new_lines), 'events': len(events), 'gameEvents': len(game),
                 **tap_counts, 'uniqueUuids': len(set(uuids)), 'statuses': tap_statuses,
                 'testFlags': sorted({rec.get('test') for _, rec in new_lines}, key=str),
@@ -203,6 +290,9 @@ def main():
     if editor:
         print('editor: sent=%d tap=%d (editor: %d/%d, edit: %d/%d)' % (editor['sent'], editor['tap'], editor['sentEditor'],
               editor['tapEditor'], editor['sentEdit'], editor['tapEdit']))
+    if first30:
+        print('first30: sent=%d tap=%d (load %d/%d, ctx %d/%d, f30 %d/%d)' % (first30['sent'], first30['tap'],
+              first30['sent_load'], first30['tap_load'], first30['sent_ctx'], first30['tap_ctx'], first30['sent_f30'], first30['tap_f30']))
     print('build=%s sent=%s tap=%s lines=%d statuses=%s tapStatuses=%s pass=%s (%.0fs)' % (
         want_build, sent_counts, tap_counts, len(new_lines), statuses, tap_statuses, res['pass'], run_seconds))
     for k, v in checks.items():

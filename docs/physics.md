@@ -112,7 +112,7 @@ node tests/physics/invariants.mjs --browser --portal-fuzz 1-3 [--portal-cases N]
 - Shoot win shortcuts put the ball on the flag's pennant edge, not on the flag origin. The origin lies on the floor
   line, and push-out moves a ball placed there out of the floor and away from the flag.
 - The full regression (shoot, portal sim/fuzz/rimtrap/embed, preview/trail/speed/map checks, telemetry
-  sequences) is `tests/regression/run_checks.sh <preview|full> <outdir>` (preview ~3.5 min, full ~17 min). It writes
+  sequences, incl. telemetry_first30 since TASK-242) is `tests/regression/run_checks.sh <preview|full> <outdir>` (preview ~3.5 min, full ~17 min). It writes
   <outdir>/regression.log, ending with `failed rows: N [...]` and `ALL PASS` when N = 0 (exit 1 otherwise).
 - rimtrap.py and embed.py gate against pre-TASK-201 baselines plus the hash-pinned allowlists in
   tests/portal/allow/. After a physics change, never re-record a baseline from the tree under test.

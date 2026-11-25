@@ -322,6 +322,13 @@ blocked storage keeps them in memory only.
   `--scenario telemetry_editor` (TASK-237) plays the telemetry_editor script instead (9 s waits at `export`,
   `import x3`, `portals`, editor open) and adds `live.json` `editor`: the `editor:`/`edit:` design ids sent vs the ones
   counted in the tap file (checks `editorSent`, `editorTapEqualsSent`).
+  `--scenario telemetry_first30` (TASK-242) plays a real-clock first-30 session (the SDK's send timer needs real time,
+  so not shoot's page.clock script): visitor 1 (new) moves, presses the ball, places a line by mouse, taps the field by
+  touch and stays past t0 + 30 s (heartbeats + `end`), then pagehide; visitor 2 (ret: visitor 1's localStorage copied
+  to its origin) presses once and leaves at ~4 s. Writes `sequence_first30_live.json` and `live.json` `first30`: the
+  `load:`/`ctx:`/`f30:` design ids sent vs the ones counted in the tap file, ids and counts only (checks
+  `first30Sent`, `first30TapEqualsSent`). The regression runs the page.clock scenario in shard 3 (preview and full);
+  seq_check.py compares its `sequence_first30.json` with `telemetry_expected_first30.json`.
 - `python3 tests/platform/tap_split_check.py --out FILE` (TASK-194, on the relay host): the tap (`/usr/local/bin/ga_tap.py`)
   writes one file per game key, `events-<key>-<UTC day>.jsonl` (key from `/v2/<key>/...` or `?game_key=`; none ->
   `events-unknown-<day>.jsonl`); the old combined `events-<day>.jsonl` files are no longer written. Sends one signed
