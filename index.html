@@ -624,8 +624,9 @@
         {
             levelChoosed(thisLevel)
         }
-        // Automatic failure (ball off the map): reset the level but keep the player's lines and
-        // linesK, so the player can press play again (menu 'restart' etc. still call levelChoosed)
+        // Reset the level but keep the player's lines and linesK, so the player can press play again.
+        // Called on automatic failure (ball off the map) and by every restart button (HUD, menu,
+        // win window). restart() above is the full reset (levelChoosed), used only by the sim tests.
         function restartKeepLines()
         {
             const kept = lines.filter(function(l) { return l.type == 'player' })
