@@ -608,7 +608,11 @@ LEVEL27_MAX_FRAMES = 1500
 # open only on its left side (won on physics frame 225, one teleport A->B). Found with a two-stage scan
 # (artifacts/TASK-151/search/probe.py: 2240 ramps, then line 2 on a 50 px lattice for 4 of the 146 ramps that reach A;
 # artifacts/TASK-151/search_ref.json); keep these exact integer coordinates.
-LEVEL28_LINES = [((550, 255), (40, 570)), ((850, 660), (950, 560))]
+# TASK-211: under the contact physics the old line 2 (850,660)-(950,560) loses (the faster ball from B falls under
+# it and leaves the map); line 2 is now (950,640)-(1070,790), from a 30 px lattice scan with line 1 kept
+# (artifacts/TASK-211/runs/lat28_r.json): the ball from B bounces off it to the right wall, comes back and leaves its
+# upper end up-right into the pocket (win frame 145, A->B, 15/15 +-2 px variants win).
+LEVEL28_LINES = [((550, 255), (40, 570)), ((950, 640), (1070, 790))]
 LEVEL28_MAX_FRAMES = 1500
 # Level 29 ('echo', TASK-153, lineK 3; reference solution): line 1 knocks the ball, which bounces in place on its pad,
 # to the left over tower A's top (through the flag's shadow). Line 2 left of tower A turns it back to the right into
