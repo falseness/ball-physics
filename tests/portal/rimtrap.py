@@ -4,7 +4,7 @@
   python3 tests/portal/rimtrap.py --task TASK-NNN [--out rimtrap.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON), exit 1 when the level 19 repro is trapped, the
          back-side sweep finds a trap, or (TASK-164) a front-side outcome differs from --baseline
-         (default artifacts/TASK-163/baseline.json, the unfixed code, identical to the HEAD 4deacfa recording)
+         (default tests/portal/baselines/rimtrap_head_4deacfa.json, the unfixed code, identical to the HEAD 4deacfa recording)
          that is not in the --allowlist (TASK-201, default tests/portal/allow/rimtrap_task201.json: reviewed
          contact-model changes, each pinned to its baseline and new outcome, see baseline_allow.py); front_diff =
          changed cases not allowlisted, front_changed = all changed cases, front_allowlisted = the accepted ones.
@@ -268,7 +268,7 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 6 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
-    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-163', 'baseline.json'),
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'tests', 'portal', 'baselines', 'rimtrap_head_4deacfa.json'),
                     help='rimtrap.json of the code before the change (default: the unfixed TASK-163 code, equal to HEAD '
                          '4deacfa): front outcomes must match it case by case unless allowlisted (front_diff, exit 1 when '
                          '> 0); "" = no comparison. Never record it from the code under test.')

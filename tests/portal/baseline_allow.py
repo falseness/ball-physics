@@ -1,7 +1,8 @@
 """Reviewed allowlists of front-side outcome changes against a pre-change baseline (TASK-201).
 
 rimtrap.py / embed.py compare their outcomes case by case with a baseline recorded from the code BEFORE a change
-(rimtrap: artifacts/TASK-163/baseline.json, identical to HEAD 4deacfa; embed: the 4deacfa recording). A changed
+(rimtrap: tests/portal/baselines/rimtrap_head_4deacfa.json, identical to HEAD 4deacfa; embed:
+tests/portal/baselines/embed_head_4deacfa.json, the 4deacfa recording). A changed
 case passes the gate only when it is listed in the allowlist with exactly that baseline outcome and exactly that
 new outcome (both pinned by hash), so any further change, any new changed case and any change of the baseline
 fail again. Entries are produced by tests/portal/baseline_diverge.py, which replays each changed case in the

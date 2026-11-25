@@ -4,7 +4,7 @@
   python3 tests/portal/embed.py --task TASK-NNN [--out embed.json] [--jobs N] [--preview]
       -> artifacts/TASK-NNN/<out> (compact JSON); exit 1 when the level 24 repro (a) or the synthetic
          sweep (b) has an embedded run.
-      --baseline (default artifacts/TASK-201/baselines/embed_head_4deacfa.json, recorded from git archive 4deacfa,
+      --baseline (default tests/portal/baselines/embed_head_4deacfa.json, recorded from git archive 4deacfa,
          the code before TASK-201; before: artifacts/TASK-171/baseline.json, which HEAD's TASK-199 physics no longer
          matched; '' = off; TASK-172): every case whose baseline exitOverlap was false must keep its outcome
          (diffNonOverlap == 0 in the log, else exit 1); TASK-176: runs with a mirrored blocked face touch
@@ -266,7 +266,7 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument('--preview', action='store_true', help='s step 5 px instead of 1 px')
     ap.add_argument('--controls', action='store_true')
-    ap.add_argument('--baseline', default=os.path.join(ROOT, 'artifacts', 'TASK-201', 'baselines', 'embed_head_4deacfa.json'),
+    ap.add_argument('--baseline', default=os.path.join(ROOT, 'tests', 'portal', 'baselines', 'embed_head_4deacfa.json'),
                     help="embed.json of the code before the change: diff outcomes of cases whose baseline exitOverlap "
                          "was false ('' = no diff). Never record it from the code under test.")
     ap.add_argument('--allowlist', default=os.path.join(HERE, 'allow', 'embed_task201.json'),
