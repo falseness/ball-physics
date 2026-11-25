@@ -20,8 +20,12 @@ r = {'levels_events_equal': eq(el['events'], lv['debugLog']), 'levels_n': [len(l
      'levels_afterReload_equal': eq(el['afterReload'], lv['debugLogAfterReload']),
      'ui_events_equal': eq(eu['events'], ui['debugLog']), 'ui_n': [len(ui['debugLog']), len(eu['events'])],
      'shoot_verdicts': {'levels': lv.get('pass'), 'ui': ui.get('pass')}}
-ed = glob.glob(f'{d}/shoot_s*/sequence_editor.json')  # TASK-232: telemetry_editor (full mode; absent in preview)
-if ed:
+ed = glob.glob(f'{d}/shoot_s*/sequence_editor.json')  # TASK-232: telemetry_editor (shard 2 in preview and full)
+plan = os.path.join(d, 'logs', 'plan.json')  # TASK-237: required when the run's shards list it
+r['editor_required'] = os.path.exists(plan) and 'telemetry_editor' in ','.join(json.load(open(plan))['shards']).split(',')
+if r['editor_required'] and not ed:
+    r['editor_events_equal'] = False
+elif ed:
     se = json.load(open(ed[0])); ee = json.load(open(f'{ROOT}/tests/visual/telemetry_expected_editor.json'))
     r['editor_events_equal'] = eq(ee['events'], se['debugLog']); r['editor_n'] = [len(se['debugLog']), len(ee['events'])]
     r['shoot_verdicts']['editor'] = se.get('pass')

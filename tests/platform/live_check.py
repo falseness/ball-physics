@@ -1,6 +1,6 @@
 """Live delivery check through the GameAnalytics relay (TASK-193).
 
-Plays the telemetry_ui script of tests/visual/shoot.py headless with the committed gameanalytics backend (index.html
+Plays the telemetry_ui (default) or telemetry_editor (--scenario, TASK-237) script of tests/visual/shoot.py headless with the committed gameanalytics backend (index.html
 as committed; js/buildinfo.js served stamped with 'live-<YYYYMMDD>', so an automated browser sends build
 'test-live-<YYYYMMDD>'), waits for every relay answer, then reads the relay tap's raw copy
 (/var/lib/ga-tap/events-<game key>-<UTC day>.jsonl, split per key since TASK-194; the tap names a file by its own
@@ -8,10 +8,12 @@ UTC write time, so every day file from the day at start through the day after th
 UTC midnight finds its later events in the next day's file, TASK-230): lines whose path holds the ball-physics game key and whose body events carry
 this build. The design + progression events in the tap must equal the ones the browser sent (ANALYTICS.debugLog).
 
-Usage: python3 tests/platform/live_check.py --out DIR [--build NAME] [--tap-dir DIR]
+Usage: python3 tests/platform/live_check.py --out DIR [--scenario telemetry_ui|telemetry_editor] [--build NAME] [--tap-dir DIR]
   --build  stamped build (default 'live-<YYYYMMDD>' UTC); a preview uses e.g. 'livepre-<YYYYMMDD>' so its events
            stay out of the proof build's count
-Writes DIR/live.json and DIR/live_excerpt.jsonl (5 tap lines as recorded), DIR/sequence.json (telemetry_ui).
+Writes DIR/live.json and DIR/live_excerpt.jsonl (5 tap lines as recorded), DIR/sequence.json (telemetry_ui) or
+DIR/sequence_editor.json + the other telemetry_editor files (telemetry_editor). With telemetry_editor live.json also
+holds 'editor': the editor:/edit: design ids the browser sent vs the ones found in the tap (counted from the tap file).
 Exit 0 only when every check passes.
 """
 import argparse
@@ -29,7 +31,11 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 RELAY = 'stats.playdiplomacy.online'
 KEYS = '/root/credentials/ball-physics/gameanalytics.json'
 GAME_CATEGORIES = ('design', 'progression')
-WAIT_STEPS = ('touch menu_open', 'map_close')
+WAIT_STEPS = {'telemetry_ui': ('touch menu_open', 'map_close'),
+              # editor open, nothing running: the SDK's timer sends the batch so far
+              'telemetry_editor': ('export', 'import x3', 'portals')}
+SCENARIOS = {'telemetry_ui': shoot.sc_telemetry_ui, 'telemetry_editor': shoot.sc_telemetry_editor}
+EDITOR_PREFIXES = ('editor:', 'edit:')
 
 
 def tap_lines(tap_file, key, build):
@@ -67,6 +73,7 @@ def main():
     day = datetime.datetime.now(datetime.timezone.utc)
     ap.add_argument('--build', default='live-' + day.strftime('%Y%m%d'))
     ap.add_argument('--tap-dir', default='/var/lib/ga-tap')
+    ap.add_argument('--scenario', default='telemetry_ui', choices=sorted(SCENARIOS))
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     key = json.load(open(KEYS))['gameKey']
@@ -100,7 +107,7 @@ def main():
     def step(p, name):
         # menu / map open (no active play time): wait past the SDK's 8 s send timer so the events of the run
         # reach the relay in several batches, not only in the pagehide flush
-        if name in WAIT_STEPS:
+        if name in WAIT_STEPS[args.scenario]:
             p.wait_for_timeout(9000)
 
     shoot.TELEMETRY_STEP_HOOK = step
@@ -115,13 +122,13 @@ def main():
         browser = pw.chromium.launch()
         page = browser.new_page(viewport=shoot.VIEWPORT)
         try:
-            shoot.sc_telemetry_ui(page, info)
+            SCENARIOS[args.scenario](page, info)
         except Exception as e:
             error = '%s: %s' % (type(e).__name__, e)
         browser.close()
     run_seconds = round(time.time() - t0, 1)
 
-    full = shoot.TELEMETRY_LOGS.get('telemetry_ui', [])
+    full = shoot.TELEMETRY_LOGS.get(args.scenario, [])
     sent = [e for e in full if e[0] in ('addDesignEvent', 'addProgressionEvent')]
     sent_counts = {'design': sum(e[0] == 'addDesignEvent' for e in sent),
                    'progression': sum(e[0] == 'addProgressionEvent' for e in sent)}
@@ -159,9 +166,27 @@ def main():
         'buildOnly': builds == [want_build],
         'excerpt5': min(5, len(new_lines)) == 5,
     }
+    editor = None
+    if args.scenario == 'telemetry_editor':
+        # TASK-237: the editor:/edit: design ids, counted from the tap file (not from debugLog)
+        sent_ed = sorted(i for i in sent_design if i.startswith(EDITOR_PREFIXES))
+        tap_ed = sorted(i for i in tap_design if i.startswith(EDITOR_PREFIXES))
+        editor = {'sent': len(sent_ed), 'tap': len(tap_ed), 'sentEditor': sum(i.startswith('editor:') for i in sent_ed),
+                  'sentEdit': sum(i.startswith('edit:') for i in sent_ed),
+                  'tapEditor': sum(i.startswith('editor:') for i in tap_ed), 'tapEdit': sum(i.startswith('edit:') for i in tap_ed),
+                  'missingInTap': sorted(set(sent_ed) - set(tap_ed)), 'source': 'tap file body events, category design'}
+        checks['editorSent'] = editor['sentEditor'] > 0 and editor['sentEdit'] > 0
+        checks['editorTapEqualsSent'] = tap_ed == sent_ed
+    seq_file = 'sequence.json' if args.scenario == 'telemetry_ui' else 'sequence_editor.json'
+    try:
+        with open(os.path.join(args.out, seq_file)) as f:
+            seq_pass = json.load(f).get('pass')
+    except (OSError, ValueError):
+        seq_pass = None
     res = {
-        'build': want_build, 'gameKey': key, 'tapFiles': files, 'runSeconds': run_seconds, 'error': error,
-        'sent': {'total': len(sent), **sent_counts, 'source': 'ANALYTICS.debugLog (telemetry_ui)'},
+        'scenario': args.scenario, 'build': want_build, 'gameKey': key, 'tapFiles': files, 'runSeconds': run_seconds, 'error': error,
+        'sent': {'total': len(sent), **sent_counts, 'source': 'ANALYTICS.debugLog (%s)' % args.scenario},
+        'editor': editor,
         'tap': {'linesBefore': before, 'lines': len(new_lines), 'events': len(events), 'gameEvents': len(game),
                 **tap_counts, 'uniqueUuids': len(set(uuids)), 'statuses': tap_statuses,
                 'testFlags': sorted({rec.get('test') for _, rec in new_lines}, key=str),
@@ -169,12 +194,15 @@ def main():
                 'designIds': tap_design},
         'browser': {'requests': len(requests), 'responses': len(responses), 'statuses': statuses,
                     'responseList': responses},
-        'sequencePass': (info.get('telemetry') or {}).get('sequencePass'),
+        'sequencePass': seq_pass,
         'checks': checks,
     }
     res['pass'] = all(checks.values())
     with open(os.path.join(args.out, 'live.json'), 'w') as f:
         json.dump(res, f, separators=(',', ':'))
+    if editor:
+        print('editor: sent=%d tap=%d (editor: %d/%d, edit: %d/%d)' % (editor['sent'], editor['tap'], editor['sentEditor'],
+              editor['tapEditor'], editor['sentEdit'], editor['tapEdit']))
     print('build=%s sent=%s tap=%s lines=%d statuses=%s tapStatuses=%s pass=%s (%.0fs)' % (
         want_build, sent_counts, tap_counts, len(new_lines), statuses, tap_statuses, res['pass'], run_seconds))
     for k, v in checks.items():

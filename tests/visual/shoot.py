@@ -1759,7 +1759,7 @@ TELEMETRY_BACKEND = 'none'
 TELEMETRY_BUILD = None
 TELEMETRY_PAGE_HOOK = None  # called with the new page before the first load (live_check: request/response capture)
 TELEMETRY_CLOSE_HOOK = None  # called with the page before its context closes (live_check: wait for the relay answers)
-TELEMETRY_STEP_HOOK = None  # telemetry_ui: called with (page, step name) after each step (live_check: timed SDK sends)
+TELEMETRY_STEP_HOOK = None  # telemetry_ui / telemetry_editor: called with (page, step name) after each step (live_check: timed SDK sends)
 
 
 @contextlib.contextmanager
@@ -2531,6 +2531,8 @@ def sc_telemetry_editor(page, info):
         def step(name):
             steps.append({'step': name, 'editorMode': p.evaluate("editorMode"), 'playtest': p.evaluate("!!playtestLevel"),
                           'logLength': p.evaluate("ANALYTICS.debugLog.length")})
+            if TELEMETRY_STEP_HOOK:
+                TELEMETRY_STEP_HOOK(p, name)
 
         def tb(bid, touch=False, after=None):
             # one toolbar button click (or touch tap); after() runs before the events are collected (import: pick a file)
@@ -2629,7 +2631,8 @@ def sc_telemetry_editor(page, info):
            'summaryHashInLog': sorted({i.split(':')[3] for i in ids if i.startswith('editor:sum:')}), 'fullLog': full}
     seq['matchExpected'] = telemetry_match(actual, want['events'])
     seq['coverage'] = telemetry_coverage({'telemetry_editor': full}, editor=True)
-    seq['pass'] = bool(seq['matchExpected'] and seq['gaIdsOk'] and backend == 'none' and not errors and seq['coverage']['pass'])
+    seq['pass'] = bool(seq['matchExpected'] and seq['gaIdsOk'] and backend == TELEMETRY_BACKEND and not errors
+                       and seq['coverage']['pass'])
     allcov = write_coverage()  # TASK-236: all three logs when levels + ui ran before in this run
     if allcov is not None:
         info['telemetryCoverage'] = {'scope': allcov['scope'], 'pass': allcov['pass'], 'uncovered': allcov['uncovered']}
