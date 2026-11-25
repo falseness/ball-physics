@@ -279,7 +279,7 @@
                 TELEMETRY.ui('editor_open') // TASK-192
                 levelCompletedWindow = false
                 TELEMETRY.close()
-                editorOpen() // edit the level just won
+                editorOpen('win') // edit the level just won
                 return
             }
             if (levelCompletedWindow)
@@ -325,7 +325,7 @@
                         TELEMETRY.ui('editor_open') // TASK-192
                         TELEMETRY.ui('menu_close')
                         TELEMETRY.close() // the attempt ends without an event
-                        editorOpen()
+                        editorOpen('menu')
                     }
                     return
                 }
@@ -736,6 +736,7 @@
             // Added before ANALYTICS.init: the gameanalytics backend's own pagehide handler runs after this one
             window.addEventListener('pagehide', function()
             {
+                TELEMETRY.editorAbandon() // TASK-232: editor:actions + editor:abandon while the editor is open
                 TELEMETRY.leave() // TASK-191: an unwon attempt is abandoned before the flush
                 TELEMETRY.pageHide() // TASK-192: session:levels_seen
                 ANALYTICS.flush()

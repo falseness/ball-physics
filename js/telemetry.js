@@ -33,6 +33,17 @@
 //   session:levels_seen        value = distinct srcIds that had an attempt this session (on pagehide)
 // Nothing is sampled or rate-limited; touch input goes through the same handlers as the mouse.
 //
+// TASK-232: editor session and level summary events (catalogue in docs/telemetry.md), sent through editor(name, value)
+// only while editorActive() (editorMode on, no play-test). <ctx> = 'L<srcId>' of the level the editor was opened on,
+// <h> = levelHash(working copy) (8-hex FNV-1a of editorLevelToJSON):
+//   editor:open:<ctx>:<from>         from = 'menu' (pause menu) | 'win' (completion window)
+//   editor:sum:<ctx>:<h>:lines       value = level lines      } sent at play, export and exit,
+//   editor:sum:<ctx>:<h>:portals     value = portals (0 | 2)  } before the action itself
+//   editor:sum:<ctx>:<h>:linek       value = lineK            }
+//   editor:sum:<ctx>:<h>:changed     value = 1 if editorLevelToJSON differs from the copy taken at open, else 0
+//   editor:actions:<ctx>             value = toolbar button clicks + object edits this session (before exit / abandon)
+//   editor:exit:<ctx>                value = seconds in the editor since open, play-test time excluded
+//   editor:abandon:<ctx>             pagehide while the editor is open (not during a play-test), value = seconds
 // Per-user counters: PLATFORM.storage key STATS_STORE ('bp.stats.v1'), JSON
 //   {[srcId]: {attempts, wins, restarts, offmap, abandons, seconds}}; seconds = time inside attempts (wall clock).
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
@@ -150,7 +161,94 @@ const TELEMETRY = (function()
         return active() && !drawMap && !drawMenu && !levelCompletedWindow && !document.hidden
     }
 
+    // TASK-232: editor session {ctx, t0, json0, actions, playAt, playMs}; null when the editor is closed
+    let ed = null
+    function editorActive()
+    {
+        return typeof editorMode !== 'undefined' && editorMode && !playtestLevel
+    }
+    function editorEvent(name, value)
+    {
+        if (editorActive())
+            ANALYTICS.design('editor:' + name, value)
+    }
+    // 8-hex FNV-1a (32 bit) of editorLevelToJSON(W)
+    function levelHash(W)
+    {
+        const s = editorLevelToJSON(W)
+        let h = 0x811c9dc5
+        for (let i = 0; i < s.length; ++i)
+            h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+        return (h >>> 0).toString(16).padStart(8, '0')
+    }
+    function editorSummary()
+    {
+        if (!ed || !editorActive())
+            return
+        const W = editor.level, h = levelHash(W), pre = 'sum:' + ed.ctx + ':' + h + ':'
+        editorEvent(pre + 'lines', W.lines.length)
+        editorEvent(pre + 'portals', W.portals.length)
+        editorEvent(pre + 'linek', W.lineK)
+        editorEvent(pre + 'changed', editorLevelToJSON(W) === ed.json0 ? 0 : 1)
+    }
+    function editorSeconds()
+    {
+        return secs(now() - ed.t0 - ed.playMs)
+    }
+    // the session ends: actions, then 'exit' / 'abandon' with the seconds
+    function editorEnd(kind)
+    {
+        if (!ed || !editorActive())
+            return
+        editorEvent('actions:' + ed.ctx, ed.actions)
+        editorEvent(kind + ':' + ed.ctx, editorSeconds())
+        ed = null
+    }
+
     return {
+        editor: editorEvent,
+        editorActive,
+        levelHash,
+        editorSession() { return ed },
+        // editorOpen (editor.level is the fresh copy, editorMode on); from = 'menu' | 'win'
+        editorOpened(from)
+        {
+            if (!editorActive())
+                return
+            ed = {ctx: 'L' + srcId(), t0: now(), json0: editorLevelToJSON(editor.level), actions: 0, playAt: null, playMs: 0}
+            editorEvent('open:' + ed.ctx + ':' + from)
+        },
+        // a toolbar button click or an object edit (a field click / drop / key that changed the working copy)
+        editorAction()
+        {
+            if (ed && editorActive())
+                ++ed.actions
+        },
+        // 'play' (before the play-test starts) / back from the play-test (after editorMode is on again)
+        editorPlay()
+        {
+            editorSummary()
+            if (ed && editorActive())
+                ed.playAt = now()
+        },
+        editorBack()
+        {
+            if (ed && ed.playAt !== null && editorActive())
+            {
+                ed.playMs += now() - ed.playAt
+                ed.playAt = null
+            }
+        },
+        // 'export' (before the download)
+        editorExport() { editorSummary() },
+        // 'exit' (before the copy is written back): summary, actions, exit
+        editorExit()
+        {
+            editorSummary()
+            editorEnd('exit')
+        },
+        // pagehide with the editor open
+        editorAbandon() { editorEnd('abandon') },
         // values: the PLATFORM.storage.getMany result ({key: string | null}); garbage means empty counters
         load(values)
         {

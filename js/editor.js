@@ -147,7 +147,8 @@ function editorCloneLevel(L)
     }
 }
 
-function editorOpen()
+// from: 'menu' (pause menu) | 'win' (completion window), for TELEMETRY.editorOpened (TASK-232)
+function editorOpen(from)
 {
     drawMenu = false
     drawMenuIcon = true
@@ -168,11 +169,23 @@ function editorOpen()
     editorBarApply()
     editorPreviewClear()
     editorMode = true
+    TELEMETRY.editorOpened(from)
+}
+
+// TASK-232: run fn; when the working copy changed it counts as one object edit (TELEMETRY.editorAction)
+function editorCountEdit(fn)
+{
+    const before = editorLevelToJSON(editor.level)
+    const r = fn()
+    if (editor.level && editorLevelToJSON(editor.level) !== before)
+        TELEMETRY.editorAction()
+    return r
 }
 
 // Write the working copy back to levels[thisLevel] (session only) and reload the level
 function editorExit()
 {
+    TELEMETRY.editorExit() // TASK-232: summary, actions, exit (while editorMode is still on)
     const L = levels[thisLevel], W = editorCloneLevel(editor.level)
     L.ballX = W.ballX; L.ballY = W.ballY
     L.flagX = W.flagX; L.flagY = W.flagY; L.flagRotate = W.flagRotate
@@ -216,13 +229,14 @@ function editorClick(coords)
         if (collisionWithRect(coords[0], coords[1], R[0], R[1], R[0] + R[2], R[1] + R[3]))
             return // toolbar panel background
         if (editor.tool == 'line')
-            editorLineClick(coords)
+            editorCountEdit(() => editorLineClick(coords))
         else if (editor.tool == 'portal')
-            editorPortalClick(coords)
+            editorCountEdit(() => editorPortalClick(coords))
         else if (editor.tool == 'delete')
-            editorDeleteAt(coords)
+            editorCountEdit(() => editorDeleteAt(coords))
         return
     }
+    TELEMETRY.editorAction() // TASK-232: every toolbar button click (tool, toggle, action)
     if (b.kind == 'toggle')
     {
         editor[b.id] = !editor[b.id] // 'snap': kept across tool changes and play-tests until the editor reopens
@@ -282,6 +296,7 @@ function editorNewLevel()
 // editor.level itself is kept as is for the way back.
 function editorStartPlaytest()
 {
+    TELEMETRY.editorPlay() // TASK-232: summary of the copy that gets play-tested, before the play-test starts
     editor.pending = null
     editor.drag = null
     editor.portalPending = null
@@ -328,6 +343,7 @@ function editorEndPlaytest()
     line = false
     levelChoosed(thisLevel)
     editorMode = true
+    TELEMETRY.editorBack() // TASK-232: the play-test time is not editor time
 }
 
 function editorInBar(coords)
@@ -408,6 +424,8 @@ function editorMouseDown(coords)
         editor.drag = { kind: c[0], i: c[1], dx: c[2] - coords[0], dy: c[3] - coords[1], x0: c[2], y0: c[3],
                         u0: P ? P.u : undefined }
     }
+    if (editor.drag)
+        editor.drag.json0 = editorLevelToJSON(editor.level) // TASK-232: the copy at pick-up (editorMouseUp)
 }
 
 // Pointer input in the letterbox bars maps to logical coords outside the field; every point the
@@ -502,6 +520,15 @@ function editorProjectU(l, x, y, h)
 
 // mouseup / touchend: drop the dragged object at the release point
 function editorMouseUp(coords)
+{
+    const d = editor.drag
+    const r = editorMouseUpDrop(coords)
+    // TASK-232: a drop that leaves the working copy different from the pick-up is one object edit
+    if (d && d.json0 !== undefined && editor.level && editorLevelToJSON(editor.level) !== d.json0)
+        TELEMETRY.editorAction()
+    return r
+}
+function editorMouseUpDrop(coords)
 {
     const bd = editor.barDrag
     if (bd)
@@ -748,6 +775,7 @@ function editorKeyDown(event)
         editorCancelDrag()
     editorRemoveLine(s.i)
     editor.selected = null
+    TELEMETRY.editorAction() // TASK-232: object edit
 }
 document.addEventListener('keydown', editorKeyDown)
 
@@ -1051,6 +1079,7 @@ function editorLevelToJSON(W)
 // 'export': download the working copy as level.json (Blob + temporary <a download>)
 function editorExport()
 {
+    TELEMETRY.editorExport() // TASK-232: summary before the download
     const blob = new Blob([editorLevelToJSON(editor.level)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

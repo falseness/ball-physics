@@ -1919,12 +1919,14 @@ def telemetry_doc_ids():
                 rows.append({'row': cell, 'kind': 'facade', 'fn': toks[0]})
             elif ':' in toks[0]:
                 pat = re.escape(toks[0]).replace(re.escape('<srcId>'), r'\d+').replace(re.escape('<ctx>'), r'(L\d+|map)')
+                pat = pat.replace(re.escape('<from>'), '(menu|win)').replace(re.escape('<h>'), '[0-9a-f]{8}')  # TASK-232
                 rows.append({'row': cell, 'kind': 'design', 'regex': '^' + pat + '$'})
     return rows
 
 
-def telemetry_coverage(logs):
-    rows = telemetry_doc_ids()
+def telemetry_coverage(logs, editor=False):
+    # TASK-232: editor: rows are covered by telemetry_editor's own log (editor=True), all other rows by levels + ui
+    rows = [r for r in telemetry_doc_ids() if r['row'].startswith('`editor:') == editor]
     out = []
     for r in rows:
         hits = 0
@@ -2069,6 +2071,133 @@ def sc_telemetry_ui(page, info):
         raise RuntimeError('telemetry coverage: uncovered %s (coverage.json)' % cov['uncovered'])
 
 
+# TASK-232: editor session and level summary telemetry (js/telemetry.js, editor:*). Same page setup as telemetry_levels
+# (none backend, own context). Real clicks: editor from the pause menu, line tool + one line, play-test, the HUD 'edit'
+# box back, export, exit; a win, the completion window's editor button, exit unchanged; the editor from the menu again and
+# a pagehide (abandon). The editor: events of ANALYTICS.debugLog must equal tests/visual/telemetry_expected_editor.json
+# ('time>0' = any number > 0). Writes sequence_editor.json and hash.json (levelHash checks + an independent Python FNV-1a).
+TELEMETRY_EDITOR_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_editor.json')
+TELEMETRY_EDITOR_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('editor:'))
+    .map(e => [e.fn, e.args[0], e.args[1] ?? null])"""
+EDITOR_LINE = ((300, 560), (520, 640))
+GA_PART = re.compile(r'^[A-Za-z0-9 \-_.()!?]{1,64}$')
+
+
+def editor_tool(p, bid):
+    click(p, *p.evaluate("id => { const b = EDITOR_BUTTONS.find(b => b.id == id); return [b.x + b.w / 2, b.y + b.h / 2] }", bid))
+
+
+def fnv1a(s):
+    h = 0x811c9dc5
+    for ch in s:
+        h = ((h ^ ord(ch)) * 0x01000193) & 0xffffffff
+    return '%08x' % h
+
+
+def ga_design_id_ok(eid):
+    parts = eid.split(':')
+    return 1 <= len(parts) <= 5 and all(GA_PART.match(x) for x in parts)
+
+
+def sc_telemetry_editor(page, info):
+    with open(TELEMETRY_EDITOR_EXPECTED) as f:
+        want = json.load(f)
+    errors, steps = [], []
+    with telemetry_page(page, errors) as p:
+        backend = p.evaluate("ANALYTICS_BACKEND.backendId")
+
+        def step(name):
+            steps.append({'step': name, 'editorMode': p.evaluate("editorMode"), 'playtest': p.evaluate("!!playtestLevel"),
+                          'logLength': p.evaluate("ANALYTICS.debugLog.length")})
+        if p.evaluate("levels[thisLevel].srcId") != 1:
+            raise RuntimeError('boot did not open srcId 1')
+        step('boot')
+        open_menu(p)
+        click(p, *p.evaluate(EDITOR_BUTTON_JS))
+        if not p.evaluate("editorMode"):
+            raise RuntimeError('menu editor button did not open the editor')
+        step('open menu')
+        n0 = p.evaluate("editor.level.lines.length")
+        editor_tool(p, 'line')
+        click(p, *EDITOR_LINE[0])
+        click(p, *EDITOR_LINE[1])
+        if p.evaluate("editor.level.lines.length") != n0 + 1:
+            raise RuntimeError('line tool did not add a line')
+        step('line')
+        editor_tool(p, 'play')
+        if p.evaluate("editorMode") or not p.evaluate("!!playtestLevel"):
+            raise RuntimeError('play did not start a play-test')
+        frames(p, 10)
+        step('playtest')
+        click(p, *box_centre(p, "editIconRect()"))
+        if not p.evaluate("editorMode") or p.evaluate("!!playtestLevel"):
+            raise RuntimeError('edit box did not return to the editor')
+        step('back')
+        with p.expect_download() as dl:
+            editor_tool(p, 'export')
+        exported = dl.value.suggested_filename
+        step('export')
+        level_json = p.evaluate("editorLevelToJSON(editor.level)")
+        editor_tool(p, 'exit')
+        if p.evaluate("editorMode") or p.evaluate("levels[thisLevel].lines.length") != n0 + 1:
+            raise RuntimeError('exit did not write the line back')
+        step('exit')
+        telemetry_run(p)
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
+        p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+        step('win')
+        click(p, *p.evaluate(EDITOR_BUTTON_JS))
+        if not p.evaluate("editorMode"):
+            raise RuntimeError('win window editor button did not open the editor')
+        step('open win')
+        editor_tool(p, 'exit')
+        if p.evaluate("editorMode"):
+            raise RuntimeError('exit did not close the editor')
+        step('exit unchanged')
+        open_menu(p)
+        click(p, *p.evaluate(EDITOR_BUTTON_JS))
+        if not p.evaluate("editorMode"):
+            raise RuntimeError('menu editor button did not open the editor (2)')
+        step('open menu 2')
+        p.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}))")
+        step('pagehide')
+        actual = p.evaluate(TELEMETRY_EDITOR_LOG_JS)
+        full = p.evaluate(FULL_LOG_JS)
+        hv = p.evaluate("""() => {
+            const A = editorCloneLevel(levels[thisLevel]), B = editorCloneLevel(levels[thisLevel])
+            const C = editorCloneLevel(levels[thisLevel]); C.lines[0].posX += 1
+            return {a: TELEMETRY.levelHash(A), b: TELEMETRY.levelHash(B), moved: TELEMETRY.levelHash(C),
+                    jsonA: editorLevelToJSON(A), jsonMoved: editorLevelToJSON(C)} }""")
+    TELEMETRY_LOGS['telemetry_editor'] = full
+    hx = re.compile(r'^[0-9a-f]{8}$')
+    hj = {'level': 'levels[thisLevel] (srcId 1 after the editor exit)', 'cloneA': hv['a'], 'cloneB': hv['b'],
+          'oneLineMoved1px': hv['moved'], 'pythonFnvA': fnv1a(hv['jsonA']), 'pythonFnvMoved': fnv1a(hv['jsonMoved']),
+          'exportedLevelHashPython': fnv1a(level_json)}
+    hj['sameForClones'] = hv['a'] == hv['b']
+    hj['differsAfterMove'] = hv['moved'] != hv['a']
+    hj['hexForm'] = all(hx.match(v) is not None for v in (hv['a'], hv['b'], hv['moved']))
+    hj['matchesPython'] = hj['pythonFnvA'] == hv['a'] and hj['pythonFnvMoved'] == hv['moved']
+    hj['pass'] = bool(hj['sameForClones'] and hj['differsAfterMove'] and hj['hexForm'] and hj['matchesPython'])
+    ids = [e[1] for e in actual]
+    seq = {'backend': backend, 'steps': steps, 'expected': want['events'], 'debugLog': actual, 'download': exported,
+           'consoleErrors': len(errors), 'errors': errors,
+           'gaIdsOk': all(ga_design_id_ok(i) for i in ids), 'badIds': [i for i in ids if not ga_design_id_ok(i)],
+           'summaryHashPython': fnv1a(level_json),
+           'summaryHashInLog': sorted({i.split(':')[3] for i in ids if i.startswith('editor:sum:')}), 'fullLog': full}
+    seq['matchExpected'] = telemetry_match(actual, want['events'])
+    seq['coverage'] = telemetry_coverage({'telemetry_editor': full}, editor=True)
+    seq['pass'] = bool(seq['matchExpected'] and seq['gaIdsOk'] and backend == 'none' and not errors and seq['coverage']['pass'])
+    with open(os.path.join(OUT_DIR, 'sequence_editor.json'), 'w') as f:
+        json.dump(seq, f, separators=(',', ':'))
+    with open(os.path.join(OUT_DIR, 'hash.json'), 'w') as f:
+        json.dump(hj, f, separators=(',', ':'))
+    info['telemetry'] = {'sequencePass': seq['pass'], 'hashPass': hj['pass'], 'events': len(actual)}
+    if not seq['pass']:
+        raise RuntimeError('telemetry editor sequence mismatch (sequence_editor.json)')
+    if not hj['pass']:
+        raise RuntimeError('levelHash check failed (hash.json)')
+
+
 SPEED_CONCEPT = os.path.join(ROOT, 'artifacts', 'concepts', 'speed', '14-arrow-centre-big3x-v2.png')
 
 
@@ -2209,6 +2338,7 @@ SCENARIOS = {
     'speed_reload': sc_speed_reload,
     'telemetry_levels': sc_telemetry_levels,
     'telemetry_ui': sc_telemetry_ui,
+    'telemetry_editor': sc_telemetry_editor,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

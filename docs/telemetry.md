@@ -59,7 +59,7 @@ never by play-order index. An attempt starts when:
 
 An attempt ends once: a win (`Complete`), off-map / restart / abandon (`Fail`), or silently when the editor
 is opened from the level. Leaving an unwon attempt by opening the map, by 'next level' or by page hide sends
-`abandon`. Play-tests and the editor send nothing and count nothing.
+`abandon`. Play-tests and the editor send no level events and count nothing (editor events: TASK-232 section below).
 
 ## Event catalogue
 
@@ -102,6 +102,14 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `session:play_seconds` | active play time reaches a milestone | 30, 60, 120, 300, 600 (each once per session) | TASK-192 |
 | `session:hide` | `visibilitychange` to hidden | - | TASK-192 |
 | `session:levels_seen` | `pagehide` (before `flush` / `endSession`) | distinct srcIds with an attempt this session | TASK-192 |
+| `editor:open:<ctx>:<from>` | the editor opens; `<from>` = `menu` (pause menu button) or `win` (completion window button) | - | TASK-232 |
+| `editor:sum:<ctx>:<h>:lines` | level summary at `play`, `export` and `exit`, before the action | level lines | TASK-232 |
+| `editor:sum:<ctx>:<h>:portals` | same moment, after `lines` | portals (0 or 2) | TASK-232 |
+| `editor:sum:<ctx>:<h>:linek` | same moment, after `portals` | `lineK` | TASK-232 |
+| `editor:sum:<ctx>:<h>:changed` | same moment, after `linek` | 1 = `editorLevelToJSON` differs from the copy taken at open, 0 = same | TASK-232 |
+| `editor:actions:<ctx>` | right before `editor:exit` / `editor:abandon` | toolbar button clicks + object edits this editor session | TASK-232 |
+| `editor:exit:<ctx>` | toolbar `exit` (after the summary and `actions`) | seconds in the editor since open, play-test time excluded | TASK-232 |
+| `editor:abandon:<ctx>` | `pagehide` while the editor is open (not during a play-test), after `actions` | seconds, as `exit` | TASK-232 |
 
 Order on a restart: `restart`, then `Fail` (only for an unwon attempt), then `Start` + `attempt`.
 Order on an off-map: `fail:offmap`, `Fail`, then `Start` + `attempt`.
@@ -119,6 +127,20 @@ the level events it causes (`restart` / `Fail` / `Start`, `abandon`). A level st
 
 Active play (`session:play_seconds`) counts game-loop frame time (at most 1 s per frame) while a level is shown
 without the map, the pause menu or the completion window, outside the editor and play-tests, in a visible page.
+
+## Editor events (TASK-232)
+
+`<ctx>` of an editor event is `L<srcId>` of the level the editor was opened on (kept for the whole editor session,
+also after `new` / `import`). `<h>` = `TELEMETRY.levelHash(W)`: 8-hex FNV-1a (32 bit) of `editorLevelToJSON(W)` of
+the working copy (at `play`: the copy that gets play-tested, which has the same JSON). Editor events go through
+`TELEMETRY.editor(name, value)` and are sent only while `TELEMETRY.editorActive()` (editor on, no play-test).
+An editor action is one toolbar button click (tool, `snap`, every action button including `play`, `export` and `exit`)
+or one object edit: a field click (line / portal / delete tool), a dropped drag or the Delete key that changed
+`editorLevelToJSON` of the working copy. Refused or no-op edits do not count. Play-test time is subtracted from the
+`exit` / `abandon` seconds. Script and expected list: shoot.py `telemetry_editor`, tests/visual/telemetry_expected_editor.json.
+
+Order at `exit`: `sum:...:lines`, `portals`, `linek`, `changed`, `actions`, `exit`. Order on `pagehide` with the editor open:
+`editor:actions`, `editor:abandon`, then the level / session events below.
 
 On `pagehide`: `abandon` / `Fail` for an unwon attempt, `session:levels_seen`, then `flush` and `endSession`.
 
