@@ -572,7 +572,11 @@ LEVEL24_MAX_FRAMES = 1500
 # landing point; artifacts/TASK-145/search/cv21.json re-evaluated with tools/level_search.py's evaluate() on the
 # committed level 25 (srcId 25): 19 of 180 win, artifacts/TASK-145/search_ref.json); 13 of the 17 local +-2 px variants win.
 # Keep these exact integer coordinates.
-LEVEL25_LINES = [((535, 597), (635, 603)), ((920, 693), (980, 747))]
+# TASK-209: under the contact physics the old kicker (535,597)-(635,603) loses (A->B, then off the map on frame 298,
+# artifacts/TASK-209/logs/trace_l25_oldref.jsonl; 2 of 16 +-2 px
+# variants win, artifacts/TASK-209/runs/oldref/); a single-coordinate shift of it, (495,597), wins on frame 155 (A->B)
+# with 12 of 16 +-2 px variants (artifacts/TASK-209/runs/g3_l25.json).
+LEVEL25_LINES = [((495, 597), (635, 603)), ((920, 693), (980, 747))]
 LEVEL25_MAX_FRAMES = 1500
 
 # Level 26 ('one line, two jobs', srcId 26, lineK 4): line 1 tips the ball off its pad to the left; line 2, a long
