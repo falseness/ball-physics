@@ -99,6 +99,21 @@ const FIRST_STORE = 'bp.first.v1'
 const F30_STEPS = ['first_move', 'first_press', 'point1', 'point2', 'line_drag', 'line_delete', 'reject_limit',
     'run', 'pause', 'offmap', 'restart', 'win', 'menu_open', 'map_open', 'level_change', 'hidden']
 const F30_WINDOW_MS = 30000
+// TASK-240: presses and heartbeat inside the same window (nothing sampled, throttled or coalesced):
+//   f30:press:<target>:<gx>_<gy>  every mousedown / touchstart; value = ms since t0; gx = floor(x / 40),
+//                                 gy = floor(y / 40) on the logical 1280x800 field (clamped to the edge cell).
+//                                 target (index.html f30PressTarget, decided before any game handler runs):
+//                                 hud_play, hud_menu, hud_restart, hud_speed, bin, line_end, line, ball, flag,
+//                                 field, menu (pause menu open), map (route map open), other (completion window,
+//                                 editor, play-test edit box, outside the field)
+//   f30:hb:<s>:moved | idle | visible | step   at s = 5, 10, 15, 20, 25, 30 s after t0 while the page is open
+//                                 (not after a pagehide): moved = pointer path length in logical px since the
+//                                 previous beat (rounded; a touchstart starts a new path, every other pointer event
+//                                 adds its distance from the previous pointer position); idle = ms since the last
+//                                 pointer or key input (or since t0) at the beat's nominal time; visible = 1 / 0;
+//                                 step = furthest funnel index
+const F30_CELL = 40
+const F30_BEATS = [5, 10, 15, 20, 25, 30]
 const TELEMETRY = (function()
 {
     let stats = {}
@@ -322,6 +337,8 @@ const TELEMETRY = (function()
     }
     // TASK-239: first-30 funnel state (see F30_STEPS)
     const f30 = {sent: {}, last: 'none', furthest: 0, left: false, ended: false, closed: false}
+    // TASK-240: pointer path since the previous beat, last pointer position, last input time (performance.now())
+    const f30In = {moved: 0, at: null, inputAt: null, beats: []}
     function f30Kind()
     {
         return firstVisitor == 'ret' ? 'ret' : 'new'
@@ -363,6 +380,28 @@ const TELEMETRY = (function()
         ANALYTICS.design('f30:' + f30Kind() + ':end', f30.furthest)
         f30.ended = true
     }
+    // TASK-240: heartbeat s (seconds after t0); only while the page is open (no pagehide, before 'end')
+    function f30Beat(s)
+    {
+        if (f30.closed || f30.ended || t0 === null)
+            return
+        // idle is measured at the beat's nominal time t0 + s (a timer can fire a few ms late; an input in that
+        // gap counts as idle 0), so the value does not depend on timer latency
+        const at = t0 + s * 1000
+        const since = f30In.inputAt === null || f30In.inputAt < t0 ? t0 : f30In.inputAt
+        const id = 'f30:hb:' + s + ':'
+        ANALYTICS.design(id + 'moved', Math.round(f30In.moved))
+        ANALYTICS.design(id + 'idle', Math.max(0, Math.round(at - since)))
+        ANALYTICS.design(id + 'visible', document.visibilityState === 'hidden' ? 0 : 1)
+        ANALYTICS.design(id + 'step', f30.furthest)
+        f30In.moved = 0
+        f30In.beats.push([s, performance.now() - at]) // [beat, timer latency ms] (f30State, test evidence)
+    }
+    function f30Cell(v, max)
+    {
+        const c = Math.floor((typeof v == 'number' && isFinite(v) ? v : 0) / F30_CELL)
+        return Math.max(0, Math.min(Math.floor(max / F30_CELL) - 1, c))
+    }
     function sendLoad()
     {
         const nav = perfEntries('navigation')[0] || null
@@ -402,14 +441,23 @@ const TELEMETRY = (function()
                 loadMarks[stage] = performance.now()
         },
         // TASK-238: t0 = the first gameLoop frame after bootComplete; sends load:/ctx: once, then writes FIRST_STORE
-        firstFrame()
+        // TASK-240: t0 = the frame's rAF timestamp when it is a valid time not before the last boot mark, else
+        // performance.now() (the timestamp does not depend on how late the callback runs, so test fake clocks give
+        // frame-exact step times)
+        firstFrame(frameTime)
         {
             if (t0 !== null)
                 return
-            t0 = performance.now()
+            const now = performance.now()
+            const marks = Object.keys(loadMarks).map(k => loadMarks[k])
+            t0 = typeof frameTime == 'number' && isFinite(frameTime) && frameTime <= now
+                && frameTime >= Math.max(0, ...marks) ? frameTime : now
             if (firstVisitor === null)
                 firstVisitor = 'new'
             sendLoad()
+            f30In.moved = 0 // TASK-240: the first beat's path starts at t0
+            for (const b of F30_BEATS)
+                setTimeout(function() { f30Beat(b) }, b * 1000) // TASK-240: before 'end' at 30 s (same delay, earlier timer)
             setTimeout(f30End, F30_WINDOW_MS) // TASK-239: f30:<k>:end at t0+30 s
             if (firstVisitor == 'new')
             {
@@ -441,7 +489,24 @@ const TELEMETRY = (function()
             f30Leave()
             f30.closed = true
         },
-        f30State() { return JSON.parse(JSON.stringify(f30)) },
+        f30State() { return JSON.parse(JSON.stringify(Object.assign({}, f30, {input: f30In, t0: t0}))) },
+        // TASK-240: a mousedown / touchstart at logical (x, y) on target (index.html f30PressTarget)
+        f30Press(target, x, y)
+        {
+            if (!f30Open())
+                return
+            ANALYTICS.design('f30:press:' + target + ':' + f30Cell(x, 1280) + '_' + f30Cell(y, 800), f30Since())
+        },
+        // TASK-240: a pointer event at logical (x, y); newPath (touchstart) starts a new path; key input passes no point
+        f30Input(x, y, newPath)
+        {
+            f30In.inputAt = performance.now()
+            if (x === undefined)
+                return
+            if (!newPath && f30In.at)
+                f30In.moved += Math.hypot(x - f30In.at[0], y - f30In.at[1])
+            f30In.at = [x, y]
+        },
         editor: editorEvent,
         playtest: ptEvent,
         playtestActive: ptActive,

@@ -689,12 +689,12 @@
             }
         }
         let telemetryFrameAt = null
-        function gameLoop()
+        function gameLoop(frameTime)
         {
             // TASK-192: active play time (TELEMETRY.tick counts only while a level is played in a visible page);
             // one frame counts at most 1 s (a throttled background tab adds nothing)
             const tNow = performance.now()
-            TELEMETRY.firstFrame() // TASK-238: t0 (once): load:/ctx: events, bp.first.v1
+            TELEMETRY.firstFrame(frameTime) // TASK-238: t0 (once): load:/ctx: events, bp.first.v1 (TASK-240: frame time)
             if (telemetryFrameAt !== null)
                 TELEMETRY.tick(Math.min(1000, tNow - telemetryFrameAt))
             telemetryFrameAt = tNow
@@ -756,10 +756,28 @@
                 }
             })
             // TASK-239: first-30 pointer steps (capture: every press / move anywhere, before any handler)
+            // TASK-240: + every press as f30:press:<target>:<cell> and the pointer path / last input for the heartbeat
             for (const type of ['mousemove', 'touchmove'])
-                document.addEventListener(type, function() { TELEMETRY.f30('first_move') }, {capture: true, passive: true})
+                document.addEventListener(type, function(e)
+                {
+                    TELEMETRY.f30('first_move')
+                    f30Pointer(e, false)
+                }, {capture: true, passive: true})
             for (const type of ['mousedown', 'touchstart'])
-                document.addEventListener(type, function() { TELEMETRY.f30('first_press') }, {capture: true, passive: true})
+                document.addEventListener(type, function(e)
+                {
+                    TELEMETRY.f30('first_press')
+                    const points = e.changedTouches ? Array.from(e.changedTouches) : [e]
+                    for (const pt of points)
+                    {
+                        const c = mouseCoords(pt)
+                        TELEMETRY.f30Press(f30PressTarget(c), c[0], c[1])
+                    }
+                    f30Pointer(e, type == 'touchstart')
+                }, {capture: true, passive: true})
+            for (const type of ['mouseup', 'touchend'])
+                document.addEventListener(type, function(e) { f30Pointer(e, false) }, {capture: true, passive: true})
+            document.addEventListener('keydown', function() { TELEMETRY.f30Input() }, {capture: true, passive: true})
             // A page restored from the back/forward cache opens a new session
             window.addEventListener('pageshow', function(e)
             {
@@ -768,6 +786,52 @@
             })
             ANALYTICS.init({build: analyticsBuild()})
             ANALYTICS.sessionStart()
+        }
+        // TASK-240: pointer input for the f30 heartbeat (path length in logical px, last input time)
+        function f30Pointer(e, newPath)
+        {
+            const pt = e.changedTouches ? e.changedTouches[0] : e
+            if (!pt)
+                return TELEMETRY.f30Input()
+            const c = mouseCoords(pt)
+            TELEMETRY.f30Input(c[0], c[1], newPath)
+        }
+        // TASK-240: what a press at logical coords c hits, with the game's own hit tests, in handleClick's priority
+        // (called in the capture phase, before any game handler acts on the press)
+        function f30PressTarget(c)
+        {
+            const x = c[0], y = c[1]
+            if (drawMap && !editorMode)
+                return 'map'
+            if (editorMode || levelCompletedWindow || !(x >= 0 && y >= 0 && x <= GAME_W && y <= GAME_H))
+                return 'other' // editor, completion window, outside the field (letterbox)
+            if (drawMenu)
+                return 'menu'
+            if (playtestLevel && inEditIcon(c))
+                return 'other'
+            if (inMenuIcon(c))
+                return 'hud_menu'
+            if (inPlayIcon(c))
+                return 'hud_play'
+            if (restartIconVisible() && inRestartIcon(c))
+                return 'hud_restart'
+            if (speedIconVisible() && inSpeedIcon(c))
+                return 'hud_speed'
+            if (playerSel !== null && selectionEditable() && inBin(c))
+                return 'bin'
+            if (playerEndAt(x, y))
+                return 'line_end'
+            if (playerLineAt(x, y) !== null)
+                return 'line'
+            if (ball.dotHit(x, y))
+                return 'ball'
+            if (flag.length)
+            {
+                const L = curLevel(), xs = flag.map(p => L.flagX + p[0]), ys = flag.map(p => L.flagY + p[1])
+                if (x >= Math.min(...xs) && x <= Math.max(...xs) && y >= Math.min(...ys) && y <= Math.max(...ys))
+                    return 'flag' // the flag's bounding box (pole + pennant)
+            }
+            return 'field'
         }
         let bootComplete = false
         async function boot()

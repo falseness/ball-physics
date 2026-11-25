@@ -1764,7 +1764,7 @@ TELEMETRY_STEP_HOOK = None  # telemetry_ui / telemetry_editor: called with (page
 
 
 @contextlib.contextmanager
-def telemetry_page(page, errors, init=None, boot_timeout=15000, **ctx_options):
+def telemetry_page(page, errors, init=None, boot_timeout=15000, wait_boot=True, **ctx_options):
     # own context on a local http server; index.html with the GA SDK tag dropped and the none backend swapped in
     sys.path.insert(0, os.path.join(ROOT, 'tests', 'platform'))
     import test_analytics as ta
@@ -1797,8 +1797,9 @@ def telemetry_page(page, errors, init=None, boot_timeout=15000, **ctx_options):
         if init:  # TASK-238: page.clock / CDP throttling before the first load
             init(p)
         p.goto(url)
-        p.wait_for_function(BOOT_JS, timeout=boot_timeout)
-        frames(p)
+        if wait_boot:  # TASK-240: False = the caller drives boot (a paused page.clock: no page rAF runs by itself)
+            p.wait_for_function(BOOT_JS, timeout=boot_timeout)
+            frames(p)
         yield p
         if TELEMETRY_CLOSE_HOOK:
             TELEMETRY_CLOSE_HOOK(p)
@@ -2795,6 +2796,11 @@ def first30_values(log):
 #   C: touch drag line (point1 / point2 / auto-run), off-map, play + HUD restart, bin, a mouse line (auto-run), win
 #      (ball put on the flag as telemetry_levels does), end at 30 s; then a menu click at 31 s sends nothing
 #   D: the steps A..C do not reach: reject_limit, line_drag, pause, menu_open, map_open, level_change, hidden (+ leave)
+# TASK-240: the clock is paused before navigation and stepped to t0 (F30Visitor). Every visitor's f30:press /
+# f30:hb ids are compared with the expected 'presses' / 'heartbeats' (tests/visual/f30_expected.py writes them from a
+# run); B moves the mouse on a known path (F30_B_PATH -> F30_B_BEATS), C presses the completion window (other), D the
+# speed box twice and stays hidden over one beat (visible 0), E taps (touch) at the points others press with the mouse.
+# Writes targets.json and heartbeat.json besides funnel.json / window.json.
 TELEMETRY_F30_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('f30:'))
     .map(e => [e.args[0], e.args[1] ?? null])"""
 F30_STEPS = ['first_move', 'first_press', 'point1', 'point2', 'line_drag', 'line_delete', 'reject_limit', 'run', 'pause',
@@ -2803,17 +2809,40 @@ F30_HIDE_JS = """() => { Object.defineProperty(document, 'visibilityState', {con
     Object.defineProperty(document, 'hidden', {configurable: true, get: () => true});
     document.dispatchEvent(new Event('visibilitychange'));
     delete document.visibilityState; delete document.hidden; document.dispatchEvent(new Event('visibilitychange')) }"""
+# TASK-240: hidden across a heartbeat (visible 0), then visible again
+F30_HIDE_ON_JS = """() => { Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});
+    Object.defineProperty(document, 'hidden', {configurable: true, get: () => true});
+    document.dispatchEvent(new Event('visibilitychange')) }"""
+F30_HIDE_OFF_JS = """() => { delete document.visibilityState; delete document.hidden;
+    document.dispatchEvent(new Event('visibilitychange')) }"""
 F30_PAGEHIDE_JS = "() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}))"
+
+
+F30_T0_JS = "typeof TELEMETRY != 'undefined' && typeof bootComplete != 'undefined' && TELEMETRY.sinceT0() !== null"
+
+
+def F30_CLOCK_INIT(p):
+    # TASK-240: fake clock installed and paused before navigation; F30Visitor steps it to t0
+    p.clock.install()
+    p.clock.pause_at(time.time() + 1)
 
 
 class F30Visitor:
     def __init__(self, p):
         self.p = p
         self.timeline = []
-        p.clock.pause_at((p.evaluate("Date.now()") + 50) / 1000)  # Python: a number is seconds since the epoch
+        self.presses = []
+        # TASK-240: the page loads under a clock paused before navigation (F30_CLOCK_INIT) and boots in 16 ms fake
+        # steps until t0, so t0 and every later frame sit on the fake clock's frame grid (no real-time lag: step
+        # times found on frames, e.g. offmap / win, are exact in every run)
+        t1 = time.time()
+        while not p.evaluate(F30_T0_JS):
+            if time.time() - t1 > 60:
+                raise RuntimeError('f30 visitor: no t0 within 60 s of stepping the paused clock')
+            p.clock.run_for(16)
         self.start = p.evaluate("TELEMETRY.sinceT0()")
-        if self.start is None or self.start >= 900:
-            raise RuntimeError('t0 not set or too late after pausing the clock: %r' % self.start)
+        if self.start is None or not 0 <= self.start < 16:
+            raise RuntimeError('t0 not inside the last 16 ms step: %r' % self.start)
 
     def now(self):
         return self.p.evaluate("TELEMETRY.sinceT0()")
@@ -2839,11 +2868,31 @@ class F30Visitor:
             self.timeline.append([self.now(), label])
         return self.now()
 
+    # TASK-240: every press is recorded as [t, 'mouse' | 'touch', x, y] (logical px); the n-th press inside the
+    # window must be the n-th f30:press event
+    def press(self, kind, x, y):
+        self.presses.append([self.now(), kind, x, y])
+
     def click(self, x, y):
+        self.press('mouse', x, y)
         self.p.mouse.click(*to_client(self.p, x, y))
 
     def move(self, x, y):
         self.p.mouse.move(*to_client(self.p, x, y))
+
+    def down(self, x, y):
+        self.press('mouse', x, y)
+        self.p.mouse.move(*to_client(self.p, x, y))
+        self.p.mouse.down()
+
+    def touch_start(self, cdp, x, y):
+        self.press('touch', x, y)
+        cx, cy = to_client(self.p, x, y)
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': cx, 'y': cy}]})
+
+    def tap(self, cdp, x, y):
+        self.touch_start(cdp, x, y)
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
 
     def log(self):
         return self.p.evaluate(TELEMETRY_F30_LOG_JS)
@@ -2869,6 +2918,13 @@ def f30_visitor_b(v):
     v.click(x1, y1)
     if not v.p.evaluate("!!line"):
         raise RuntimeError('B: point 1 not set')
+    # TASK-240: known pointer path for exact heartbeat moved / idle values (F30_B_BEATS)
+    for t, label, act in F30_B_PATH:
+        v.at(t, label)
+        if act == 'key':
+            v.p.keyboard.press('Shift')
+        else:
+            v.move(*act)
     v.at(30000, 'window end')
     v.at(31000, 'point 2 after the window (line placed, auto-run)')
     v.move(x2, y2)
@@ -2881,6 +2937,14 @@ def f30_visitor_b(v):
     v.p.evaluate(F30_PAGEHIDE_JS)
 
 
+# TASK-240: visitor B after point 1 at (700, 600) 2 s: mouse moves (one mousemove each) and a key press
+F30_B_PATH = [(7000, 'move 300 px right', (1000, 600)), (12000, 'move 400 px up', (1000, 200)),
+              (17000, 'key press (Shift)', 'key'), (22000, 'move 500 px back to point 1', (700, 600))]
+# hand-computed beats: [s, moved, idle, visible, step] (step 3 = point1)
+F30_B_BEATS = [[5, 0, 3000, 1, 3], [10, 300, 3000, 1, 3], [15, 400, 3000, 1, 3], [20, 0, 3000, 1, 3],
+               [25, 500, 3000, 1, 3], [30, 0, 8000, 1, 3]]
+
+
 def f30_visitor_c(v, cdp):
     (x1, y1), (x2, y2) = LINE_X
     v.at(1000, 'mouse move')
@@ -2889,7 +2953,7 @@ def f30_visitor_c(v, cdp):
     ax, ay = to_client(v.p, x1, y1)
     bx, by = to_client(v.p, x2, y2)
     v.at(2000, 'touchstart (line 1)')
-    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': ax, 'y': ay}]})
+    v.touch_start(cdp, x1, y1)
     if not v.p.evaluate("!!line"):
         raise RuntimeError('C: touch did not start a line')
     for i in range(1, 5):
@@ -2924,6 +2988,10 @@ def f30_visitor_c(v, cdp):
         raise RuntimeError('C: line 2 not placed / run not started')
     v.p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
     w = v.wait_for("levelCompletedWindow", 29000, step=16, label='win')
+    v.at(f30_next(w), 'press on the completion window (not a button): other')
+    v.click(*v.p.evaluate("[menuCoords[0] + 20, menuCoords[1] + 20]"))
+    if not v.p.evaluate("levelCompletedWindow"):
+        raise RuntimeError('C: the completion window closed')
     v.at(30000, 'window end')
     v.at(31000, 'completion-window restart after the window')
     v.click(*v.p.evaluate(WIN_RESTART_JS))
@@ -2941,8 +3009,7 @@ def f30_visitor_d(v):
     v.at(t, 'field click at the line limit')
     v.click(300, 700)
     v.at(t + 1000, 'drag the line end')
-    v.p.mouse.move(*to_client(v.p, x2, y2))
-    v.p.mouse.down()
+    v.down(x2, y2)
     v.at(t + 1200)
     v.p.mouse.move(*to_client(v.p, x2 - 60, y2 + 20), steps=4)
     v.at(t + 1400)
@@ -2951,6 +3018,13 @@ def f30_visitor_d(v):
     v.click(*v.p.evaluate(PLAY_ICON_JS))
     v.at(t + 2500, 'play box (pause)')
     v.click(*v.p.evaluate(PLAY_ICON_JS))
+    # TASK-240: speed box on / off while paused (no physics runs at 3x)
+    v.at(t + 2700, 'HUD speed box (3x on)')
+    v.click(*box_centre(v.p, "speedIconRect()"))
+    v.at(t + 2800, 'HUD speed box (3x off)')
+    v.click(*box_centre(v.p, "speedIconRect()"))
+    if v.p.evaluate("speedMul") != 1:
+        raise RuntimeError('D: speed box toggles did not return to 1x')
     v.at(t + 3000, 'menu icon')
     v.click(*v.p.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"))
     v.at(t + 3500, 'Levels (map)')
@@ -2962,11 +3036,65 @@ def f30_visitor_d(v):
     v.click(*pt)
     if v.p.evaluate("drawMap || levels[thisLevel].srcId == 1"):
         raise RuntimeError('D: level 2 not started from the map')
-    v.at(t + 5500, 'tab hidden')
-    v.p.evaluate(F30_HIDE_JS)
+    v.at(t + 5500, 'tab hidden (stays hidden over the next beat: visible 0)')
+    v.p.evaluate(F30_HIDE_ON_JS)
+    v.at(f30_next(t + 5500, 5000) + 1000, 'tab visible again')
+    v.p.evaluate(F30_HIDE_OFF_JS)
     v.at(30000, 'window end')
     v.at(31000, 'menu icon after the window')
     v.click(*v.p.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"))
+
+
+# TASK-240: visitor E, touch presses on the targets other visitors press with the mouse at the same logical point
+# (ball, flag, HUD menu box, pause menu 'Levels', a route-map level slot) plus mouse presses on the ball and the flag
+F30_FLAG_JS = """(() => { const L = curLevel(), t = [flag[2], flag[3], flag[4]];
+    return [L.flagX + (t[0][0] + t[1][0] + t[2][0]) / 3, L.flagY + (t[0][1] + t[1][1] + t[2][1]) / 3] })()"""
+
+
+def f30_visitor_e(v, cdp):
+    ball = v.p.evaluate("[ball.posX, ball.posY]")
+    v.at(1000, 'touch tap on the ball')
+    v.tap(cdp, *ball)
+    v.at(1500, 'mouse press on the ball (same point)')
+    v.click(*ball)
+    fl = v.p.evaluate(F30_FLAG_JS)
+    v.at(2000, 'mouse press on the flag (a line starts there)')
+    v.click(*fl)
+    v.at(3000, 'touch tap on the flag (same point; the line is placed, auto-run)')
+    v.tap(cdp, *fl)
+    menu = v.p.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]")
+    v.at(3500, 'touch tap on the HUD menu box')
+    v.tap(cdp, *menu)
+    if not v.p.evaluate("drawMenu"):
+        raise RuntimeError('E: the pause menu did not open')
+    v.at(4000, 'touch tap on Levels (map)')
+    v.tap(cdp, *v.p.evaluate(LEVELS_BUTTON_JS))
+    if not v.p.evaluate("drawMap"):
+        raise RuntimeError('E: the route map did not open')
+    v.at(4500, 'touch tap on the level 2 slot')
+    v.tap(cdp, *v.p.evaluate(LEVEL_POINT_JS, 1))
+    v.at(30000, 'window end')
+    v.at(31000, 'clock past the window (30 s beat and end fire just after t0 + 30 s)')
+
+
+F30_TARGETS = ['hud_play', 'hud_menu', 'hud_restart', 'hud_speed', 'bin', 'line_end', 'line', 'ball', 'flag', 'field',
+               'menu', 'map', 'other']
+
+
+def f30_split(log):
+    # TASK-240: funnel steps (f30:<new|ret>:...), presses (f30:press:...) and heartbeats (f30:hb:...)
+    kind = lambda e: e[0].split(':')[1]
+    return ([e for e in log if kind(e) in ('new', 'ret')], [e for e in log if kind(e) == 'press'],
+            [e for e in log if kind(e) == 'hb'])
+
+
+def f30_beats(hb):
+    # [[s, moved, idle, visible, step], ...] in send order
+    out = {}
+    for e in hb:
+        _, _, sec, field = e[0].split(':')
+        out.setdefault(int(sec), {})[field] = e[1]
+    return [[sec, b.get('moved'), b.get('idle'), b.get('visible'), b.get('step')] for sec, b in out.items()]
 
 
 def f30_funnel(log):
@@ -2980,20 +3108,27 @@ def f30_funnel(log):
 
 def f30_run_visitors(page):
     out = {}
-    for name in ('A', 'B', 'C', 'D'):
-        errors = []
-        t1 = time.time()
-        with telemetry_page(page, errors, init=lambda p: p.clock.install(), has_touch=True) as p:
-            v = F30Visitor(p)
-            cdp = p.context.new_cdp_session(p) if name == 'C' else None
-            {'A': f30_visitor_a, 'B': f30_visitor_b, 'C': lambda v: f30_visitor_c(v, cdp), 'D': f30_visitor_d}[name](v)
-            log = v.log()
-            state = p.evaluate("TELEMETRY.f30State()")
-            visitor = p.evaluate("TELEMETRY.firstVisitor()")
-            debug_all = p.evaluate("ANALYTICS.debugLog.length")
-        out[name] = {'visitor': visitor, 'startMs': v.start, 'timeline': v.timeline, 'log': log, 'state': state,
-                     'debugLogLen': debug_all, 'errors': errors, 'seconds': round(time.time() - t1, 1)}
+    for name in ('A', 'B', 'C', 'D', 'E'):
+        out[name] = f30_run_visitor(page, name)
     return out
+
+
+def f30_run_visitor(page, name):
+    errors = []
+    t1 = time.time()
+    with telemetry_page(page, errors, init=F30_CLOCK_INIT, wait_boot=False, has_touch=True) as p:
+        v = F30Visitor(p)
+        cdp = p.context.new_cdp_session(p) if name in ('C', 'E') else None
+        {'A': f30_visitor_a, 'B': f30_visitor_b, 'C': lambda v: f30_visitor_c(v, cdp), 'D': f30_visitor_d,
+         'E': lambda v: f30_visitor_e(v, cdp)}[name](v)
+        full = v.log()
+        log, press, hb = f30_split(full)
+        state = p.evaluate("TELEMETRY.f30State()")
+        visitor = p.evaluate("TELEMETRY.firstVisitor()")
+        debug_all = p.evaluate("ANALYTICS.debugLog.length")
+    return {'visitor': visitor, 'startMs': v.start, 'timeline': v.timeline, 'log': log, 'state': state,
+            'press': press, 'hb': hb, 'presses': v.presses, 'full': full,
+            'debugLogLen': debug_all, 'errors': errors, 'seconds': round(time.time() - t1, 1)}
 
 
 def sc_telemetry_first30(page, info):
@@ -3069,8 +3204,70 @@ def sc_telemetry_first30(page, info):
     want_v = want.get('visitors', {})
     seq['visitors'] = {n: {'expected': want_v.get(n), 'actual': r['log'], 'match': r['log'] == want_v.get(n),
                            'timeline': r['timeline'], 'startMs': r['startMs'], 'errors': r['errors'],
+                           'timerLatencyMs': r['state']['input']['beats'], 't0': r['state']['t0'],
                            'seconds': r['seconds']} for n, r in vis_runs.items()}
-    seq['visitorsPass'] = all(x['match'] and not x['errors'] for x in seq['visitors'].values())
+    # TASK-240: f30:press / f30:hb ids and values against want['presses'] / want['heartbeats'] (exact)
+    want_p, want_h = want.get('presses', {}), want.get('heartbeats', {})
+    for n, r in vis_runs.items():
+        seq['visitors'][n].update({'expectedPresses': want_p.get(n), 'presses': r['press'],
+                                   'matchPresses': r['press'] == want_p.get(n), 'expectedHeartbeats': want_h.get(n),
+                                   'heartbeats': r['hb'], 'matchHeartbeats': r['hb'] == want_h.get(n)})
+    seq['visitorsPass'] = all(x['match'] and x['matchPresses'] and x['matchHeartbeats'] and not x['errors']
+                              for x in seq['visitors'].values())
+    ga = re.compile(r'^[A-Za-z0-9_.\-]{1,64}$')
+    seq['gaForm'] = all(1 <= len(e[0].split(':')) <= 5 and all(ga.match(x) for x in e[0].split(':'))
+                        and (e[1] is None or isinstance(e[1], (int, float)))
+                        for r in vis_runs.values() for e in r['full'])
+    seq['visitorsPass'] = bool(seq['visitorsPass'] and seq['gaForm'])
+    # targets.json: the n-th recorded press inside the window is the n-th f30:press event (value = its time, cell =
+    # floor(x / 40)_floor(y / 40)); every target at least once; a touch press = the mouse presses at the same point
+    tg = {'targets': F30_TARGETS, 'visitors': {}, 'touch': []}
+    rows = []
+    for n, r in vis_runs.items():
+        closed_at = min([x[0] for x in r['timeline'] if x[1] == 'pagehide'] or [30000])
+        rec = [x for x in r['presses'] if x[0] <= min(30000, closed_at)]
+        vr = []
+        for i, (t, kind, x, y) in enumerate(rec):
+            ev = r['press'][i] if i < len(r['press']) else None
+            parts = ev[0].split(':') if ev else [None] * 4
+            cell = '%d_%d' % (min(31, max(0, int(x // 40))), min(19, max(0, int(y // 40))))
+            row = {'visitor': n, 't': t, 'input': kind, 'x': round(x, 2), 'y': round(y, 2), 'id': ev and ev[0],
+                   'value': ev and ev[1], 'target': parts[2], 'cell': parts[3], 'cellExpected': cell,
+                   'ok': bool(ev and ev[1] == t and parts[3] == cell and parts[2] in F30_TARGETS)}
+            vr.append(row)
+        tg['visitors'][n] = {'recordedInWindow': len(rec), 'pressEvents': len(r['press']),
+                             'afterWindowPresses': len(r['presses']) - len(rec), 'presses': vr,
+                             'ok': len(rec) == len(r['press']) and all(x['ok'] for x in vr)}
+        rows += vr
+    count = {t: sum(1 for x in rows if x['target'] == t) for t in F30_TARGETS}
+    for x in rows:
+        if x['input'] != 'touch':
+            continue
+        mice = [m for m in rows if m['input'] == 'mouse' and abs(m['x'] - x['x']) < 0.01 and abs(m['y'] - x['y']) < 0.01]
+        tg['touch'].append({'visitor': x['visitor'], 't': x['t'], 'x': x['x'], 'y': x['y'], 'target': x['target'],
+                            'cell': x['cell'], 'mouse': [[m['visitor'], m['t'], m['target'], m['cell']] for m in mice],
+                            'same': bool(mice) and all(m['target'] == x['target'] and m['cell'] == x['cell'] for m in mice)})
+    tg['count'] = count
+    tg['checks'] = {'every_target': all(count.values()), 'presses_match_events': all(v['ok'] for v in tg['visitors'].values()),
+                    'touch_presses': len(tg['touch']) >= 5,
+                    'touch_targets': sorted({x['target'] for x in tg['touch']}),
+                    'touch_same_as_mouse': all(x['same'] for x in tg['touch']),
+                    'no_press_after_window': all(not any(e[1] > 30000 for e in r['press']) for r in vis_runs.values())}
+    tg['pass'] = all(v for k, v in tg['checks'].items() if k != 'touch_targets')
+    # heartbeat.json: beats per visitor; B exact against the hand-computed F30_B_BEATS; A (pagehide 12 s) 5 and 10 s
+    hbj = {'beatsSeconds': [5, 10, 15, 20, 25, 30], 'B_expected': F30_B_BEATS, 'B_path': F30_B_PATH, 'visitors': {}}
+    for n, r in vis_runs.items():
+        hbj['visitors'][n] = {'beats': f30_beats(r['hb']), 'events': len(r['hb'])}
+    vb = hbj['visitors']
+    hbj['checks'] = {'B_six_beats_exact': vb['B']['beats'] == F30_B_BEATS,
+                     'A_only_5_10': [b[0] for b in vb['A']['beats']] == [5, 10],
+                     'full_visitors_six_beats': all([b[0] for b in vb[n]['beats']] == [5, 10, 15, 20, 25, 30]
+                                                    for n in 'BCDE'),
+                     'four_events_per_beat': all(v['events'] == 4 * len(v['beats']) for v in vb.values()),
+                     'D_hidden_beat_visible_0': [b[3] for b in vb['D']['beats']].count(0) == 1,
+                     'beats_after_end_none': all(e[0].split(':')[2] in ('5', '10', '15', '20', '25', '30')
+                                                 for r in vis_runs.values() for e in r['hb'])}
+    hbj['pass'] = all(hbj['checks'].values())
     fun = {n: dict(f30_funnel(r['log']), visitor=r['visitor']) for n, r in vis_runs.items()}
     reached = {s for f in fun.values() for s in f['steps']}
     reached_abc = {s for n in 'ABC' for s in fun[n]['steps']}
@@ -3105,7 +3302,7 @@ def sc_telemetry_first30(page, info):
                      'once_per_step': all(w['sentOncePerStep'] for w in win['visitors'].values())}
     win['pass'] = all(win['checks'].values())
     seq['pass'] = bool(seq['pass'] and seq['visitorsPass'])
-    for name, d in (('funnel.json', funnel), ('window.json', win)):
+    for name, d in (('funnel.json', funnel), ('window.json', win), ('targets.json', tg), ('heartbeat.json', hbj)):
         with open(os.path.join(OUT_DIR, name), 'w') as f:
             json.dump(d, f, separators=(',', ':'))
     for name, d in (('sequence_first30.json', seq), ('visitor.json', vis), ('throttle.json', thr)):
@@ -3113,7 +3310,8 @@ def sc_telemetry_first30(page, info):
             json.dump(d, f, separators=(',', ':'))
     info['telemetry'] = {'sequencePass': seq['pass'], 'visitorPass': vis['pass'], 'events': len(actual),
                          'throttledFirstFrame': thr.get('firstFrameMs')}
-    info['telemetry'].update({'visitorsPass': seq['visitorsPass'], 'funnelPass': funnel['pass'], 'windowPass': win['pass']})
+    info['telemetry'].update({'visitorsPass': seq['visitorsPass'], 'funnelPass': funnel['pass'], 'windowPass': win['pass'],
+                              'targetsPass': tg['pass'], 'heartbeatPass': hbj['pass']})
     if not seq['pass']:
         raise RuntimeError('first30 load/ctx or f30 visitor sequence mismatch (sequence_first30.json)')
     if not funnel['pass']:
@@ -3122,6 +3320,10 @@ def sc_telemetry_first30(page, info):
         raise RuntimeError('first30 window check failed (window.json)')
     if not vis['pass']:
         raise RuntimeError('first30 visitor check failed (visitor.json)')
+    if not tg['pass']:
+        raise RuntimeError('first30 press target check failed (targets.json)')
+    if not hbj['pass']:
+        raise RuntimeError('first30 heartbeat check failed (heartbeat.json)')
 
 
 SCENARIOS = {
