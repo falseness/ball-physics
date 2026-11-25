@@ -104,8 +104,9 @@ node tests/physics/invariants.mjs --browser --portal-fuzz 1-3 [--portal-cases N]
   slope_seam. Every expectation is physical (reflection about the contact normal, no energy gain, no
   livelock), never taken from the current behaviour.
 - **rolling**: compare against the accepted values with the TASK-199 rule. A metric passes when it is
-  within [min − tol, max + tol], tol = max(2·range, 1 % of |value|). See
-  artifacts/TASK-199/rolling_compare.py and artifacts/TASK-213/tools/rolling_compare.py.
+  within [min − tol, max + tol], tol = max(2·range, 1 % of |value|). The accepted values are committed in
+  tests/physics/rolling_accepted.json; run `python3 tests/physics/rolling_compare.py [--out FILE] r1.json r2.json
+  r3.json` on three rolling.mjs outputs (exit 0 = pass, 1 = a metric is outside).
 - **invariants**: exit 1 on any I1/I2/I3/T violation. The output JSON lists counts per kind and the first
   examples.
 - Shoot win shortcuts put the ball on the flag's pennant edge, not on the flag origin. The origin lies on the floor
