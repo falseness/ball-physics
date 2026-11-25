@@ -27,8 +27,9 @@ game (TELEMETRY -> ANALYTICS facade -> gameanalytics backend + GA SDK v5.0.0)
   `events-unknown-<day>.jsonl`. Each line is one request record (`ts`, `test`, `ip`, `ua`, `path`, `status`, `body`: GA event list with
   `user_id`, `session_id`, `build`, `event_id`, `value`, `event_uuid`). This is the source of `tools/stats_report.py`;
   GameAnalytics keeps aggregated dashboards only.
-- **Backend `none`** (`analytics/backends/none.js`): sends nothing, only fills `ANALYTICS.debugLog`; the regression
-  scenarios use it.
+- **Backend `none`** (`analytics/backends/none.js`): sends nothing, only fills `ANALYTICS.debugLog`. Used by the
+  `telemetry_levels` / `telemetry_ui` shoot scenarios and `tests/platform/test_analytics.py --backend none`; the
+  other regression scenarios load the `gameanalytics` backend (see "Regression (TASK-196)" below).
 
 ## Test builds
 
