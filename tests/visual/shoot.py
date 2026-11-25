@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import time
 
 from playwright.sync_api import sync_playwright
 
@@ -1763,7 +1764,7 @@ TELEMETRY_STEP_HOOK = None  # telemetry_ui / telemetry_editor: called with (page
 
 
 @contextlib.contextmanager
-def telemetry_page(page, errors, **ctx_options):
+def telemetry_page(page, errors, init=None, boot_timeout=15000, **ctx_options):
     # own context on a local http server; index.html with the GA SDK tag dropped and the none backend swapped in
     sys.path.insert(0, os.path.join(ROOT, 'tests', 'platform'))
     import test_analytics as ta
@@ -1793,8 +1794,10 @@ def telemetry_page(page, errors, **ctx_options):
             TELEMETRY_PAGE_HOOK(p)
         p.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
         p.on('pageerror', lambda e: errors.append(str(e)))
+        if init:  # TASK-238: page.clock / CDP throttling before the first load
+            init(p)
         p.goto(url)
-        p.wait_for_function(BOOT_JS, timeout=15000)
+        p.wait_for_function(BOOT_JS, timeout=boot_timeout)
         frames(p)
         yield p
         if TELEMETRY_CLOSE_HOOK:
@@ -2762,6 +2765,107 @@ def speed_hud_compare(out_dir):
     dr.text((W + 40, 10), 'concept 14-arrow-centre-big3x-v2.png inset (1x / 3x on)', fill=(200, 230, 255))
     out.save(os.path.join(out_dir, 'hud_compare.png'))
 
+# TASK-238: first-30-seconds telemetry, load timing + session context (js/telemetry.js sendLoad, index.html boot marks).
+# none backend, own context with clean storage, page.clock installed before navigation. The load:/ctx: ids of
+# ANALYTICS.debugLog must equal tests/visual/telemetry_expected_first30.json 'events' in order; a reload in the same
+# storage must give 'afterReload' (ctx:visitor:ret). Stage values: html <= dom <= boot <= platform <= storage <= fonts
+# <= first_frame, all >= 0. Writes sequence_first30.json, visitor.json and throttle.json (informational: load:first_frame
+# unthrottled vs. a CDP Slow 3G run; never fails the scenario).
+TELEMETRY_FIRST30_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_first30.json')
+TELEMETRY_FIRST30_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && /^(load|ctx):/.test(String(e.args[0])))
+    .map(e => [e.args[0], e.args[1] ?? null])"""
+FIRST30_ORDER = ['html', 'dom', 'boot', 'platform', 'storage', 'fonts', 'first_frame']
+# DevTools 'Slow 3G' preset (latency 400 ms x 5, 500 kbit/s x 0.8 down, 500 kbit/s x 0.8 up)
+SLOW_3G = {'offline': False, 'latency': 2000, 'downloadThroughput': 500 * 1024 / 8 * 0.8,
+           'uploadThroughput': 500 * 1024 / 8 * 0.8}
+
+
+def first30_values(log):
+    vals = {e[0][len('load:'):]: e[1] for e in log if e[0].startswith('load:')}
+    seq = [vals.get(k) for k in FIRST30_ORDER]
+    ok = all(isinstance(v, (int, float)) and v >= 0 for v in seq) and all(a <= b for a, b in zip(seq, seq[1:]))
+    return vals, ok
+
+
+def sc_telemetry_first30(page, info):
+    with open(TELEMETRY_FIRST30_EXPECTED) as f:
+        want = json.load(f)
+    errors = []
+    t_start = time.time()
+    with telemetry_page(page, errors, init=lambda p: p.clock.install()) as p:
+        backend = p.evaluate("ANALYTICS_BACKEND.backendId")
+        frames(p, 3)
+        actual = p.evaluate(TELEMETRY_FIRST30_LOG_JS)
+        first = {'visitor': p.evaluate("TELEMETRY.firstVisitor()"),
+                 'stored': p.evaluate("async () => (await PLATFORM.storage.getMany([FIRST_STORE]))[FIRST_STORE]")}
+        reload_page(p)
+        frames(p, 3)
+        after = p.evaluate(TELEMETRY_FIRST30_LOG_JS)
+        second = {'visitor': p.evaluate("TELEMETRY.firstVisitor()"),
+                  'stored': p.evaluate("async () => (await PLATFORM.storage.getMany([FIRST_STORE]))[FIRST_STORE]")}
+        full = p.evaluate(FULL_LOG_JS)
+    TELEMETRY_LOGS['telemetry_first30'] = full
+    ids, ids_after = [e[0] for e in actual], [e[0] for e in after]
+    vals, order_ok = first30_values(actual)
+    vals_after, order_ok_after = first30_values(after)
+    seq = {'backend': backend, 'clock': 'page.clock.install() before navigation', 'expected': want['events'],
+           'ids': ids, 'debugLog': actual, 'matchExpected': ids == want['events'],
+           'expectedAfterReload': want['afterReload'], 'idsAfterReload': ids_after, 'debugLogAfterReload': after,
+           'matchAfterReload': ids_after == want['afterReload'], 'order': FIRST30_ORDER,
+           'values': {k: vals.get(k) for k in FIRST30_ORDER}, 'orderOk': order_ok,
+           'valuesAfterReload': {k: vals_after.get(k) for k in FIRST30_ORDER}, 'orderOkAfterReload': order_ok_after,
+           'consoleErrors': len(errors), 'errors': errors}
+    seq['pass'] = bool(seq['matchExpected'] and seq['matchAfterReload'] and order_ok and order_ok_after
+                       and backend == 'none' and not errors)
+    # the new code reads / writes bp.first.v1 only through PLATFORM.storage: no localStorage in js/telemetry.js,
+    # nor on the index.html lines that mention FIRST_STORE / loadMark / firstFrame
+    src = open(os.path.join(ROOT, 'js', 'telemetry.js')).read()
+    html_lines = [l for l in open(os.path.join(ROOT, 'index.html')).read().splitlines()
+                  if re.search(r'FIRST_STORE|loadMark|firstFrame', l)]
+    vis = {'key': 'bp.first.v1', 'first': {**first, 'ctx': [i for i in ids if i.startswith('ctx:visitor:')]},
+           'reload': {**second, 'ctx': [i for i in ids_after if i.startswith('ctx:visitor:')]},
+           'localStorageInTelemetryJs': src.count('localStorage'),
+           'indexHtmlNewLines': html_lines, 'localStorageInIndexHtmlNewLines': sum('localStorage' in l for l in html_lines),
+           'storageCalls': re.findall(r'PLATFORM\.storage\.\w+\(\{ \[FIRST_STORE\]', src)}
+    vis['pass'] = bool(vis['first']['ctx'] == ['ctx:visitor:new'] and vis['first']['visitor'] == 'new'
+                       and vis['reload']['ctx'] == ['ctx:visitor:ret'] and vis['reload']['visitor'] == 'ret'
+                       and first['stored'] and second['stored'] == first['stored']
+                       and vis['localStorageInTelemetryJs'] == 0 and vis['localStorageInIndexHtmlNewLines'] == 0
+                       and vis['storageCalls'])
+    seq['seconds'] = round(time.time() - t_start, 1)
+    # informational: the same first load under CDP Slow 3G (own clean context)
+    thr = {'preset': 'Slow 3G (DevTools)', 'conditions': SLOW_3G, 'unthrottled': {k: vals.get(k) for k in FIRST30_ORDER}}
+    terr = []
+    try:
+        t1 = time.time()
+
+        def slow(p):
+            p.clock.install()
+            cdp = p.context.new_cdp_session(p)
+            cdp.send('Network.enable')
+            cdp.send('Network.emulateNetworkConditions', SLOW_3G)
+        with telemetry_page(page, terr, init=slow, boot_timeout=300000) as p:
+            frames(p, 3)
+            tl = p.evaluate(TELEMETRY_FIRST30_LOG_JS)
+        tv, tok = first30_values(tl)
+        thr.update({'throttled': {k: tv.get(k) for k in FIRST30_ORDER}, 'throttledAll': dict(tl),
+                    'throttledOrderOk': tok, 'wallSeconds': round(time.time() - t1, 1), 'errors': terr})
+        uf, tf = vals.get('first_frame'), tv.get('first_frame')
+        thr['firstFrameMs'] = {'unthrottled': uf, 'throttled': tf}
+        thr['slowdown'] = round(tf / uf, 1) if uf and tf else None
+    except Exception as e:
+        thr['error'] = '%s: %s' % (type(e).__name__, str(e).splitlines()[0] if str(e) else '')
+    for name, d in (('sequence_first30.json', seq), ('visitor.json', vis), ('throttle.json', thr)):
+        with open(os.path.join(OUT_DIR, name), 'w') as f:
+            json.dump(d, f, separators=(',', ':'))
+    info['telemetry'] = {'sequencePass': seq['pass'], 'visitorPass': vis['pass'], 'events': len(actual),
+                         'throttledFirstFrame': thr.get('firstFrameMs')}
+    if not seq['pass']:
+        raise RuntimeError('first30 load/ctx sequence mismatch (sequence_first30.json)')
+    if not vis['pass']:
+        raise RuntimeError('first30 visitor check failed (visitor.json)')
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3_open': sc_level3,  # level 3 opened, no lines (was 'level3' before TASK-202)
@@ -2841,6 +2945,7 @@ SCENARIOS = {
     'telemetry_levels': sc_telemetry_levels,
     'telemetry_ui': sc_telemetry_ui,
     'telemetry_editor': sc_telemetry_editor,
+    'telemetry_first30': sc_telemetry_first30,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

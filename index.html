@@ -693,6 +693,7 @@
             // TASK-192: active play time (TELEMETRY.tick counts only while a level is played in a visible page);
             // one frame counts at most 1 s (a throttled background tab adds nothing)
             const tNow = performance.now()
+            TELEMETRY.firstFrame() // TASK-238: t0 (once): load:/ctx: events, bp.first.v1
             if (telemetryFrameAt !== null)
                 TELEMETRY.tick(Math.min(1000, tNow - telemetryFrameAt))
             telemetryFrameAt = tNow
@@ -761,9 +762,12 @@
         let bootComplete = false
         async function boot()
         {
+            TELEMETRY.loadMark('boot') // TASK-238: load:<stage> marks (js/telemetry.js)
             analyticsStart()
             await PLATFORM.init()
-            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE, SPEED_STORE, STATS_STORE])
+            TELEMETRY.loadMark('platform')
+            const saved = await PLATFORM.storage.getMany([PROGRESS_STORE, EDITOR_BAR_STORE, LINES_STORE, SPEED_STORE, STATS_STORE, FIRST_STORE])
+            TELEMETRY.loadMark('storage')
             loadProgress(saved)
             editorBarLoad(saved)
             linesLoad(saved)
@@ -775,10 +779,15 @@
                 TELEMETRY.levelStart('boot') // TASK-191: opening the page starts an attempt
             }
             await fontsReady
+            TELEMETRY.loadMark('fonts')
             bootComplete = true
             requestAnimationFrame(gameLoop)
         }
-        boot()
+        // TASK-238: boot starts once DOMContentLoaded has finished (load:dom <= load:boot)
+        if (document.readyState === 'loading')
+            document.addEventListener('DOMContentLoaded', function() { setTimeout(boot, 0) }, {once: true})
+        else
+            boot()
     </script>
 </body>
 </html>

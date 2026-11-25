@@ -68,6 +68,21 @@
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
 // Play-tests and the editor send and count nothing (active() is false there).
 const STATS_STORE = 'bp.stats.v1'
+// TASK-238: first-30-seconds telemetry, part 1: load timing and session context, sent once per page load at t0
+// (the first gameLoop frame after bootComplete, TELEMETRY.firstFrame). Values = integer ms since navigation start
+// (performance.timeOrigin; Navigation Timing Level 2 entry):
+//   load:html (responseEnd), load:dom (domContentLoadedEventEnd), load:onload (loadEventEnd, -1 before the load event),
+//   load:boot (boot() entry), load:platform (after PLATFORM.init), load:storage (after storage getMany),
+//   load:fonts (after fontsReady), load:first_frame (t0)                         <- TELEMETRY.loadMark(stage) in boot()
+//   load:transfer_kb (navigation + resource transferSize / 1024, rounded), load:resources (resource entry count),
+//   load:nav:<navigate|reload|back_forward|prerender>
+//   ctx:input:<touch|mouse> (pointer: coarse), ctx:embed:<top|iframe>, ctx:platform:<PLATFORM.platformId>,
+//   ctx:vw:<lt480|lt768|lt1024|lt1440|ge1440> (innerWidth), ctx:visitor:<new|ret>
+// Visitor: PLATFORM.storage key FIRST_STORE ('bp.first.v1') read by boot's getMany (TELEMETRY.load); missing = 'new'.
+// It is written at t0 (after the window starts) with the time of the first session. A stage that cannot be measured
+// (no navigation entry) sends -1. Entries come from performance.getEntriesByType, else from a buffered
+// PerformanceObserver (some environments stub the performance object, e.g. test fake clocks).
+const FIRST_STORE = 'bp.first.v1'
 const TELEMETRY = (function()
 {
     let stats = {}
@@ -248,7 +263,109 @@ const TELEMETRY = (function()
         ptEvent('attempt', n)
     }
 
+    // TASK-238: load marks (performance.now() at each boot stage), observed entries, visitor kind, t0
+    const loadMarks = {}
+    const observed = {navigation: [], resource: []}
+    let firstVisitor = null // 'new' | 'ret' once load() ran
+    let t0 = null
+    try
+    {
+        for (const type of ['navigation', 'resource'])
+            new PerformanceObserver(function(list) { observed[type].push(...list.getEntries()) })
+                .observe({type, buffered: true})
+    }
+    catch (e) {} // no PerformanceObserver: getEntriesByType only
+    function perfEntries(type)
+    {
+        let a = []
+        try
+        {
+            a = performance.getEntriesByType(type) || []
+        }
+        catch (e) {}
+        return a.length ? a : observed[type]
+    }
+    function ms(v)
+    {
+        return typeof v == 'number' && isFinite(v) ? Math.max(0, Math.round(v)) : -1
+    }
+    function viewportBucket(w)
+    {
+        return w < 480 ? 'lt480' : w < 768 ? 'lt768' : w < 1024 ? 'lt1024' : w < 1440 ? 'lt1440' : 'ge1440'
+    }
+    function inIframe()
+    {
+        try
+        {
+            return window.self !== window.top
+        }
+        catch (e)
+        {
+            return true // a cross-origin top throws
+        }
+    }
+    function sendLoad()
+    {
+        const nav = perfEntries('navigation')[0] || null
+        const res = perfEntries('resource')
+        const stage = (name, v) => ANALYTICS.design('load:' + name, v)
+        stage('html', nav ? ms(nav.responseEnd) : -1)
+        stage('dom', nav && nav.domContentLoadedEventEnd > 0 ? ms(nav.domContentLoadedEventEnd) : -1)
+        stage('onload', nav && nav.loadEventEnd > 0 ? ms(nav.loadEventEnd) : -1)
+        for (const name of ['boot', 'platform', 'storage', 'fonts'])
+            stage(name, name in loadMarks ? ms(loadMarks[name]) : -1)
+        stage('first_frame', ms(t0))
+        let bytes = nav && nav.transferSize || 0
+        for (const r of res)
+            bytes += r.transferSize || 0
+        stage('transfer_kb', Math.round(bytes / 1024))
+        stage('resources', res.length)
+        const type = nav && ['navigate', 'reload', 'back_forward', 'prerender'].includes(nav.type) ? nav.type : 'navigate'
+        ANALYTICS.design('load:nav:' + type)
+        let coarse = false
+        try
+        {
+            coarse = window.matchMedia('(pointer: coarse)').matches
+        }
+        catch (e) {}
+        ANALYTICS.design('ctx:input:' + (coarse ? 'touch' : 'mouse'))
+        ANALYTICS.design('ctx:embed:' + (inIframe() ? 'iframe' : 'top'))
+        ANALYTICS.design('ctx:platform:' + (PLATFORM.platformId || 'local'))
+        ANALYTICS.design('ctx:vw:' + viewportBucket(window.innerWidth))
+        ANALYTICS.design('ctx:visitor:' + firstVisitor)
+    }
+
     return {
+        // TASK-238: boot stage reached (index.html boot: 'boot', 'platform', 'storage', 'fonts')
+        loadMark(stage)
+        {
+            if (!(stage in loadMarks))
+                loadMarks[stage] = performance.now()
+        },
+        // TASK-238: t0 = the first gameLoop frame after bootComplete; sends load:/ctx: once, then writes FIRST_STORE
+        firstFrame()
+        {
+            if (t0 !== null)
+                return
+            t0 = performance.now()
+            if (firstVisitor === null)
+                firstVisitor = 'new'
+            sendLoad()
+            if (firstVisitor == 'new')
+            {
+                try
+                {
+                    const p = PLATFORM.storage.setMany({ [FIRST_STORE]: JSON.stringify({first: Date.now()}) })
+                    if (p && p.catch)
+                        p.catch(function() {})
+                }
+                catch (e) {} // blocked storage: the next session is 'new' again
+            }
+        },
+        // TASK-238: 'new' | 'ret' (null before boot read the storage); ms since t0 (null before t0)
+        firstVisitor() { return firstVisitor },
+        sinceT0() { return t0 === null ? null : Math.round(performance.now() - t0) },
+        loadMarks() { return Object.assign({}, loadMarks) },
         editor: editorEvent,
         playtest: ptEvent,
         playtestActive: ptActive,
@@ -325,6 +442,7 @@ const TELEMETRY = (function()
         // values: the PLATFORM.storage.getMany result ({key: string | null}); garbage means empty counters
         load(values)
         {
+            firstVisitor = values && values[FIRST_STORE] != null ? 'ret' : 'new' // TASK-238
             stats = {}
             try
             {

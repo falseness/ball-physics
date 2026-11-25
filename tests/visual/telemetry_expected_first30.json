@@ -1,0 +1,39 @@
+{
+ "note": "TASK-238 telemetry_first30 (none backend, clean storage, 1280x800 mouse, top window, local platform): load:/ctx: design ids in send order at t0; afterReload = the same page reloaded in the same storage",
+ "events": [
+  "load:html",
+  "load:dom",
+  "load:onload",
+  "load:boot",
+  "load:platform",
+  "load:storage",
+  "load:fonts",
+  "load:first_frame",
+  "load:transfer_kb",
+  "load:resources",
+  "load:nav:navigate",
+  "ctx:input:mouse",
+  "ctx:embed:top",
+  "ctx:platform:local",
+  "ctx:vw:lt1440",
+  "ctx:visitor:new"
+ ],
+ "afterReload": [
+  "load:html",
+  "load:dom",
+  "load:onload",
+  "load:boot",
+  "load:platform",
+  "load:storage",
+  "load:fonts",
+  "load:first_frame",
+  "load:transfer_kb",
+  "load:resources",
+  "load:nav:reload",
+  "ctx:input:mouse",
+  "ctx:embed:top",
+  "ctx:platform:local",
+  "ctx:vw:lt1440",
+  "ctx:visitor:ret"
+ ]
+}
