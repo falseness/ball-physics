@@ -6,6 +6,8 @@ Sends one HMAC-signed GameAnalytics init (build 'test-split', unique user_id per
 (/root/credentials/grapnelninja/credentials.env) through https://stats.playdiplomacy.online, then checks each
 landed in its own game's tap file and not in the other's. Writes compact JSON to --out (default stdout).
 Needs network and read access to the tap dir (run on the relay host). Exit 0 = all checks pass.
+The tap names a file by its own UTC write time, so the files of the start day and of the day after are both searched
+(a run that crosses UTC midnight lands in the next day's file, TASK-230).
 """
 import argparse, base64, datetime, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, uuid
 
@@ -49,22 +51,31 @@ def hits(path, user_id):
     return n
 
 
+def hits_all(paths, user_id):
+    return sum(hits(p, user_id) for p in paths)
+
+
+def size(path):
+    return os.path.getsize(path) if os.path.exists(path) else None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out')
     ap.add_argument('--tap-dir', default='/var/lib/ga-tap')
     ap.add_argument('--build', default='test-split')
     a = ap.parse_args()
-    day = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+    start = datetime.datetime.utcnow()
+    days = [(start + datetime.timedelta(days=i)).strftime('%Y-%m-%d') for i in (0, 1)]
     res = {'ts': datetime.datetime.utcnow().isoformat(timespec='seconds') + 'Z', 'build': a.build}
     active = subprocess.run(['systemctl', 'is-active', 'ga-tap'], capture_output=True, text=True).stdout.strip()
     res['ga_tap_active'] = active
     with urllib.request.urlopen(RELAY + '/health', timeout=30) as r:
         res['health'] = r.read().decode().strip()
     ks = keys()
-    files = {g: os.path.join(a.tap_dir, 'events-%s-%s.jsonl' % (k, day)) for g, (k, _) in ks.items()}
-    combined = os.path.join(a.tap_dir, 'events-%s.jsonl' % day)
-    comb_before = os.path.getsize(combined) if os.path.exists(combined) else None
+    files = {g: [os.path.join(a.tap_dir, 'events-%s-%s.jsonl' % (k, day)) for day in days] for g, (k, _) in ks.items()}
+    combined = [os.path.join(a.tap_dir, 'events-%s.jsonl' % day) for day in days]
+    comb_before = [size(p) for p in combined]
     games = {}
     for g, (k, s) in ks.items():
         uid = 'tap-split-%s-%s' % (g, uuid.uuid4().hex[:12])
@@ -72,12 +83,12 @@ def main():
     time.sleep(1)
     other = {'ball-physics': 'grapnelninja', 'grapnelninja': 'ball-physics'}
     for g, d in games.items():
-        d['in_own_file'] = hits(files[g], d['user_id'])
-        d['in_other_file'] = hits(files[other[g]], d['user_id'])
-        d['in_combined_file'] = hits(combined, d['user_id'])
+        d['in_own_file'] = hits_all(files[g], d['user_id'])
+        d['in_other_file'] = hits_all(files[other[g]], d['user_id'])
+        d['in_combined_file'] = hits_all(combined, d['user_id'])
     res['games'] = games
     res['combined_file'] = {'path': combined, 'size_before': comb_before,
-                            'size_after': os.path.getsize(combined) if os.path.exists(combined) else None}
+                            'size_after': [size(p) for p in combined]}
     checks = {'active': active == 'active', 'health_ok': res['health'] == 'ok'}
     for g, d in games.items():
         checks[g + '_200'] = d['status'] == 200

@@ -3,7 +3,9 @@
 Plays the telemetry_ui script of tests/visual/shoot.py headless with the committed gameanalytics backend (index.html
 as committed; js/buildinfo.js served stamped with 'live-<YYYYMMDD>', so an automated browser sends build
 'test-live-<YYYYMMDD>'), waits for every relay answer, then reads the relay tap's raw copy
-(/var/lib/ga-tap/events-<game key>-<UTC day>.jsonl, split per key since TASK-194): lines whose path holds the ball-physics game key and whose body events carry
+(/var/lib/ga-tap/events-<game key>-<UTC day>.jsonl, split per key since TASK-194; the tap names a file by its own
+UTC write time, so every day file from the day at start through the day after the run is read - a run that crosses
+UTC midnight finds its later events in the next day's file, TASK-230): lines whose path holds the ball-physics game key and whose body events carry
 this build. The design + progression events in the tap must equal the ones the browser sent (ANALYTICS.debugLog).
 
 Usage: python3 tests/platform/live_check.py --out DIR [--build NAME] [--tap-dir DIR]
@@ -49,6 +51,16 @@ def tap_lines(tap_file, key, build):
     return out
 
 
+def tap_files(tap_dir, key, start, end):
+    """Tap files of every UTC day from start's day through end's day, and at least the day after start."""
+    d, last = start.date(), max(end.date(), start.date() + datetime.timedelta(days=1))
+    out = []
+    while d <= last:
+        out.append(os.path.join(tap_dir, 'events-%s-%s.jsonl' % (key, d.strftime('%Y-%m-%d'))))
+        d += datetime.timedelta(days=1)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -61,8 +73,8 @@ def main():
     with open(os.path.join(ROOT, 'analytics', 'backends', 'gameanalytics.js')) as f:
         committed_key = key in f.read()
     want_build = 'test-' + args.build
-    tap_file = os.path.join(args.tap_dir, 'events-%s-%s.jsonl' % (key, day.strftime('%Y-%m-%d')))
-    before = len(tap_lines(tap_file, key, want_build))
+    before_counts = {f: len(tap_lines(f, key, want_build)) for f in tap_files(args.tap_dir, key, day, day)}
+    before = sum(before_counts.values())
 
     requests, responses = [], []
 
@@ -116,8 +128,8 @@ def main():
 
     # the tap writes as the relay answers; give it a moment, then read
     time.sleep(2)
-    lines = tap_lines(tap_file, key, want_build)
-    new_lines = lines[before:]
+    files = tap_files(args.tap_dir, key, day, datetime.datetime.now(datetime.timezone.utc))
+    new_lines = [ln for f in files for ln in tap_lines(f, key, want_build)[before_counts.get(f, 0):]]
     events = [e for _, rec in new_lines for e in rec['body'] if isinstance(e, dict) and e.get('build') == want_build]
     game = [e for e in events if e.get('category') in GAME_CATEGORIES]
     uuids = [e.get('event_uuid') for e in game]
@@ -148,7 +160,7 @@ def main():
         'excerpt5': min(5, len(new_lines)) == 5,
     }
     res = {
-        'build': want_build, 'gameKey': key, 'tapFile': tap_file, 'runSeconds': run_seconds, 'error': error,
+        'build': want_build, 'gameKey': key, 'tapFiles': files, 'runSeconds': run_seconds, 'error': error,
         'sent': {'total': len(sent), **sent_counts, 'source': 'ANALYTICS.debugLog (telemetry_ui)'},
         'tap': {'linesBefore': before, 'lines': len(new_lines), 'events': len(events), 'gameEvents': len(game),
                 **tap_counts, 'uniqueUuids': len(set(uuids)), 'statuses': tap_statuses,
