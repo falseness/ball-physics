@@ -10,28 +10,23 @@ levels.push(
     flagY: 450,
     flagRotate: 0,
     lineK: 1,
-    // TASK-202: the tall back wall (100,450)-(100,200) caught almost any leftward bounce (random one-line
-    // win rate 14.7 % under the TASK-199 contact physics); a shallow cup with two 70 px walls instead.
     lines: [
-        new Line(100, 450, 300, 450, dotRadius, levelLineColor, 'line'),
-        new Line(100, 450, 100, 380, dotRadius, levelLineColor, 'line'),
-        new Line(300, 450, 300, 380, dotRadius, levelLineColor, 'line')],
+        new Line(100, 450, 300, 450, dotRadius, levelLineColor, 'line'), 
+        new Line(100, 450, 100, 200, dotRadius, levelLineColor, 'line')],
     unlock: 1
 }, 
 {
     
-    // TASK-202: under the TASK-199 contact physics the ball drops through the V's gap onto the old shelf
-    // (450,400)-(280,400) and wins with no line; the shelf and flag moved left, under the V's left arm.
     ballX: 100,
     ballY: 15,
-    flagX: 100,
+    flagX: 360,
     flagY: 400,
     flagRotate: 0,
     lineK: 1,
     lines: [
         new Line(0, 50, 200, 250, dotRadius, levelLineColor, 'line'),
         new Line(235, 235, 420, 50, dotRadius, levelLineColor, 'line'),
-        new Line(180, 400, 20, 400, dotRadius, levelLineColor, 'line')
+        new Line(450, 400, 280, 400, dotRadius, levelLineColor, 'line')
     ],
     unlock: 0
 },
@@ -42,14 +37,9 @@ levels.push(
     flagY: 340,
     flagRotate: -0.96667 + Math.PI * 1.5,
     lineK: 2,
-    // TASK-202: under the TASK-199 contact physics one line won (165 of 12894 one-line lattice candidates): the ball
-    // ran down any falling line into the floor/slope joint and up the slope into the flag. A wall at the joint and a
-    // roof box the flag in; it is open only to the right (x 450, y 220..300), so the ball must be sent back from there.
     lines: [
         new Line(100, 400, 300, 400, dotRadius, levelLineColor, 'line'),
-        new Line(300, 400, 450, 300, dotRadius, levelLineColor, 'line'),
-        new Line(300, 400, 300, 220, dotRadius, levelLineColor, 'line'),
-        new Line(300, 220, 450, 220, dotRadius, levelLineColor, 'line')],
+        new Line(300, 400, 450, 300, dotRadius, levelLineColor, 'line')],
     unlock: 0
 },
 {
@@ -138,10 +128,8 @@ levels.push(
         new Line(800, 700, 1000, 500, dotRadius, levelLineColor, 'line'),
         new Line(340, 600, 390, 600, dotRadius, levelLineColor, 'line'),
         new Line(380, 300, 340, 600, dotRadius, levelLineColor, 'line'),
-        // TASK-203: the gap in the x = 630 wall widened from y 520-550 (30 px, a 20 px ball fit only through a
-        // knife-edge bounce: every winning line had 0/8 winning +-2 px variants) to y 495-575
-        new Line(630, 495, 630, 250, dotRadius, levelLineColor, 'line'),
-        new Line(630, 650, 630, 575, dotRadius, levelLineColor, 'line')
+        new Line(630, 520, 630, 250, dotRadius, levelLineColor, 'line'),
+        new Line(630, 650, 630, 550, dotRadius, levelLineColor, 'line')
     ],
     unlock: 0
 },
@@ -174,9 +162,7 @@ levels.push(
     flagX: 1200,
     flagY: 450,
     flagRotate: 0,
-    // TASK-204: lineK 2 -> 1. One line wins (the reference), so with lineK 2 the rubric gate G1 (fewer than
-    // lineK lines cannot win) failed by construction; the level is a one-line level.
-    lineK: 1,
+    lineK: 2,
     lines: [
         new Line(1040, 0, 1040, 450, dotRadius, levelLineColor, 'line'),
         new Line(1040, 450, 1270, 450, dotRadius, levelLineColor, 'line'),
@@ -226,10 +212,7 @@ levels.push(
     flagX: 362,
     flagY: 112,
     flagRotate: -Math.PI / 2,
-    // TASK-204: lineK 4 -> 1. Under the contact physics the TASK-074 ramp (381,679)-(696,744) wins on its own
-    // (the second line is no longer needed: G2 failed), so G1 (fewer than lineK lines cannot win) failed for
-    // lineK 4; the ramp alone is the new one-line reference.
-    lineK: 1,
+    lineK: 4,
     lines: [
         new Line(360, 755, 1240, 755, dotRadius, levelLineColor, 'line'),
         new Line(1240, 755, 1240, 70, dotRadius, levelLineColor, 'line'),
@@ -284,14 +267,7 @@ levels.push(
         new Line(633, 90, 633, 791, dotRadius, levelLineColor, 'line'),
         new Line(1239, 623.0504101869152, 1239, 30, dotRadius, levelLineColor, 'line'),
         new Line(1239, 30, 999, 30, dotRadius, levelLineColor, 'line'),
-        new Line(60.01501619660557, 667.9957087306927, 225.98710429701066, 667.9957087306927, dotRadius, levelLineColor, 'line'),
-        // TASK-205: a closed block behind portal A (x 570-633, y 240-368). Under the contact physics a player line
-        // sloping down into the wall's left face next to A's back made the ball bounce in place in the wedge
-        // (rim-trap detector: 12 trapped runs in the G4 3000 sample); with the block a ball on the back side stays
-        // more than h + r + 2 px from A's centre.
-        new Line(633, 240, 570, 240, dotRadius, levelLineColor, 'line'),
-        new Line(570, 240, 570, 368, dotRadius, levelLineColor, 'line'),
-        new Line(570, 368, 633, 368, dotRadius, levelLineColor, 'line')
+        new Line(60.01501619660557, 667.9957087306927, 225.98710429701066, 667.9957087306927, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A on the wall at x 633 facing right (1, 0),
     // B on the floor pad facing up (0, -1)
@@ -394,10 +370,7 @@ levels.push(
         new Line(700, 300, 1000, 300, dotRadius, levelLineColor, 'line'),
         new Line(250, 450, 550, 450, dotRadius, levelLineColor, 'line'),
         new Line(40, 400, 40, 60, dotRadius, levelLineColor, 'line'),
-        new Line(300, 170, 500, 170, dotRadius, levelLineColor, 'line'),
-        // TASK-206: deflector under the shelf right of A (starts 15 px from the opening): turns balls running left
-        // under the shelf back up-right, away from A; the steep kick from the lower right still reaches A
-        new Line(460, 450, 510, 500, dotRadius, levelLineColor, 'line')
+        new Line(300, 170, 500, 170, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (400, 450) on the middle shelf's underside
     // facing down (0, 1), B at (40, 200) facing right (1, 0)
@@ -455,10 +428,7 @@ levels.push(
         new Line(820, 320, 980, 320, dotRadius, levelLineColor, 'line'),
         new Line(480, 760, 680, 560, dotRadius, levelLineColor, 'line'),
         new Line(140, 260, 300, 260, dotRadius, levelLineColor, 'line'),
-        new Line(140, 80, 300, 80, dotRadius, levelLineColor, 'line'),
-        // TASK-207: guard right of the flag, above B's rightward exit stream: a ball bounced back from the right
-        // (one-line win under the contact physics) cannot reach the flag from the side
-        new Line(330, 20, 330, 170, dotRadius, levelLineColor, 'line')
+        new Line(140, 80, 300, 80, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (580, 660) on the slope facing up-left
     // (-0.71, -0.71), B at (220, 260) on the pad facing up (0, -1)
@@ -656,14 +626,6 @@ levels.push(
     // the floor underside that bounced a rising ball back down onto the line's far end.
     // The flag stands on the pocket floor (not hanging from the ceiling): a ball rolling on top of the roof touched the
     // top of a hanging flag's pole through the ceiling line.
-    // TASK-210 (contact physics): a two-line win (a wall at the right edge, x 1225..1229, plus one long line through the
-    // well as kicker and lift) rattled the ball up the narrow channel between that wall and the block's right side
-    // (x = 1200) into the pocket mouth. The lip (1200,310)-(1220,310), line 11, caps that channel; the reference
-    // crosses y = 310 further right (x ~ 1240) and still wins.
-    // A ball that hit the well's left wall above A slowly lost its sideways speed in the contact and then bounced
-    // straight up and down along A's face for ever (rim-trap detector, 3 one-line candidates such as
-    // (200,680)-(920,604)). The deflector (520,505)-(535,520) above A (30 px above its top rim, y 535), line 12, sends
-    // a ball sliding down the wall back into the well; the reference passes ~50 px right of it.
     ballX: 580,
     ballY: 300,
     flagX: 1060,
@@ -681,9 +643,7 @@ levels.push(
         new Line(520, 260, 640, 260, dotRadius, levelLineColor, 'line'),
         new Line(1200, 310, 1200, 420, dotRadius, levelLineColor, 'line'),
         new Line(980, 420, 1200, 420, dotRadius, levelLineColor, 'line'),
-        new Line(980, 310, 980, 420, dotRadius, levelLineColor, 'line'),
-        new Line(1200, 310, 1220, 310, dotRadius, levelLineColor, 'line'),
-        new Line(520, 505, 535, 520, dotRadius, levelLineColor, 'line')
+        new Line(980, 310, 980, 420, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (520, 580) on the well's left wall facing
     // right (1, 0), B at (880, 420) on the underside of the floating pad facing down (0, 1)
@@ -779,16 +739,7 @@ levels.push(
         new Line(840, 260, 960, 260, dotRadius, levelLineColor, 'line'),
         new Line(1100, 300, 1200, 300, dotRadius, levelLineColor, 'line'),
         new Line(1100, 300, 1100, 790, dotRadius, levelLineColor, 'line'),
-        new Line(1200, 300, 1200, 790, dotRadius, levelLineColor, 'line'),
-        // TASK-212 guard (line 8, after the portal hosts): under the contact physics one long ramp from the top left
-        // fed A diagonally, so B threw the ball up-left short of the top edge; it fell back onto the same ramp and
-        // bounced over to the flag (dense1 one-line wins). This steep slope above the shaft turns such an up-left
-        // ball straight up and out through the top; the reference (roof right of x 780) never reaches it.
-        new Line(715, 0, 765, 175, dotRadius, levelLineColor, 'line'),
-        // TASK-212 deflector (line 9): a one-line ramp ending inside the shaft let the ball skid left along the shaft
-        // floor into A, so B threw it out flat (vx ~18) straight into the flag. This slope between B's plate and the
-        // flag tower turns such a flat exit down-left to the floor; the reference arcs over it (y ~150 at x 1030).
-        new Line(1030, 215, 1070, 300, dotRadius, levelLineColor, 'line')
+        new Line(1200, 300, 1200, 790, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 780) in the shaft floor facing up
     // (0, -1), B at (900, 260) in the floating plate facing up (0, -1); same facing, so a teleport reverses the velocity

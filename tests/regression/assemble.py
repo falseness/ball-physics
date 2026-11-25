@@ -76,6 +76,9 @@ if os.path.exists(f'{D}/trail_speed.json'):
 sec('node tests/visual/map_check.mjs')
 out += ['  ' + l[:160] for l in lines('map_check') if l.startswith('{"pass"')]
 chk(ok0('map_check'), f'map_check {ex("map_check")}')
+sec('node tests/levels/frozen_check.mjs (TASK-243 frozen layouts vs tests/levels/frozen.json)')
+out += ['  ' + l for l in lines('frozen_check') if l.startswith(('FAIL', 'FROZEN', 'ERROR'))]
+chk(ok0('frozen_check') and any(l.startswith('FROZEN OK') for l in lines('frozen_check')), f'frozen_check {ex("frozen_check")}')
 sec('telemetry sequences (tests/regression/seq_check.py, independent of shoot.py verdicts)')
 r = subprocess.run([sys.executable, os.path.join(HERE, 'seq_check.py'), D], capture_output=True, text=True, cwd=ROOT)
 out.append('  ' + (r.stdout.strip() or r.stderr.strip().splitlines()[-1] if (r.stdout or r.stderr) else 'no output'))

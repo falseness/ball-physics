@@ -80,3 +80,17 @@ G4 sample k=lineK: valid 3000, win rate r (< 0.10), winsWithoutTeleport 0       
 G1-G4 embedded 0, trapped 0 (every search); near-opening lines: none | listed in design.md   PASS/FAIL
 Idea s/5, Aha s/5, Readability s/5, Flow s/5, mean m (every >= 3, mean >= 3.5)        PASS/FAIL
 ```
+
+## Frozen layouts
+
+User request (verbatim, TASK-243): "undo change to levels pls". The layouts that the physics re-check tickets
+TASK-202..212 changed are back to their definitions at git `5685fc4^` (just before TASK-202), exactly, and are frozen:
+
+- srcId 1, 2, 3, 9, 11, 13, 15, 19, 21, 27, 30
+
+`node tests/levels/frozen_check.mjs` (also in `tests/regression/run_checks.sh`, preview and full) compares a sha256 of
+each normalised definition with `tests/levels/frozen.json` and exits 1 naming the srcId on any change. Under the
+current contact physics (TASK-199..201) some of these levels fail the hard gates above again. Such gate failures are
+reported (TASK-245 style: the gate, the numbers, the evidence), not fixed by layout edits: do not edit a frozen
+definition, do not change the physics to make a gate or a reference pass, and do not delete or skip a shoot
+scenario. Only the reference solutions are re-found (TASK-244).

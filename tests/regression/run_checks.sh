@@ -37,6 +37,7 @@ for m in default crossing backside touching; do for s in $SEEDS; do
   run fuzz_${m}_s$s python3 tests/portal/fuzz.py $F --seed $s $FC --task "$D/fuzz" --out fuzz_${m}_s$s.json & done; done
 ( run sim python3 tests/portal/sim.py --task "$D/sim" --scenarios $SC --out "$D/sim/sim.json"
   run map_check node tests/visual/map_check.mjs
+  run frozen_check node tests/levels/frozen_check.mjs
   run speed_check python3 tests/visual/speed_check.py --out "$D/speed_check.json" ) &
 wait
 ( run preview_check python3 tests/visual/preview_check.py --out "$D/preview_check.json"
