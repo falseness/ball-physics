@@ -3,7 +3,9 @@
 
 3 users (user-a: 1 session over 2 batches + a re-sent batch; user-b: 2 sessions; user-c (TASK-216): 1 session sc1
 across UTC midnight, split over the 2026-11-20 and 2026-11-21 per-key files), 3 levels (srcId 1, 2, 3),
-wins, restarts, off-map, abandon, all 15 buttons, every line event; one test record, one unparsable line,
+wins, restarts, off-map, abandon, all 15 buttons, every line event; TASK-236: editor + play-test events for user-a
+(2 editor sessions: L3 from the menu with every object / toolbar event and 2 play-tested hashes, L1 from the win window
+abandoned) and user-b (1 session on L1 from the win window, 1 play-tested hash, one malformed edit: id); one test record, one unparsable line,
 one bodiless OPTIONS record and one other-game record in an old combined file, one other-game per-key file.
 Expected report: tests/stats/fixture_expected.json (written by hand, not by this script).
 """
@@ -59,6 +61,35 @@ b1 = B1(['user', 'Start:L1', ('level:1:attempt', 1), 'ui:restart:L1', 'level:1:r
 b2 = B2(['user', 'Start:L1', ('level:1:attempt', 4), ('lines:1:place', 1), ('lines:1:used', 1), 'ui:run:L1',
          'Complete:L1', ('level:1:win', 5), ('level:1:win_attempt', 4), ('session:play_seconds', 30),
          ('session:play_seconds', 60), ('session:play_seconds', 120), ('end', 130)])
+# TASK-236: editor sessions. user-a: L3 (menu) -> exit, L1 (win) -> abandon; user-b: L1 (win) -> exit
+HA, HB, HC = '0a1b2c3d', 'ffee0011', 'deadbeef'
+summ = lambda ctx, h, ln, po, lk, ch: [(f'editor:sum:{ctx}:{h}:lines', ln), (f'editor:sum:{ctx}:{h}:portals', po),
+                                       (f'editor:sum:{ctx}:{h}:linek', lk), (f'editor:sum:{ctx}:{h}:changed', ch)]
+a3 = A(['editor:open:L3:menu', 'editor:tool:L3:line', ('editor:line:L3:add', 4), 'editor:line:L3:cancel',
+        ('editor:line:L3:add', 5), 'editor:tool:L3:select', 'editor:line_move:L3:ok',
+        'editor:error:L3:line_would_leave_the_field', 'editor:line_end:L3:refused', 'editor:line_end:L3:ok',
+        'editor:line_end:L3:degenerate', 'editor:move:L3:ball', 'editor:move:L3:flag', 'editor:snap:L3:off',
+        'editor:rotate:L3:cw:flag', 'editor:tool:L3:portal', 'editor:portal:L3:a', 'editor:portal:L3:b',
+        ('editor:portal_size:L3:bigger', 120), ('editor:portal_size:L3:smaller', 0), 'editor:error:L3:portals_overlap',
+        'editor:portal_move:L3:refused', 'editor:portal_move:L3:ok', ('editor:linek:L3:inc', 3), 'editor:btn:L3:play']
+       + summ('L3', HA, 5, 2, 3, 1)
+       + [(f'edit:{HA}:attempt', 1), (f'edit:{HA}:line_place', 1), (f'edit:{HA}:line_place', 2), (f'edit:{HA}:line_drag', 0),
+          f'edit:{HA}:line_delete', f'edit:{HA}:run', f'edit:{HA}:speed_on', f'edit:{HA}:speed_off', f'edit:{HA}:offmap',
+          (f'edit:{HA}:attempt', 2), (f'edit:{HA}:line_place', 1), f'edit:{HA}:run', (f'edit:{HA}:win', 7), f'edit:{HA}:back',
+          'editor:tool:L3:delete', 'editor:line_del:L3:tool', 'editor:portal_del:L3', 'editor:line_del:L3:key',
+          'editor:btn:L3:export'] + summ('L3', HB, 4, 0, 3, 1)
+       + ['editor:btn:L3:import', 'editor:import:L3:invalid', 'editor:error:L3:invalid_level_file',
+          'editor:btn:L3:import', 'editor:import:L3:ok', 'editor:bar_move:L3', 'editor:btn:L3:exit']
+       + summ('L3', HB, 4, 0, 3, 1) + [('editor:actions:L3', 33), ('editor:exit:L3', 95),
+          'editor:open:L1:win', 'editor:tool:L1:line', ('editor:linek:L1:dec', 0), ('editor:actions:L1', 2),
+          ('editor:abandon:L1', 20)])
+b3 = B1(['editor:open:L1:win', 'editor:btn:L1:new', 'editor:snap:L1:on', 'editor:rotate:L1:ccw:portal',
+         'editor:btn:L1:import', 'editor:import:L1:old_format', 'editor:error:L1:old_portal_format', 'editor:btn:L1:play']
+        + summ('L1', HC, 2, 0, 1, 1)
+        + [(f'edit:{HC}:attempt', 1), (f'edit:{HC}:line_place', 1), f'edit:{HC}:run', f'edit:{HC}:restart',
+           (f'edit:{HC}:attempt', 2), (f'edit:{HC}:line_place', 1), (f'edit:{HC}:line_drag', 1), f'edit:{HC}:run',
+           (f'edit:{HC}:win', 3), f'edit:{HC}:back', 'edit:zzzz:attempt', 'editor:btn:L1:exit']
+        + summ('L1', HC, 2, 0, 1, 1) + [('editor:actions:L1', 7), ('editor:exit:L1', 40)])
 t1 = [ev('user-test', 'st1', 'test-live-20261121', s) for s in ['user', 'Start:L1', ('level:1:attempt', 1)]]
 g1 = [ev('user-g', 'sg1', '1.0.0', s) for s in ['user', ('level:1:attempt', 1)]]
 C = lambda specs: [ev('user-c', 'sc1', '1.0.0', s) for s in specs]
@@ -75,9 +106,11 @@ files = {
     f'events-{KEY}-2026-11-20.jsonl': [
         rec('2026-11-20T09:00:00.000Z', f'/v2/{KEY}/init', {'user_id': 'user-b', 'build': '1.0.0', 'platform': 'webgl'}),
         rec('2026-11-20T10:00:00.000Z', EV, a1),
+        rec('2026-11-20T10:04:30.000Z', EV, a3),
         rec('2026-11-20T10:05:00.000Z', EV, a2),
         rec('2026-11-20T10:06:00.000Z', EV, a2),  # SDK re-send of the same batch: duplicates by event_uuid
         rec('2026-11-20T12:00:00.000Z', EV, b1),
+        rec('2026-11-20T12:30:00.000Z', EV, b3),
         rec('2026-11-20T13:00:00.000Z', EV, b2),
         rec('2026-11-20T23:59:30.000Z', EV, c1)],
     f'events-{KEY}-2026-11-21.jsonl': [

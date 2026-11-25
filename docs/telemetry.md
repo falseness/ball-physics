@@ -214,6 +214,10 @@ blocked storage keeps them in memory only.
   (`sequence.json`). With telemetry_levels in the same run it writes `coverage.json`: every first-cell event id of the
   catalogue above (progression status, facade function, or design id with `<srcId>` / `<ctx>` as patterns) found in
   the two full debug logs; `uncovered` must be `[]`.
+- `python3 tests/visual/shoot.py --task TASK-NNN --scenarios telemetry_levels,telemetry_ui,telemetry_editor` (TASK-236):
+  telemetry_editor rewrites `coverage.json` over every catalogue row, `editor:` / `edit:` included (`<h>`, `<from>`,
+  `<code>` and `<a\|b>` alternatives as patterns), against all three full debug logs (`scope`: `all rows,
+  levels+ui+editor logs`); `uncovered` must be `[]`.
 - `python3 tests/platform/test_analytics.py`: facade boot with both backends (TASK-190).
 - `python3 tests/platform/live_check.py --out DIR` (TASK-193): live delivery through the relay. Plays the
   telemetry_ui script with the committed gameanalytics backend and build `test-live-<YYYYMMDD>` (buildinfo stamped
@@ -247,10 +251,30 @@ Writes `DIR/report.json` and `DIR/report.md`:
   drag rejected, over the limit, runs, max lines used; button counts by name (and by `<ctx>`), play seconds (sum of
   the highest `session:play_seconds` milestone per session), hides, totals;
 - per level: users tried / won, attempts, wins, win rate (wins / attempts), median attempt number of the first win.
+- `editor` (TASK-236), from the `editor:` / `edit:` rows of the catalogue (`<ctx>` = `L<srcId>` the editor was opened on,
+  `<h>` = 8-hex FNV-1a of `editorLevelToJSON`, see "Editor events"):
+  - `editor.users[<user>]` (users with any editor / play-test event): editor sessions (`open`) by source (`menu` / `win`),
+    exits, abandons, seconds in the editor (sum of `exit` + `abandon` values, play-test time already excluded),
+    actions (counted: every editor event except `open`, `sum`, `actions`, `exit`, `abandon`, `error`) and
+    `actions_reported` (sum of the `editor:actions` values; the two agree for complete sessions), event counts by name
+    (second id part), tool switches by tool, `snap` on/off, `rotate` by `<dir>:<target>`, `portal_size` bigger /
+    smaller / refused (value 0), `linek` inc/dec, action buttons, imports by outcome (`ok` / `invalid` / `old_format`),
+    exports (`btn:export`), toolbar moves, lines added / cancelled / moved / move refused / ends moved / end refused /
+    end degenerate / deleted (tool, key), portals A placed / pairs placed / moved / move refused / deleted, ball and flag
+    moves, errors by `<code>`, `hashes_summarised` (distinct `<h>` with a `sum`), and per `<h>`: the base levels, number
+    of summaries, the latest `lines` / `portals` / `linek` / `changed` values, and the play-test (`edit:<h>:...`)
+    attempts, highest attempt number, runs, wins, win seconds, restarts, off-map fails, lines placed / deleted /
+    dragged / drag rejected, speed on / off, backs; `playtest` = totals over the hashes;
+  - `editor.levels[<ctx>]`: editor opens by source, distinct users, exits, abandons.
+  An `editor:` / `edit:` id that does not fit the catalogue (unknown name, wrong part, non-hex hash) goes to
+  `unknown_events`. Error codes: `portals_overlap`, `portals_go_on_lines`, `portal_does_not_fit`,
+  `line_would_leave_the_field`, `line_too_short_for_its_portal`, `invalid_level_file`, `old_portal_format` (any other
+  `[a-z0-9_]` code is counted as is).
 
 Check: `python3 tools/stats_report.py --root tests/stats/fixture --out DIR && python3 tests/stats/check_fixture.py
 DIR/report.json` (fixture written by `tests/stats/make_fixture.py`, expected report hand-written in
-`tests/stats/fixture_expected.json`).
+`tests/stats/fixture_expected.json`; since TASK-236 the fixture has editor and play-test events for user-a and user-b
+and one malformed `edit:` id).
 
 Typical use on the relay host: `python3 tools/stats_report.py --since 2026-11-25 --out /tmp/bp-stats` and read
 `report.md` (per user: levels tried, attempts, wins, restarts, buttons, lines, play time; per level totals).

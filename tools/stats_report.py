@@ -23,6 +23,17 @@ LINES_RE = re.compile(r'^lines:(\d+):(place|delete|drag|reject_limit|used)$')
 UI_RE = re.compile(r'^ui:([a-z_]+):(L\d+|map)$')
 SESSION_RE = re.compile(r'^session:(play_seconds|hide|levels_seen)$')
 PROG_RE = re.compile(r'^(Start|Complete|Fail):L(\d+)$')
+# TASK-236: editor (TASK-232..234) and play-test (TASK-235) events, docs/telemetry.md 'Editor events'
+EDITOR_RE = re.compile(r'^editor:([a-z_]+):(L\d+)(?::(.+))?$')
+EDITOR_REST = {  # name -> pattern of the parts after <ctx> (None = no more parts)
+    'open': r'(menu|win)', 'sum': r'([0-9a-f]{8}):(lines|portals|linek|changed)', 'actions': None, 'exit': None,
+    'abandon': None, 'tool': r'(select|line|portal|delete)', 'snap': r'(on|off)', 'rotate': r'(cw|ccw):(flag|portal|line)',
+    'portal_size': r'(bigger|smaller)', 'linek': r'(inc|dec)', 'btn': r'(new|play|export|import|exit)',
+    'import': r'(ok|invalid|old_format)', 'bar_move': None, 'line': r'(add|cancel)', 'line_move': r'(ok|refused)',
+    'line_end': r'(ok|refused|degenerate)', 'line_del': r'(tool|key)', 'portal': r'(a|b)', 'portal_move': r'(ok|refused)',
+    'portal_del': None, 'move': r'(ball|flag)', 'error': r'([a-z0-9_]{1,64})'}
+EDITOR_NOT_ACTION = ('open', 'sum', 'actions', 'exit', 'abandon', 'error')  # every other editor: event is one action
+EDIT_RE = re.compile(r'^edit:([0-9a-f]{8}):(attempt|run|restart|offmap|win|line_place|line_delete|line_drag|speed_on|speed_off|back)$')
 
 
 def tap_files(root, key, since, until):
@@ -49,6 +60,133 @@ def new_level():
                       'runs': 0, 'used_max': 0}}
 
 
+def new_editor():
+    z = lambda *ks: {k: 0 for k in ks}
+    return {'sessions': 0, 'opens': z('menu', 'win'), 'exits': 0, 'abandons': 0, 'seconds': 0, 'actions': 0,
+            'actions_reported': 0, 'events': {}, 'tools': z('select', 'line', 'portal', 'delete'), 'tool_switches': 0,
+            'snap': z('on', 'off'), 'rotate': {}, 'portal_size': z('bigger', 'smaller', 'refused'),
+            'linek': z('inc', 'dec'), 'buttons': z('new', 'play', 'export', 'import', 'exit'),
+            'imports': z('ok', 'invalid', 'old_format'), 'exports': 0, 'bar_moves': 0,
+            'lines': z('added', 'cancelled', 'moved', 'move_refused', 'ends_moved', 'end_refused', 'end_degenerate',
+                       'deleted', 'deleted_tool', 'deleted_key'),
+            'portals': z('a_placed', 'placed', 'moved', 'move_refused', 'deleted'), 'moves': z('ball', 'flag'),
+            'errors': {}, 'hashes_summarised': 0, 'hashes': {},
+            'playtest': z('hashes', 'attempts', 'runs', 'wins', 'restarts', 'offmap', 'lines_placed', 'backs')}
+
+
+def new_hash():
+    return {'ctx': [], 'summaries': 0, 'lines': None, 'portals': None, 'linek': None, 'changed': None,
+            'playtest': {'attempts': 0, 'max_attempt': 0, 'runs': 0, 'wins': 0, 'win_seconds': [], 'restarts': 0,
+                         'offmap': 0, 'lines_placed': 0, 'lines_deleted': 0, 'lines_dragged': 0,
+                         'lines_drag_rejected': 0, 'speed_on': 0, 'speed_off': 0, 'backs': 0}}
+
+
+def editor_event(ed, eid, val, elevels):
+    """One editor: / edit: design event into the user's editor record ed; False if the id is not in the catalogue."""
+    m = EDIT_RE.match(eid)
+    if m:
+        h, kind = m.groups()
+        pt = ed['hashes'].setdefault(h, new_hash())['playtest']
+        if kind == 'attempt':
+            pt['attempts'] += 1
+            pt['max_attempt'] = max(pt['max_attempt'], int(val or 0))
+        elif kind == 'run':
+            pt['runs'] += 1
+        elif kind == 'restart':
+            pt['restarts'] += 1
+        elif kind == 'offmap':
+            pt['offmap'] += 1
+        elif kind == 'win':
+            pt['wins'] += 1
+            pt['win_seconds'].append(val)
+        elif kind == 'line_place':
+            pt['lines_placed'] += 1
+        elif kind == 'line_delete':
+            pt['lines_deleted'] += 1
+        elif kind == 'line_drag':
+            pt['lines_dragged' if val else 'lines_drag_rejected'] += 1
+        elif kind == 'back':
+            pt['backs'] += 1
+        else:
+            pt[kind] += 1  # speed_on / speed_off
+        return True
+    m = EDITOR_RE.match(eid)
+    if not m or m.group(1) not in EDITOR_REST:
+        return False
+    name, ctx, rest = m.groups()
+    pat = EDITOR_REST[name]
+    r = None
+    if pat is None:
+        if rest is not None:
+            return False
+    else:
+        r = re.fullmatch(pat, rest or '')
+        if not r:
+            return False
+    ed['events'][name] = ed['events'].get(name, 0) + 1
+    if name not in EDITOR_NOT_ACTION:
+        ed['actions'] += 1
+    a = r.group(1) if r else None
+    if name == 'open':
+        ed['sessions'] += 1
+        ed['opens'][a] += 1
+        lv = elevels.setdefault(ctx, {'opens': 0, 'from': {'menu': 0, 'win': 0}, 'exits': 0, 'abandons': 0, '_users': set()})
+        lv['opens'] += 1
+        lv['from'][a] += 1
+    elif name == 'sum':
+        hs = ed['hashes'].setdefault(a, new_hash())
+        if ctx not in hs['ctx']:
+            hs['ctx'].append(ctx)
+        part = r.group(2)
+        hs['summaries'] += part == 'lines'
+        hs[part] = int(val or 0)  # the latest summary of this hash
+    elif name == 'actions':
+        ed['actions_reported'] += int(val or 0)
+    elif name in ('exit', 'abandon'):
+        ed['exits' if name == 'exit' else 'abandons'] += 1
+        ed['seconds'] += val or 0
+        if ctx in elevels:
+            elevels[ctx]['exits' if name == 'exit' else 'abandons'] += 1
+    elif name == 'tool':
+        ed['tools'][a] += 1
+        ed['tool_switches'] += 1
+    elif name == 'snap':
+        ed['snap'][a] += 1
+    elif name == 'rotate':
+        ed['rotate'][rest] = ed['rotate'].get(rest, 0) + 1
+    elif name == 'portal_size':
+        ed['portal_size'][a if val else 'refused'] += 1
+    elif name == 'linek':
+        ed['linek'][a] += 1
+    elif name == 'btn':
+        ed['buttons'][a] += 1
+        ed['exports'] += a == 'export'
+    elif name == 'import':
+        ed['imports'][a] += 1
+    elif name == 'bar_move':
+        ed['bar_moves'] += 1
+    elif name == 'line':
+        ed['lines']['added' if a == 'add' else 'cancelled'] += 1
+    elif name == 'line_move':
+        ed['lines']['moved' if a == 'ok' else 'move_refused'] += 1
+    elif name == 'line_end':
+        ed['lines'][{'ok': 'ends_moved', 'refused': 'end_refused', 'degenerate': 'end_degenerate'}[a]] += 1
+    elif name == 'line_del':
+        ed['lines']['deleted'] += 1
+        ed['lines']['deleted_' + a] += 1
+    elif name == 'portal':
+        ed['portals']['a_placed' if a == 'a' else 'placed'] += 1
+    elif name == 'portal_move':
+        ed['portals']['moved' if a == 'ok' else 'move_refused'] += 1
+    elif name == 'portal_del':
+        ed['portals']['deleted'] += 1
+    elif name == 'move':
+        ed['moves'][a] += 1
+    elif name == 'error':
+        ed['errors'][a] = ed['errors'].get(a, 0) + 1
+    return True
+
+
 def new_user():
     return {'first_seen': None, 'last_seen': None, 'inits': 0, 'builds': [], 'sessions': 0, 'session_list': [],
             'levels_tried': [], 'levels': {}, 'buttons': {}, 'button_ctx': {}, 'play_seconds': 0,
@@ -66,6 +204,7 @@ def build_report(root, key, since=None, until=None, include_test=False):
            'excluded_test_records': 0, 'unparsed': 0, 'unparsed_lines': [], 'events': 0, 'duplicate_events': 0,
            'unknown_events': {}, 'users': {}, 'levels': {}}
     users, seen_uuid = {}, set()
+    editors, elevels = {}, {}  # TASK-236: user -> editor record; ctx -> editor opens
     sess = {}  # (user, session_id) -> {'build', 'first_ts', 'events', 'play_max', 'length'}
 
     def user(uid, ts):
@@ -202,6 +341,13 @@ def build_report(root, key, since=None, until=None, include_test=False):
                         else:
                             u['levels_seen_max'] = max(u['levels_seen_max'], int(val or 0))
                         continue
+                    if eid.startswith(('editor:', 'edit:')):
+                        ed = editors.get(uid) or new_editor()
+                        if editor_event(ed, eid, val, elevels):
+                            editors[uid] = ed
+                            if eid.startswith('editor:open:'):
+                                elevels[eid.split(':')[2]]['_users'].add(uid)
+                            continue
                     unknown(eid)
 
     for (uid, sid), s in sess.items():
@@ -244,7 +390,33 @@ def build_report(root, key, since=None, until=None, include_test=False):
     rep['users'] = {uid: users[uid] for uid in sorted(users, key=lambda i: (users[i]['first_seen'] or '', i))}
     rep['levels'] = {k: levels[k] for k in sorted(levels, key=num)}
     rep['unknown_events'] = dict(sorted(rep['unknown_events'].items()))
+    rep['editor'] = editor_section(editors, elevels, list(rep['users']))
     return rep
+
+
+def editor_section(editors, elevels, order):
+    """TASK-236: per user (users with an editor: / edit: event, in report order) and per base level (ctx)."""
+    out = {}
+    for uid in [u for u in order if u in editors]:
+        ed = editors[uid]
+        ed['events'] = dict(sorted(ed['events'].items()))
+        ed['rotate'] = dict(sorted(ed['rotate'].items()))
+        ed['errors'] = dict(sorted(ed['errors'].items()))
+        ed['hashes'] = dict(sorted(ed['hashes'].items()))
+        ed['hashes_summarised'] = sum(1 for h in ed['hashes'].values() if h['summaries'])
+        t = ed['playtest']
+        for h in ed['hashes'].values():
+            pt = h['playtest']
+            t['hashes'] += pt['attempts'] > 0
+            for k in ('attempts', 'runs', 'wins', 'restarts', 'offmap', 'lines_placed', 'backs'):
+                t[k] += pt[k]
+        out[uid] = ed
+    levels = {}
+    for ctx in sorted(elevels, key=lambda c: int(c[1:])):
+        lv = elevels[ctx]
+        levels[ctx] = {'opens': lv['opens'], 'from': lv['from'], 'users': len(lv['_users']), 'exits': lv['exits'],
+                       'abandons': lv['abandons']}
+    return {'users': out, 'levels': levels}
 
 
 def markdown(rep):
@@ -292,7 +464,45 @@ def markdown(rep):
             o.append('')
         if u['buttons']:
             o += ['Buttons: ' + ', '.join(f"{b} {c}" for b, c in u['buttons'].items()), '']
+    o += editor_markdown(rep.get('editor') or {'users': {}, 'levels': {}})
     return '\n'.join(o) + '\n'
+
+
+def editor_markdown(ed):
+    kv = lambda d: ', '.join(f'{k} {v}' for k, v in d.items()) or '-'
+    o = ['## Editor', '', f"users {len(ed['users'])}, editor sessions {sum(e['sessions'] for e in ed['users'].values())}", '',
+         '| base level | opens | from menu | from win | users | exits | abandons |', '|' + '---|' * 7]
+    for ctx, lv in ed['levels'].items():
+        o.append(f"| {ctx} | {lv['opens']} | {lv['from']['menu']} | {lv['from']['win']} | {lv['users']} | {lv['exits']} | "
+                 f"{lv['abandons']} |")
+    o.append('')
+    for uid, e in ed['users'].items():
+        ln, pr, pt = e['lines'], e['portals'], e['playtest']
+        o += [f"### Editor `{uid}`", '',
+              f"sessions {e['sessions']} (menu {e['opens']['menu']}, win {e['opens']['win']}), exits {e['exits']}, "
+              f"abandons {e['abandons']}, seconds {e['seconds']}, actions {e['actions']} (reported {e['actions_reported']})", '',
+              f"- events: {kv(e['events'])}",
+              f"- tools: {kv(e['tools'])} (switches {e['tool_switches']}); snap {kv(e['snap'])}; rotate {kv(e['rotate'])}; "
+              f"portal size {kv(e['portal_size'])}; lines limit {kv(e['linek'])}; toolbar moves {e['bar_moves']}",
+              f"- buttons: {kv(e['buttons'])}; imports {kv(e['imports'])}; exports {e['exports']}",
+              f"- lines: added {ln['added']} (cancelled {ln['cancelled']}), moved {ln['moved']} (refused {ln['move_refused']}), "
+              f"ends moved {ln['ends_moved']} (refused {ln['end_refused']}, degenerate {ln['end_degenerate']}), deleted "
+              f"{ln['deleted']} (tool {ln['deleted_tool']}, key {ln['deleted_key']})",
+              f"- portals: placed {pr['placed']} (A only {pr['a_placed']}), moved {pr['moved']} (refused {pr['move_refused']}), "
+              f"deleted {pr['deleted']}; ball moved {e['moves']['ball']}, flag moved {e['moves']['flag']}",
+              f"- errors: {kv(e['errors'])}",
+              f"- level hashes summarised {e['hashes_summarised']}; play-tests: {kv(pt)}", '']
+        if e['hashes']:
+            o += ['| hash | ctx | summaries | lines | portals | lineK | changed | attempts | max attempt # | runs | wins | win s '
+                  '| restarts | off-map | placed | deleted | dragged | drag rejected | speed on/off | back |', '|' + '---|' * 20]
+            for h, x in e['hashes'].items():
+                p = x['playtest']
+                o.append(f"| `{h}` | {','.join(x['ctx']) or '-'} | {x['summaries']} | {x['lines']} | {x['portals']} | "
+                         f"{x['linek']} | {x['changed']} | {p['attempts']} | {p['max_attempt']} | {p['runs']} | {p['wins']} | "
+                         f"{p['win_seconds']} | {p['restarts']} | {p['offmap']} | {p['lines_placed']} | {p['lines_deleted']} | "
+                         f"{p['lines_dragged']} | {p['lines_drag_rejected']} | {p['speed_on']}/{p['speed_off']} | {p['backs']} |")
+            o.append('')
+    return o
 
 
 def main(argv=None):

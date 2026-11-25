@@ -9,8 +9,8 @@
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-20.jsonl",
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-21.jsonl"
  ],
- "lines": 13,
- "records": 10,
+ "lines": 15,
+ "records": 12,
  "other_key_records": 1,
  "no_body_records": 1,
  "excluded_test_records": 1,
@@ -18,9 +18,11 @@
  "unparsed_lines": [
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-21.jsonl:3"
  ],
- "events": 100,
+ "events": 200,
  "duplicate_events": 8,
- "unknown_events": {},
+ "unknown_events": {
+  "edit:zzzz:attempt": 1
+ },
  "users": {
   "user-a": {
    "first_seen": "2026-11-19T09:00:00.000Z",
@@ -35,7 +37,7 @@
      "session_id": "sa1",
      "build": "1.0.0",
      "first_ts": "2026-11-20T10:00:00.000Z",
-     "events": 55,
+     "events": 125,
      "play_seconds": 60,
      "length": 300
     }
@@ -222,7 +224,7 @@
      "session_id": "sb1",
      "build": "1.0.0",
      "first_ts": "2026-11-20T12:00:00.000Z",
-     "events": 22,
+     "events": 52,
      "play_seconds": 30,
      "length": 50
     },
@@ -405,6 +407,327 @@
    "lines_place": 0,
    "win_rate": 0.0,
    "median_attempts_to_first_win": null
+  }
+ },
+ "editor": {
+  "users": {
+   "user-a": {
+    "sessions": 2,
+    "opens": {
+     "menu": 1,
+     "win": 1
+    },
+    "exits": 1,
+    "abandons": 1,
+    "seconds": 115,
+    "actions": 35,
+    "actions_reported": 35,
+    "events": {
+     "abandon": 1,
+     "actions": 2,
+     "bar_move": 1,
+     "btn": 5,
+     "error": 3,
+     "exit": 1,
+     "import": 2,
+     "line": 3,
+     "line_del": 2,
+     "line_end": 3,
+     "line_move": 1,
+     "linek": 2,
+     "move": 2,
+     "open": 2,
+     "portal": 2,
+     "portal_del": 1,
+     "portal_move": 2,
+     "portal_size": 2,
+     "rotate": 1,
+     "snap": 1,
+     "sum": 12,
+     "tool": 5
+    },
+    "tools": {
+     "select": 1,
+     "line": 2,
+     "portal": 1,
+     "delete": 1
+    },
+    "tool_switches": 5,
+    "snap": {
+     "on": 0,
+     "off": 1
+    },
+    "rotate": {
+     "cw:flag": 1
+    },
+    "portal_size": {
+     "bigger": 1,
+     "smaller": 0,
+     "refused": 1
+    },
+    "linek": {
+     "inc": 1,
+     "dec": 1
+    },
+    "buttons": {
+     "new": 0,
+     "play": 1,
+     "export": 1,
+     "import": 2,
+     "exit": 1
+    },
+    "imports": {
+     "ok": 1,
+     "invalid": 1,
+     "old_format": 0
+    },
+    "exports": 1,
+    "bar_moves": 1,
+    "lines": {
+     "added": 2,
+     "cancelled": 1,
+     "moved": 1,
+     "move_refused": 0,
+     "ends_moved": 1,
+     "end_refused": 1,
+     "end_degenerate": 1,
+     "deleted": 2,
+     "deleted_tool": 1,
+     "deleted_key": 1
+    },
+    "portals": {
+     "a_placed": 1,
+     "placed": 1,
+     "moved": 1,
+     "move_refused": 1,
+     "deleted": 1
+    },
+    "moves": {
+     "ball": 1,
+     "flag": 1
+    },
+    "errors": {
+     "invalid_level_file": 1,
+     "line_would_leave_the_field": 1,
+     "portals_overlap": 1
+    },
+    "hashes_summarised": 2,
+    "hashes": {
+     "0a1b2c3d": {
+      "ctx": [
+       "L3"
+      ],
+      "summaries": 1,
+      "lines": 5,
+      "portals": 2,
+      "linek": 3,
+      "changed": 1,
+      "playtest": {
+       "attempts": 2,
+       "max_attempt": 2,
+       "runs": 2,
+       "wins": 1,
+       "win_seconds": [
+        7
+       ],
+       "restarts": 0,
+       "offmap": 1,
+       "lines_placed": 3,
+       "lines_deleted": 1,
+       "lines_dragged": 0,
+       "lines_drag_rejected": 1,
+       "speed_on": 1,
+       "speed_off": 1,
+       "backs": 1
+      }
+     },
+     "ffee0011": {
+      "ctx": [
+       "L3"
+      ],
+      "summaries": 2,
+      "lines": 4,
+      "portals": 0,
+      "linek": 3,
+      "changed": 1,
+      "playtest": {
+       "attempts": 0,
+       "max_attempt": 0,
+       "runs": 0,
+       "wins": 0,
+       "win_seconds": [],
+       "restarts": 0,
+       "offmap": 0,
+       "lines_placed": 0,
+       "lines_deleted": 0,
+       "lines_dragged": 0,
+       "lines_drag_rejected": 0,
+       "speed_on": 0,
+       "speed_off": 0,
+       "backs": 0
+      }
+     }
+    },
+    "playtest": {
+     "hashes": 1,
+     "attempts": 2,
+     "runs": 2,
+     "wins": 1,
+     "restarts": 0,
+     "offmap": 1,
+     "lines_placed": 3,
+     "backs": 1
+    }
+   },
+   "user-b": {
+    "sessions": 1,
+    "opens": {
+     "menu": 0,
+     "win": 1
+    },
+    "exits": 1,
+    "abandons": 0,
+    "seconds": 40,
+    "actions": 7,
+    "actions_reported": 7,
+    "events": {
+     "actions": 1,
+     "btn": 4,
+     "error": 1,
+     "exit": 1,
+     "import": 1,
+     "open": 1,
+     "rotate": 1,
+     "snap": 1,
+     "sum": 8
+    },
+    "tools": {
+     "select": 0,
+     "line": 0,
+     "portal": 0,
+     "delete": 0
+    },
+    "tool_switches": 0,
+    "snap": {
+     "on": 1,
+     "off": 0
+    },
+    "rotate": {
+     "ccw:portal": 1
+    },
+    "portal_size": {
+     "bigger": 0,
+     "smaller": 0,
+     "refused": 0
+    },
+    "linek": {
+     "inc": 0,
+     "dec": 0
+    },
+    "buttons": {
+     "new": 1,
+     "play": 1,
+     "export": 0,
+     "import": 1,
+     "exit": 1
+    },
+    "imports": {
+     "ok": 0,
+     "invalid": 0,
+     "old_format": 1
+    },
+    "exports": 0,
+    "bar_moves": 0,
+    "lines": {
+     "added": 0,
+     "cancelled": 0,
+     "moved": 0,
+     "move_refused": 0,
+     "ends_moved": 0,
+     "end_refused": 0,
+     "end_degenerate": 0,
+     "deleted": 0,
+     "deleted_tool": 0,
+     "deleted_key": 0
+    },
+    "portals": {
+     "a_placed": 0,
+     "placed": 0,
+     "moved": 0,
+     "move_refused": 0,
+     "deleted": 0
+    },
+    "moves": {
+     "ball": 0,
+     "flag": 0
+    },
+    "errors": {
+     "old_portal_format": 1
+    },
+    "hashes_summarised": 1,
+    "hashes": {
+     "deadbeef": {
+      "ctx": [
+       "L1"
+      ],
+      "summaries": 2,
+      "lines": 2,
+      "portals": 0,
+      "linek": 1,
+      "changed": 1,
+      "playtest": {
+       "attempts": 2,
+       "max_attempt": 2,
+       "runs": 2,
+       "wins": 1,
+       "win_seconds": [
+        3
+       ],
+       "restarts": 1,
+       "offmap": 0,
+       "lines_placed": 2,
+       "lines_deleted": 0,
+       "lines_dragged": 1,
+       "lines_drag_rejected": 0,
+       "speed_on": 0,
+       "speed_off": 0,
+       "backs": 1
+      }
+     }
+    },
+    "playtest": {
+     "hashes": 1,
+     "attempts": 2,
+     "runs": 2,
+     "wins": 1,
+     "restarts": 1,
+     "offmap": 0,
+     "lines_placed": 2,
+     "backs": 1
+    }
+   }
+  },
+  "levels": {
+   "L1": {
+    "opens": 2,
+    "from": {
+     "menu": 0,
+     "win": 2
+    },
+    "users": 2,
+    "exits": 1,
+    "abandons": 1
+   },
+   "L3": {
+    "opens": 1,
+    "from": {
+     "menu": 1,
+     "win": 0
+    },
+    "users": 1,
+    "exits": 1,
+    "abandons": 0
+   }
   }
  }
 }

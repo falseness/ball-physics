@@ -1929,7 +1929,8 @@ def telemetry_doc_ids():
 
 def telemetry_coverage(logs, editor=False):
     # TASK-232: editor: rows are covered by telemetry_editor's own log (editor=True), all other rows by levels + ui
-    rows = [r for r in telemetry_doc_ids() if r['row'].startswith(('`editor:', '`edit:')) == editor]  # TASK-235 edit:
+    # TASK-236: editor=None = every catalogue row (editor:/edit: included) against all the logs given
+    rows = [r for r in telemetry_doc_ids() if editor is None or r['row'].startswith(('`editor:', '`edit:')) == editor]
     out = []
     for r in rows:
         hits = 0
@@ -1946,6 +1947,19 @@ def telemetry_coverage(logs, editor=False):
     uncovered = [r['id'] for r in out if r['hits'] == 0]
     return {'doc': 'docs/telemetry.md', 'logs': {k: len(v) for k, v in logs.items()}, 'rows': out,
             'catalogueRows': len(out), 'uncovered': uncovered, 'pass': bool(out and not uncovered)}
+
+
+def write_coverage():
+    """coverage.json once telemetry_levels and telemetry_ui have run: their rows (TASK-192); with telemetry_editor too
+    (TASK-236) every catalogue row incl. editor:/edit: against all three logs. None before levels + ui."""
+    if not {'telemetry_levels', 'telemetry_ui'} <= set(TELEMETRY_LOGS):
+        return None
+    full = 'telemetry_editor' in TELEMETRY_LOGS
+    cov = telemetry_coverage(TELEMETRY_LOGS, editor=None if full else False)
+    cov['scope'] = 'all rows, levels+ui+editor logs' if full else 'non-editor rows, levels+ui logs'
+    with open(os.path.join(OUT_DIR, 'coverage.json'), 'w') as f:
+        json.dump(cov, f, separators=(',', ':'))
+    return cov
 
 
 def sc_telemetry_ui(page, info):
@@ -2061,11 +2075,7 @@ def sc_telemetry_ui(page, info):
     seq['pass'] = bool(seq['matchExpected'] and backend == TELEMETRY_BACKEND and not errors and seq['touchTap'])
     with open(os.path.join(OUT_DIR, 'sequence.json'), 'w') as f:
         json.dump(seq, f, separators=(',', ':'))
-    cov = None
-    if 'telemetry_levels' in TELEMETRY_LOGS:
-        cov = telemetry_coverage(TELEMETRY_LOGS)
-        with open(os.path.join(OUT_DIR, 'coverage.json'), 'w') as f:
-            json.dump(cov, f, separators=(',', ':'))
+    cov = write_coverage()
     info['telemetry'] = {'sequencePass': seq['pass'], 'events': len(actual),
                          'coverage': None if cov is None else {'pass': cov['pass'], 'uncovered': cov['uncovered']}}
     if not seq['pass']:
@@ -2620,6 +2630,9 @@ def sc_telemetry_editor(page, info):
     seq['matchExpected'] = telemetry_match(actual, want['events'])
     seq['coverage'] = telemetry_coverage({'telemetry_editor': full}, editor=True)
     seq['pass'] = bool(seq['matchExpected'] and seq['gaIdsOk'] and backend == 'none' and not errors and seq['coverage']['pass'])
+    allcov = write_coverage()  # TASK-236: all three logs when levels + ui ran before in this run
+    if allcov is not None:
+        info['telemetryCoverage'] = {'scope': allcov['scope'], 'pass': allcov['pass'], 'uncovered': allcov['uncovered']}
     with open(os.path.join(OUT_DIR, 'sequence_editor.json'), 'w') as f:
         json.dump(seq, f, separators=(',', ':'))
     with open(os.path.join(OUT_DIR, 'hash.json'), 'w') as f:
@@ -2680,6 +2693,8 @@ def sc_telemetry_editor(page, info):
         raise RuntimeError('toolbar button coverage failed (buttons.json)')
     if not hj['pass']:
         raise RuntimeError('levelHash check failed (hash.json)')
+    if allcov is not None and not allcov['pass']:
+        raise RuntimeError('telemetry coverage: uncovered %s (coverage.json)' % allcov['uncovered'])
 
 
 SPEED_CONCEPT = os.path.join(ROOT, 'artifacts', 'concepts', 'speed', '14-arrow-centre-big3x-v2.png')
