@@ -49,6 +49,11 @@
 //   editor:rotate:<ctx>:<cw|ccw>:<flag|portal|line>, editor:portal_size:<ctx>:<bigger|smaller> (value = new h, 0 = refused),
 //   editor:linek:<ctx>:<inc|dec> (value = lineK after the click), editor:btn:<ctx>:<new|play|export|import|exit>,
 //   editor:import:<ctx>:<ok|invalid|old_format> (editorImportText finished), editor:bar_move:<ctx> (toolbar dragged)
+// TASK-234: object edits (editorEdit; each counts as one action) and errors (editorError; not an action):
+//   editor:line:<ctx>:add (value = level lines after it) | editor:line:<ctx>:cancel (2nd click on the pending point),
+//   editor:line_move:<ctx>:<ok|refused>, editor:line_end:<ctx>:<ok|refused|degenerate>, editor:line_del:<ctx>:<tool|key>,
+//   editor:portal:<ctx>:<a|b> (A placed / pair completed), editor:portal_move:<ctx>:<ok|refused>, editor:portal_del:<ctx>,
+//   editor:move:<ctx>:<ball|flag> (a drag moved it), editor:error:<ctx>:<code> (code = editorShowError text slugged)
 // Per-user counters: PLATFORM.storage key STATS_STORE ('bp.stats.v1'), JSON
 //   {[srcId]: {attempts, wins, restarts, offmap, abandons, seconds}}; seconds = time inside attempts (wall clock).
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
@@ -177,6 +182,11 @@ const TELEMETRY = (function()
         if (editorActive())
             ANALYTICS.design('editor:' + name, value)
     }
+    // TASK-234: error message -> GA-safe slug [a-z0-9_] ('portals overlap' -> 'portals_overlap'), at most 64 chars
+    function editorErrorCode(text)
+    {
+        return (String(text).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unknown').slice(0, 64)
+    }
     // 8-hex FNV-1a (32 bit) of editorLevelToJSON(W)
     function levelHash(W)
     {
@@ -223,12 +233,6 @@ const TELEMETRY = (function()
             ed = {ctx: 'L' + srcId(), t0: now(), json0: editorLevelToJSON(editor.level), actions: 0, playAt: null, playMs: 0}
             editorEvent('open:' + ed.ctx + ':' + from)
         },
-        // a toolbar button click or an object edit (a field click / drop / key that changed the working copy)
-        editorAction()
-        {
-            if (ed && editorActive())
-                ++ed.actions
-        },
         // TASK-233: toolbar event 'editor:<kind>:<ctx>[:<rest>]' (tool, snap, rotate, portal_size, linek, btn, import,
         // bar_move); each one is one editor action
         editorToolbar(kind, rest, value)
@@ -238,6 +242,16 @@ const TELEMETRY = (function()
             ++ed.actions
             editorEvent(kind + ':' + ed.ctx + (rest ? ':' + rest : ''), value)
         },
+        // TASK-234: object edit event 'editor:<kind>:<ctx>[:<rest>]' (line, line_move, line_end, line_del, portal,
+        // portal_move, portal_del, move); each one is one editor action (also cancel / refused / degenerate)
+        editorEdit(kind, rest, value) { this.editorToolbar(kind, rest, value) },
+        // TASK-234: 'editor:error:<ctx>:<code>' once per editorShowError (not an action); code = editorErrorCode(text)
+        editorError(text)
+        {
+            if (ed && editorActive())
+                editorEvent('error:' + ed.ctx + ':' + editorErrorCode(text))
+        },
+        editorErrorCode,
         // 'play' (before the play-test starts) / back from the play-test (after editorMode is on again)
         editorPlay()
         {

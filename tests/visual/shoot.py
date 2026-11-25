@@ -1918,7 +1918,8 @@ def telemetry_doc_ids():
             elif cell.startswith('facade'):
                 rows.append({'row': cell, 'kind': 'facade', 'fn': toks[0]})
             elif ':' in toks[0]:
-                ph = {'<srcId>': r'\d+', '<ctx>': r'(L\d+|map)', '<from>': '(menu|win)', '<h>': '[0-9a-f]{8}'}  # TASK-232
+                ph = {'<srcId>': r'\d+', '<ctx>': r'(L\d+|map)', '<from>': '(menu|win)', '<h>': '[0-9a-f]{8}',
+                      '<code>': '[a-z0-9_]{1,64}'}  # TASK-232; TASK-234 <code>
                 # TASK-233: '<a|b|c>' = one of the listed words
                 pat = ''.join(ph.get(x, '(' + x[1:-1] + ')' if x.startswith('<') and '|' in x else re.escape(x))
                               for x in re.split(r'(<[^>]+>)', toks[0]))
@@ -2204,6 +2205,197 @@ def toolbar_session(p, tb, step):
     return toolbar_drag
 
 
+# TASK-234: an editor session from the pause menu with every object event (mouse unless noted): new, line tool:
+# cancel (2nd click on the pending point), lines C / D / E; portal tool: a click off the lines (error), A, B overlapping
+# A (error), B; select tool: a press on line D that only selects (nothing sent), ball and flag drags, portal B moved
+# (ok) and dropped on A (refused + error), line D moved, its end dragged by mouse, by touch (CDP touch events) and onto
+# its other end (degenerate); line C's end dragged too close (refused + error); ⟳ on line E at the field edge (error);
+# a seeded over-wide pair (h 400, unreachable from the UI: a line move keeps the length and the pair's u) for one
+# refused line move; the delete tool on line D and on the pair; Delete key on the selected line E; exit.
+EDITOR_OBJ = {'C': ((300, 250), (900, 250)), 'D': ((300, 450), (600, 450)), 'E': ((1240, 120), (1240, 680))}
+EDITOR_EVENTS_SINCE_JS = """n => ANALYTICS.debugLog.slice(n).filter(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('editor:'))
+    .map(e => [e.args[0], e.args[1] ?? null])"""
+
+
+EDITOR_JS = os.path.join(ROOT, 'js', 'editor.js')
+EDITOR_ERRORS_UNREACHABLE = {}  # message -> reason; every message is reachable from the UI today
+
+
+def editor_error_messages():
+    # every `grep -n editorShowError js/editor.js` call site with the message strings it can show: a literal argument,
+    # or for a variable the string literals assigned to it in the enclosing function (ternaries over several lines) plus
+    # the literals returned by editorLineEditError when the function calls it
+    with open(EDITOR_JS) as f:
+        src = f.read().split('\n')
+    fn_start = [i for i, l in enumerate(src) if l.startswith('function ')]
+
+    def body(i):
+        a = max(x for x in fn_start if x <= i)
+        b = min([x for x in fn_start if x > i] + [len(src)])
+        return a, b
+
+    def returns_of(name):
+        i = next(k for k, l in enumerate(src) if l.startswith('function ' + name + '('))
+        a, b = body(i)
+        return [m for l in src[a:b] for m in re.findall(r"return '([^']+)'", l)]
+    sites = []
+    for i, l in enumerate(src):
+        if 'editorShowError' not in l or l.startswith('function editorShowError'):
+            continue
+        m = re.search(r"editorShowError\('([^']+)'", l)
+        if m:
+            msgs = [m.group(1)]
+        else:
+            a, b = body(i)
+            msgs = []
+            # from the nearest `const|let ... err =` declaration before the call to the call (block-scoped err)
+            a = max(k for k in range(a, i) if re.search(r'\b(const|let)\b.*\berr\s*=(?!=)', src[k]))
+            for k in range(a, i):
+                if re.search(r'\berr\s*=(?!=)', src[k]):
+                    j = k
+                    msgs += re.findall(r"'([^']+)'", src[j].split('err', 1)[1])
+                    while src[j].rstrip().endswith((':', '?')):
+                        j += 1
+                        msgs += re.findall(r"'([^']+)'", src[j])
+                    if 'editorLineEditError(' in src[k]:
+                        msgs += returns_of('editorLineEditError')
+        sites.append({'line': i + 1, 'text': l.strip(), 'messages': list(dict.fromkeys(msgs))})
+    out = {}
+    for st in sites:
+        for msg in st['messages']:
+            out.setdefault(msg, {'message': msg, 'callSites': []})['callSites'].append(st['line'])
+    return list(out.values())
+
+
+def editor_error_report(ids, slugs):
+    import subprocess
+    grep = subprocess.run(['grep', '-n', 'editorShowError', EDITOR_JS], capture_output=True, text=True).stdout.splitlines()
+    rows = []
+    for m in editor_error_messages():
+        code = slugs[m['message']]
+        n = sum(1 for i in ids if i.startswith('editor:error:') and i.split(':')[3] == code)
+        rows.append(dict(m, slug=code, produced=n > 0, count=n, unreachable=EDITOR_ERRORS_UNREACHABLE.get(m['message'])))
+    r = {'grep': grep, 'messages': rows,
+         'notes': {'rotate line (editorRotateLine err)': 'its editorLineEditError messages cannot come from a rotation '
+                   '(length and the pair u are kept); both messages are produced by drags (other call sites)'},
+         'errorIdsInRun': sorted({i for i in ids if i.startswith('editor:error:')})}
+    r['notProduced'] = [x['message'] for x in rows if not x['produced'] and not x['unreachable']]
+    r['unknownCodes'] = sorted({i.split(':')[3] for i in r['errorIdsInRun']} - {x['slug'] for x in rows})
+    r['pass'] = bool(rows and not r['notProduced'] and not r['unknownCodes'])
+    return r
+
+
+def drag(p, a, b, steps=6):
+    p.mouse.move(*to_client(p, *a))
+    p.mouse.down()
+    p.mouse.move(*to_client(p, *b), steps=steps)
+    p.mouse.up()
+    frames(p)
+
+
+def touch_drag(p, cdp, a, b, steps=6):
+    # one finger: touchstart at a, touchmove in steps, touchend at b (Input.dispatchTouchEvent; real touch handlers)
+    ax, ay = to_client(p, *a)
+    bx, by = to_client(p, *b)
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': ax, 'y': ay}]})
+    for i in range(1, steps + 1):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [
+            {'x': ax + (bx - ax) * i / steps, 'y': ay + (by - ay) * i / steps}]})
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    frames(p)
+
+
+def objects_session(p, tb, step):
+    open_menu(p)
+    click(p, *p.evaluate(EDITOR_BUTTON_JS))
+    if not p.evaluate("editorMode"):
+        raise RuntimeError('menu editor button did not open the editor (objects session)')
+    step('open menu objects')
+    R = p.evaluate("editorBarRect()")
+    pts = [q for ab in EDITOR_OBJ.values() for q in ab] + [(700, 200), (1100, 100)]
+    if any(R[0] - 30 <= x <= R[0] + R[2] + 30 and R[1] - 30 <= y <= R[1] + R[3] + 30 for x, y in pts):
+        raise RuntimeError('objects session point inside the toolbar %s' % R)
+    out = {'events': {}}
+
+    def act(name, fn):
+        n = p.evaluate("ANALYTICS.debugLog.length")
+        fn()
+        ev = p.evaluate(EDITOR_EVENTS_SINCE_JS, n)
+        out['events'][name] = ev
+        return ev
+    tb('new')
+    tb('line')
+    act('line cancel', lambda: (click(p, 700, 200), click(p, 700, 200)))
+    for k in 'CDE':
+        act('line add ' + k, lambda k=k: (click(p, *EDITOR_OBJ[k][0]), click(p, *EDITOR_OBJ[k][1])))
+    if p.evaluate("editor.level.lines.length") != 3:
+        raise RuntimeError('line tool did not add C, D, E')
+    step('lines C D E')
+    tb('portal')
+    act('portal off lines', lambda: click(p, 1100, 100))
+    act('portal a', lambda: click(p, 400, 240))
+    act('portal b overlapping', lambda: click(p, 410, 240))
+    act('portal b', lambda: click(p, 800, 240))
+    if p.evaluate("editor.level.portals.length") != 2:
+        raise RuntimeError('portal pair not placed')
+    step('portals')
+    tb('select')
+    act('select only', lambda: (drag(p, (450, 450), (450, 450), steps=1), click(p, 450, 450)))
+    if not p.evaluate("!!editorSelectedLine()"):
+        raise RuntimeError('press on line D did not select it')
+    act('ball', lambda: drag(p, (200, 200), (230, 170)))
+    act('flag', lambda: drag(p, (1000, 600), (980, 650)))
+    PB = lambda i: tuple(p.evaluate("i => { const P = editorPortals()[i]; return [P.x, P.y] }", i))
+    act('portal move ok', lambda: drag(p, PB(1), (PB(1)[0] - 60, PB(1)[1])))
+    act('portal move refused', lambda: drag(p, PB(1), PB(0)))
+    act('line move ok', lambda: drag(p, (450, 450), (450, 500)))
+    D2 = (600, 500)
+    act('line end ok (mouse)', lambda: drag(p, D2, (650, 520)))
+    cdp = p.context.new_cdp_session(p)
+    tn = p.evaluate("() => { window.__tin = {touchstart: 0, touchmove: 0, touchend: 0, mousedown: 0};"
+                    " for (const k of ['touchstart', 'touchmove', 'touchend', 'mousedown']) canvas.addEventListener(k, () => ++__tin[k], true) }")
+    end_before = p.evaluate("[editor.level.lines[1].posX2, editor.level.lines[1].posY2]")
+    act('line end ok (touch)', lambda: touch_drag(p, cdp, (650, 520), (620, 560)))
+    end_after = p.evaluate("[editor.level.lines[1].posX2, editor.level.lines[1].posY2]")
+    tin = p.evaluate("__tin")
+    act('line end degenerate', lambda: drag(p, (620, 560), (300, 500)))
+    act('line end refused', lambda: drag(p, EDITOR_OBJ['C'][1], (330, 250)))
+    step('drags')
+    act('line rotate off field', lambda: (click(p, 1240, 400), tb('flagCW')))
+    # seeded state (not reachable from the UI): an over-wide pair on line C, so a real line move is refused
+    hold = p.evaluate("() => { const h = editor.level.portals.map(P => P.h); editor.level.portals.forEach(P => P.h = 400); return h }")
+    if p.evaluate("editorPickAt([350, 250])")[0] != 'line':
+        raise RuntimeError('(350, 250) does not pick line C')
+    act('line move refused (seeded h 400)', lambda: drag(p, (350, 250), (350, 300)))
+    p.evaluate("h => editor.level.portals.forEach((P, i) => P.h = h[i])", hold)
+    step('refused line move')
+    tb('delete')
+    dm = p.evaluate("(() => { const l = editor.level.lines[1]; return [(l.posX + l.posX2) / 2, (l.posY + l.posY2) / 2] })()")
+    act('delete line D', lambda: click(p, *dm))
+    # 10 px off the middle of portal A's opening, on the side away from line C: no line within 8 px, the opening within 12
+    rim = p.evaluate("""(() => { const P = editorPortals()[0], r = portalRims(P), c = editor.level.lines[0]
+        const mx = (r[0][0] + r[1][0]) / 2, my = (r[0][1] + r[1][1]) / 2
+        const cand = [1, -1].map(s => [mx + s * 10 * Math.cos(P.angle), my + s * 10 * Math.sin(P.angle)])
+        return cand.sort((a, b) => pointSegDist(b[0], b[1], c.posX, c.posY, c.posX2, c.posY2) -
+                                   pointSegDist(a[0], a[1], c.posX, c.posY, c.posX2, c.posY2))[0] })()""")
+    act('delete portals', lambda: click(p, *rim))
+    if p.evaluate("editor.level.portals.length") != 0:
+        raise RuntimeError('delete tool did not remove the pair')
+    tb('select')
+    click(p, 1240, 400)
+    if not p.evaluate("!!editorSelectedLine()"):
+        raise RuntimeError('line E not selected for the Delete key')
+    act('delete key', lambda: (p.keyboard.press('Delete'), frames(p)))
+    step('deletes')
+    tb('exit')
+    if p.evaluate("editorMode"):
+        raise RuntimeError('exit did not close the editor (objects session)')
+    step('exit objects')
+    out['touch'] = {'events': out['events']['line end ok (touch)'], 'mouseEvents': out['events']['line end ok (mouse)'],
+                    'endBefore': end_before, 'endAfter': end_after, 'inputs': tin}
+    return out
+
+
 def sc_telemetry_editor(page, info):
     with open(TELEMETRY_EDITOR_EXPECTED) as f:
         want = json.load(f)
@@ -2276,6 +2468,7 @@ def sc_telemetry_editor(page, info):
             raise RuntimeError('exit did not close the editor')
         step('exit unchanged')
         toolbar_drag = toolbar_session(p, tb, step)
+        objects = objects_session(p, tb, step)  # TASK-234
         open_menu(p)
         click(p, *p.evaluate(EDITOR_BUTTON_JS))
         if not p.evaluate("editorMode"):
@@ -2286,6 +2479,8 @@ def sc_telemetry_editor(page, info):
         actual = p.evaluate(TELEMETRY_EDITOR_LOG_JS)
         full = p.evaluate(FULL_LOG_JS)
         bspec = p.evaluate("EDITOR_BUTTONS.map(b => ({id: b.id, kind: b.kind}))")
+        page_slugs = p.evaluate("ms => Object.fromEntries(ms.map(m => [m, TELEMETRY.editorErrorCode(m)]))",
+                                [m['message'] for m in editor_error_messages()])
         hv = p.evaluate("""() => {
             const A = editorCloneLevel(levels[thisLevel]), B = editorCloneLevel(levels[thisLevel])
             const C = editorCloneLevel(levels[thisLevel]); C.lines[0].posX += 1
@@ -2328,6 +2523,27 @@ def sc_telemetry_editor(page, info):
                       and any(e.startswith('editor:bar_move:') for e in toolbar_drag))
     with open(os.path.join(OUT_DIR, 'buttons.json'), 'w') as f:
         json.dump(bj, f, separators=(',', ':'))
+    # TASK-234: object events per scripted act, the error messages of editorShowError vs the run, the touch drag
+    oj = {'acts': objects['events'], 'eventIds': sorted({e[1] for e in actual})}
+    with open(os.path.join(OUT_DIR, 'objects.json'), 'w') as f:
+        json.dump(oj, f, separators=(',', ':'))
+    ej = editor_error_report(ids, page_slugs)
+    with open(os.path.join(OUT_DIR, 'errors.json'), 'w') as f:
+        json.dump(ej, f, separators=(',', ':'))
+    t = objects['touch']
+    tj = dict(t)
+    tj['lineEndEvents'] = [e for e in t['events'] if e[0].startswith('editor:line_end:')]
+    tj['mouseLineEndEvents'] = [e for e in t['mouseEvents'] if e[0].startswith('editor:line_end:')]
+    tj['endMoved'] = t['endBefore'] != t['endAfter']
+    tj['pass'] = bool(len(tj['lineEndEvents']) == 1 and len(tj['mouseLineEndEvents']) == 1 and
+                      tj['lineEndEvents'][0][0] == tj['mouseLineEndEvents'][0][0] and tj['endMoved'] and
+                      t['inputs']['touchstart'] == 1 and t['inputs']['touchend'] == 1 and t['inputs']['mousedown'] == 0)
+    with open(os.path.join(OUT_DIR, 'touch.json'), 'w') as f:
+        json.dump(tj, f, separators=(',', ':'))
+    if not ej['pass']:
+        raise RuntimeError('editor errors: not produced %s (errors.json)' % ej['notProduced'])
+    if not tj['pass']:
+        raise RuntimeError('touch line_end drag check failed (touch.json)')
     info['telemetry'] = {'sequencePass': seq['pass'], 'hashPass': hj['pass'], 'buttonsPass': bj['pass'], 'events': len(actual)}
     if not seq['pass']:
         raise RuntimeError('telemetry editor sequence mismatch (sequence_editor.json)')

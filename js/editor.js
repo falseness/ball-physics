@@ -172,16 +172,6 @@ function editorOpen(from)
     TELEMETRY.editorOpened(from)
 }
 
-// TASK-232: run fn; when the working copy changed it counts as one object edit (TELEMETRY.editorAction)
-function editorCountEdit(fn)
-{
-    const before = editorLevelToJSON(editor.level)
-    const r = fn()
-    if (editor.level && editorLevelToJSON(editor.level) !== before)
-        TELEMETRY.editorAction()
-    return r
-}
-
 // Write the working copy back to levels[thisLevel] (session only) and reload the level
 function editorExit()
 {
@@ -228,12 +218,13 @@ function editorClick(coords)
         const R = editorBarRect()
         if (collisionWithRect(coords[0], coords[1], R[0], R[1], R[0] + R[2], R[1] + R[3]))
             return // toolbar panel background
+        // TASK-234: the object events (one editor action each) are sent by these functions
         if (editor.tool == 'line')
-            editorCountEdit(() => editorLineClick(coords))
+            editorLineClick(coords)
         else if (editor.tool == 'portal')
-            editorCountEdit(() => editorPortalClick(coords))
+            editorPortalClick(coords)
         else if (editor.tool == 'delete')
-            editorCountEdit(() => editorDeleteAt(coords))
+            editorDeleteAt(coords)
         return
     }
     // TASK-233: every toolbar button click sends one editor: event (one editor action each)
@@ -537,14 +528,20 @@ function editorProjectU(l, x, y, h)
 }
 
 // mouseup / touchend: drop the dragged object at the release point
+// TASK-234: one object event per drop (mouse and touch share this): editor:move:<ctx>:<ball|flag>, line_move:<ok|refused>,
+// line_end:<ok|refused|degenerate>, portal_move:<ok|refused>. 'ok' / move only when the working copy differs from the
+// pick-up (a press that only selects sends nothing); refused / degenerate drops are reverted and always sent.
 function editorMouseUp(coords)
 {
     const d = editor.drag
-    const r = editorMouseUpDrop(coords)
-    // TASK-232: a drop that leaves the working copy different from the pick-up is one object edit
-    if (d && d.json0 !== undefined && editor.level && editorLevelToJSON(editor.level) !== d.json0)
-        TELEMETRY.editorAction()
-    return r
+    const outcome = editorMouseUpDrop(coords)
+    if (!d || d.json0 === undefined || !editor.level)
+        return
+    const kind = d.kind == 'line' ? 'line_move' : d.kind == 'lineEnd' ? 'line_end' : d.kind == 'portal' ? 'portal_move' : 'move'
+    if (outcome == 'refused' || outcome == 'degenerate')
+        TELEMETRY.editorEdit(kind, outcome)
+    else if (editorLevelToJSON(editor.level) !== d.json0)
+        TELEMETRY.editorEdit(kind, kind == 'move' ? d.kind : 'ok')
 }
 function editorMouseUpDrop(coords)
 {
@@ -578,6 +575,7 @@ function editorMouseUpDrop(coords)
             if (editorIsWallPortal(P)) P.u = d.u0
             else { P.x = d.x0; P.y = d.y0 }
             editorShowError(err)
+            return 'refused'
         }
     }
     else if (d.kind == 'lineEnd' || d.kind == 'line')
@@ -585,13 +583,14 @@ function editorMouseUpDrop(coords)
         if (d.kind == 'lineEnd' && editorDropLineEnd(d))
         {
             editorLineRevert(d) // degenerate (< 1 px) line: back to where it was picked up
-            return
+            return 'degenerate'
         }
         const err = editorLineEditError(d.i)
         if (err)
         {
             editorLineRevert(d) // refused drop: back to where it was picked up
             editorShowError(err)
+            return 'refused'
         }
     }
 }
@@ -698,11 +697,13 @@ function editorPortalClick(coords)
     if (!editor.portalPending)
     {
         editor.portalPending = P
+        TELEMETRY.editorEdit('portal', 'a') // TASK-234
         return true
     }
     editor.level.portals = [editor.portalPending, P]
     editor.portalPending = null
     editor.selected = null
+    TELEMETRY.editorEdit('portal', 'b') // TASK-234: pair completed
     return true
 }
 
@@ -796,13 +797,14 @@ function editorKeyDown(event)
         editorCancelDrag()
     editorRemoveLine(s.i)
     editor.selected = null
-    TELEMETRY.editorAction() // TASK-232: object edit
+    TELEMETRY.editorEdit('line_del', 'key') // TASK-234 (one editor action)
 }
 document.addEventListener('keydown', editorKeyDown)
 
 function editorShowError(text, ms = EDITOR_ERROR_MS)
 {
     editor.error = { text: text, until: performance.now() + ms }
+    TELEMETRY.editorError(text) // TASK-234: every error, whatever the call site
 }
 
 // [x, y, w, h] box that holds the error text (for tests; the text is left-aligned at EDITOR_ERROR_POS)
@@ -947,10 +949,12 @@ function editorLineClick(coords)
     if (p[0] == c[0] && p[1] == c[1])
     {
         editor.pending = null
+        TELEMETRY.editorEdit('line', 'cancel') // TASK-234
         return
     }
     editor.pending = null
     W.lines.push(new Line(p[0], p[1], c[0], c[1], dotRadius, levelLineColor, 'line'))
+    TELEMETRY.editorEdit('line', 'add', W.lines.length) // TASK-234
 }
 
 // Delete tool: removes the single nearest line within 8 px, or the portal pair when a portal
@@ -973,11 +977,15 @@ function editorDeleteAt(coords)
     if (!best)
         return false
     if (best[0] == 'line')
+    {
         editorRemoveLine(best[1])
+        TELEMETRY.editorEdit('line_del', 'tool') // TASK-234
+    }
     else
     {
         W.portals = []
         editor.selected = null
+        TELEMETRY.editorEdit('portal_del') // TASK-234
     }
     return true
 }

@@ -118,6 +118,15 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `editor:btn:<ctx>:<new\|play\|export\|import\|exit>` | an action button, before its action (so before the `sum` rows of `play` / `export` / `exit`) | - | TASK-233 |
 | `editor:import:<ctx>:<ok\|invalid\|old_format>` | `editorImportText` finished (after the picked file was read) | - | TASK-233 |
 | `editor:bar_move:<ctx>` | a toolbar drag that moved the panel (mouseup / touchend) | - | TASK-233 |
+| `editor:line:<ctx>:<add\|cancel>` | line tool: `add` = the second click appended a line, `cancel` = the second click hit the pending point | `add`: level lines after it | TASK-234 |
+| `editor:line_move:<ctx>:<ok\|refused>` | a dropped whole-line drag (select tool): `ok` = the line moved, `refused` = reverted with an error | - | TASK-234 |
+| `editor:line_end:<ctx>:<ok\|refused\|degenerate>` | a dropped line-end drag: `ok` = the end moved, `refused` = reverted with an error, `degenerate` = reverted (< 1 px) | - | TASK-234 |
+| `editor:line_del:<ctx>:<tool\|key>` | a line removed by the delete tool / by Delete or Backspace | - | TASK-234 |
+| `editor:portal:<ctx>:<a\|b>` | portal tool: `a` = portal A placed (pending), `b` = the pair completed | - | TASK-234 |
+| `editor:portal_move:<ctx>:<ok\|refused>` | a dropped portal drag: `ok` = it moved, `refused` = reverted (`portals overlap`) | - | TASK-234 |
+| `editor:portal_del:<ctx>` | the delete tool removed the portal pair | - | TASK-234 |
+| `editor:move:<ctx>:<ball\|flag>` | a dropped ball start / flag drag that moved it | - | TASK-234 |
+| `editor:error:<ctx>:<code>` | once per `editorShowError` call (sent by it); `<code>` = the message slugged to `[a-z0-9_]` | - | TASK-234 |
 
 Order on a restart: `restart`, then `Fail` (only for an unwon attempt), then `Start` + `attempt`.
 Order on an off-map: `fail:offmap`, `Fail`, then `Start` + `attempt`.
@@ -143,13 +152,21 @@ also after `new` / `import`). `<h>` = `TELEMETRY.levelHash(W)`: 8-hex FNV-1a (32
 the working copy (at `play`: the copy that gets play-tested, which has the same JSON). Editor events go through
 `TELEMETRY.editor(name, value)` and are sent only while `TELEMETRY.editorActive()` (editor on, no play-test).
 An editor action is one toolbar button click (tool, `snap`, every action button including `play`, `export` and `exit`)
-or one object edit: a field click (line / portal / delete tool), a dropped drag or the Delete key that changed
-`editorLevelToJSON` of the working copy. Refused or no-op edits do not count. Play-test time is subtracted from the
+or one object event (TASK-234 below). Play-test time is subtracted from the
 `exit` / `abandon` seconds. Script and expected list: shoot.py `telemetry_editor`, tests/visual/telemetry_expected_editor.json.
 
 TASK-233: every toolbar event above (`tool`, `snap`, `rotate`, `portal_size`, `linek`, `btn`, `import`, `bar_move`)
 is one editor action (it replaces the plain button-click count of TASK-232; an `import` thus counts `btn` and the
 outcome). They are sent from `editorClick` / `editorMouseUp` / `editorImportText`, which mouse and touch input share.
+
+TASK-234: object events (`line`, `line_move`, `line_end`, `line_del`, `portal`, `portal_move`, `portal_del`, `move`) are
+sent from `editorLineClick`, `editorPortalClick`, `editorDeleteAt`, `editorMouseUp` (mouse and touch) and `editorKeyDown`
+(`TELEMETRY.editorEdit`). Each one is one editor action, also `cancel`, `refused` and `degenerate`; they replace the
+TASK-232 "changed the working copy" edit count. A press that only selects (no change) and the first click of a line
+send nothing. `editor:error:<ctx>:<code>` is sent by `editorShowError` itself (codes: `portals_overlap`,
+`portals_go_on_lines`, `portal_does_not_fit`, `line_would_leave_the_field`, `line_too_short_for_its_portal`,
+`invalid_level_file`, `old_portal_format`) and is not an action; it comes before the refused event of the same drop
+(`error`, then `line_end:...:refused`) and after `import:...:<invalid|old_format>`.
 
 Order at `exit`: `btn:...:exit`, `sum:...:lines`, `portals`, `linek`, `changed`, `actions`, `exit`. Order on `pagehide` with the editor open:
 `editor:actions`, `editor:abandon`, then the level / session events below.
