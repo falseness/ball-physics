@@ -318,6 +318,7 @@ function editorStartPlaytest()
     levelCompletedWindow = false
     line = false
     levelChoosed(thisLevel)
+    TELEMETRY.playtestStarted() // TASK-235: edit:<h>:attempt
 }
 
 // HUD 'edit' box (play-test only): left of the restart box (x - 146), same size and style;
@@ -345,6 +346,7 @@ function drawEditIcon()
 // Leave the play-test and go back to the editor; the working copy was never touched
 function editorEndPlaytest()
 {
+    TELEMETRY.playtestBack() // TASK-235: edit:<h>:back
     playtestLevel = null
     levelCompletedWindow = false
     drawMenu = false

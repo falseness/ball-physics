@@ -54,6 +54,15 @@
 //   editor:line_move:<ctx>:<ok|refused>, editor:line_end:<ctx>:<ok|refused|degenerate>, editor:line_del:<ctx>:<tool|key>,
 //   editor:portal:<ctx>:<a|b> (A placed / pair completed), editor:portal_move:<ctx>:<ok|refused>, editor:portal_del:<ctx>,
 //   editor:move:<ctx>:<ball|flag> (a drag moved it), editor:error:<ctx>:<code> (code = editorShowError text slugged)
+// TASK-235: play-test events 'edit:<h>:<name>' (playtest(name, value)), only while a play-test runs (playtestLevel set,
+// editor closed); <h> = levelHash of the play-tested copy (= the editor:sum hash sent at 'play'):
+//   edit:<h>:attempt     value = attempt number for this h in this session (play start, restart, off-map)
+//   edit:<h>:run | restart | offmap | line_delete | speed_on | speed_off
+//   edit:<h>:win         value = seconds from the first run of the attempt
+//   edit:<h>:line_place  value = the line's index in the attempt
+//   edit:<h>:line_drag   value = 1 accepted / 0 rejected
+//   edit:<h>:back        back to the editor (HUD 'edit' box, completion window 'editor', pause menu 'editor')
+// Play-tests send no level:, lines: or ui: events and never touch bp.stats.v1.
 // Per-user counters: PLATFORM.storage key STATS_STORE ('bp.stats.v1'), JSON
 //   {[srcId]: {attempts, wins, restarts, offmap, abandons, seconds}}; seconds = time inside attempts (wall clock).
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
@@ -220,8 +229,44 @@ const TELEMETRY = (function()
         ed = null
     }
 
+    // TASK-235: play-test session {h, level (the playtestLevel object), a: {n, runAt, placed, won}}; ptAttempts: h -> attempts this session
+    let pt = null
+    const ptAttempts = {}
+    function ptActive()
+    {
+        return pt !== null && typeof playtestLevel !== 'undefined' && playtestLevel === pt.level && !editorMode
+    }
+    function ptEvent(name, value)
+    {
+        if (ptActive())
+            ANALYTICS.design('edit:' + pt.h + ':' + name, value)
+    }
+    function ptAttempt()
+    {
+        const n = ptAttempts[pt.h] = (ptAttempts[pt.h] || 0) + 1
+        pt.a = {n, runAt: null, placed: 0, won: false}
+        ptEvent('attempt', n)
+    }
+
     return {
         editor: editorEvent,
+        playtest: ptEvent,
+        playtestActive: ptActive,
+        // editorStartPlaytest, after playtestLevel is the clone and editorMode is off
+        playtestStarted()
+        {
+            pt = {h: levelHash(playtestLevel), level: playtestLevel, a: null}
+            if (ptActive())
+                ptAttempt()
+            else
+                pt = null
+        },
+        // editorEndPlaytest, before playtestLevel is cleared
+        playtestBack()
+        {
+            ptEvent('back')
+            pt = null
+        },
         editorActive,
         levelHash,
         editorSession() { return ed },
@@ -301,19 +346,27 @@ const TELEMETRY = (function()
         // and preview_play, else none
         ui(name, value)
         {
+            if (ptActive() && !drawMap)
+            {
+                if (name == 'speed_on' || name == 'speed_off')
+                    ptEvent(name)
+                return
+            }
             if (uiActive())
                 ANALYTICS.design('ui:' + name + ':' + ctxSegment(), value)
         },
         // line events (see the header); place() numbers the lines placed in the open attempt
         linePlaced()
         {
+            if (ptActive())
+                return void ptEvent('line_place', ++pt.a.placed)
             if (!active())
                 return
             const a = attempt && attempt.srcId === srcId() ? attempt : null
             lineEvent('place', a ? ++a.placed : 1)
         },
-        lineDeleted() { lineEvent('delete') },
-        lineDragged(accepted) { lineEvent('drag', accepted ? 1 : 0) },
+        lineDeleted() { ptActive() ? ptEvent('line_delete') : lineEvent('delete') },
+        lineDragged(accepted) { ptActive() ? ptEvent('line_drag', accepted ? 1 : 0) : lineEvent('drag', accepted ? 1 : 0) },
         lineRejectLimit() { lineEvent('reject_limit') },
         // frame time (ms, capped by the caller); counts only while playing(); sends every milestone crossed
         tick(ms)
@@ -333,6 +386,15 @@ const TELEMETRY = (function()
         // players = player lines on the field -> lines:<srcId>:used
         run(players)
         {
+            if (ptActive())
+            {
+                ptEvent('run')
+                if (pt.a.won)
+                    ptAttempt()
+                if (pt.a.runAt === null)
+                    pt.a.runAt = now()
+                return
+            }
             if (!active())
                 return
             if (typeof players == 'number')
@@ -346,6 +408,15 @@ const TELEMETRY = (function()
         // first win of the open attempt (index.html gameMechanics, real levels only)
         win()
         {
+            if (ptActive())
+            {
+                if (!pt.a.won)
+                {
+                    pt.a.won = true
+                    ptEvent('win', secs(now() - (pt.a.runAt === null ? now() : pt.a.runAt)))
+                }
+                return
+            }
             const a = open()
             if (!active() || !a || a.won || a.srcId !== srcId())
                 return
@@ -363,6 +434,15 @@ const TELEMETRY = (function()
         // after the automatic off-map restart: Fail + fail:offmap, then a new attempt (nothing behind a win window)
         offMap()
         {
+            if (ptActive())
+            {
+                if (!pt.a.won)
+                {
+                    ptEvent('offmap')
+                    ptAttempt()
+                }
+                return
+            }
             const a = open()
             if (!active() || !a || a.won)
                 return
@@ -374,6 +454,11 @@ const TELEMETRY = (function()
         // after a restart button: 'restart' (+ Fail for an unwon attempt), then a new attempt
         restart()
         {
+            if (ptActive())
+            {
+                ptEvent('restart')
+                return void ptAttempt()
+            }
             if (!active())
                 return
             const a = open(), id = a ? a.srcId : srcId()

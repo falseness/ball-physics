@@ -127,6 +127,16 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `editor:portal_del:<ctx>` | the delete tool removed the portal pair | - | TASK-234 |
 | `editor:move:<ctx>:<ball\|flag>` | a dropped ball start / flag drag that moved it | - | TASK-234 |
 | `editor:error:<ctx>:<code>` | once per `editorShowError` call (sent by it); `<code>` = the message slugged to `[a-z0-9_]` | - | TASK-234 |
+| `edit:<h>:attempt` | play-test: an attempt starts (`play`, a restart, an off-map restart, a run after a win) | attempt number for this `<h>` in this session | TASK-235 |
+| `edit:<h>:run` | play-test: the run starts (last line or the play box) | - | TASK-235 |
+| `edit:<h>:restart` | play-test: a restart button (HUD box, pause menu, completion window), before the new `attempt` | - | TASK-235 |
+| `edit:<h>:offmap` | play-test: the ball left the map (automatic restart), before the new `attempt` | - | TASK-235 |
+| `edit:<h>:win` | play-test: the ball reached the flag (once per attempt) | seconds from the attempt's first run | TASK-235 |
+| `edit:<h>:line_place` | play-test: a player line placed | the line's index in this attempt | TASK-235 |
+| `edit:<h>:line_delete` | play-test: the bin removed a player line | - | TASK-235 |
+| `edit:<h>:line_drag` | play-test: a player line end dropped | 1 = accepted, 0 = rejected | TASK-235 |
+| `edit:<h>:<speed_on\|speed_off>` | play-test: the HUD speed box | - | TASK-235 |
+| `edit:<h>:back` | play-test: back to the editor (HUD `edit` box, completion window `editor`, pause menu `editor`) | - | TASK-235 |
 
 Order on a restart: `restart`, then `Fail` (only for an unwon attempt), then `Start` + `attempt`.
 Order on an off-map: `fail:offmap`, `Fail`, then `Start` + `attempt`.
@@ -167,6 +177,13 @@ send nothing. `editor:error:<ctx>:<code>` is sent by `editorShowError` itself (c
 `portals_go_on_lines`, `portal_does_not_fit`, `line_would_leave_the_field`, `line_too_short_for_its_portal`,
 `invalid_level_file`, `old_portal_format`) and is not an action; it comes before the refused event of the same drop
 (`error`, then `line_end:...:refused`) and after `import:...:<invalid|old_format>`.
+
+TASK-235: play-test events `edit:<h>:<name>` go through `TELEMETRY.playtest(name, value)` and are sent only while the
+play-test started by the editor's `play` runs (`playtestLevel` is that copy, editor closed). `<h>` is
+`levelHash(playtestLevel)` taken at `play`, so it equals the `editor:sum:<ctx>:<h>` hash sent right before. The play-test
+sends no `level:`, `lines:` or `ui:` events (the route map, opened from a play-test, still sends `ui:`) and never touches
+`bp.stats.v1`. Order at `play`: `editor:btn:...:play`, the four `editor:sum` rows, `edit:<h>:attempt`. Order on a
+restart / off-map: `restart` / `offmap`, then `attempt`. `back` comes before the editor is on again.
 
 Order at `exit`: `btn:...:exit`, `sum:...:lines`, `portals`, `linek`, `changed`, `actions`, `exit`. Order on `pagehide` with the editor open:
 `editor:actions`, `editor:abandon`, then the level / session events below.

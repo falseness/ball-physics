@@ -1929,7 +1929,7 @@ def telemetry_doc_ids():
 
 def telemetry_coverage(logs, editor=False):
     # TASK-232: editor: rows are covered by telemetry_editor's own log (editor=True), all other rows by levels + ui
-    rows = [r for r in telemetry_doc_ids() if r['row'].startswith('`editor:') == editor]
+    rows = [r for r in telemetry_doc_ids() if r['row'].startswith(('`editor:', '`edit:')) == editor]  # TASK-235 edit:
     out = []
     for r in rows:
         hits = 0
@@ -2080,7 +2080,7 @@ def sc_telemetry_ui(page, info):
 # a pagehide (abandon). The editor: events of ANALYTICS.debugLog must equal tests/visual/telemetry_expected_editor.json
 # ('time>0' = any number > 0). Writes sequence_editor.json and hash.json (levelHash checks + an independent Python FNV-1a).
 TELEMETRY_EDITOR_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_editor.json')
-TELEMETRY_EDITOR_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('editor:'))
+TELEMETRY_EDITOR_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && /^edit(or)?:/.test(String(e.args[0])))
     .map(e => [e.fn, e.args[0], e.args[1] ?? null])"""
 EDITOR_LINE = ((300, 560), (520, 640))
 GA_PART = re.compile(r'^[A-Za-z0-9 \-_.()!?]{1,64}$')
@@ -2396,6 +2396,120 @@ def objects_session(p, tb, step):
     return out
 
 
+# TASK-235: a play-test of a fresh level (edit:<h>:* events): editor from the menu, new, lines + x2 (lineK 3), line tool +
+# one level line EDITOR_LINE, play
+# (attempt 1), lines X and Y placed (line_place 1, 2), Y's end dragged (line_drag 1), Y deleted with the bin
+# (line_delete), run (play box) + pause, speed on / off, HUD restart (attempt 2), run -> the ball falls off the map
+# (offmap, attempt 3), run + the ball put on the flag (win), the completion window's 'editor' button (back), exit.
+# isolation: the full log between 'play' and 'back' has no level: / lines: / ui: events and bp.stats.v1 (storage and
+# TELEMETRY.stats()) is the same before and after.
+PT_STATS_JS = """async () => ({stored: (await PLATFORM.storage.getMany([STATS_STORE]))[STATS_STORE] ?? null,
+    mem: JSON.stringify(TELEMETRY.stats())})"""
+PT_EVENTS_SINCE_JS = """n => ANALYTICS.debugLog.slice(n).filter(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('edit:'))
+    .map(e => [e.args[0], e.args[1] ?? null])"""
+
+
+def playtest_session(p, tb, step):
+    open_menu(p)
+    click(p, *p.evaluate(EDITOR_BUTTON_JS))
+    if not p.evaluate("editorMode"):
+        raise RuntimeError('menu editor button did not open the editor (play-test session)')
+    step('open menu playtest')
+    tb('new')
+    tb('linesInc')
+    tb('linesInc')
+    R = p.evaluate("editorBarRect()")
+    if any(R[0] - 30 <= x <= R[0] + R[2] + 30 and R[1] - 30 <= y <= R[1] + R[3] + 30 for x, y in EDITOR_LINE):
+        raise RuntimeError('play-test session level line inside the toolbar %s' % R)
+    tb('line')  # one level line (away from the ball's fall at x 200), so levels[thisLevel] keeps a line after exit
+    click(p, *EDITOR_LINE[0])
+    click(p, *EDITOR_LINE[1])
+    if p.evaluate("editor.level.lineK") != 3 or p.evaluate("editor.level.lines.length") != 1:
+        raise RuntimeError('lineK is not 3 (play-test session)')
+    acts = {}
+    stats0 = p.evaluate(PT_STATS_JS)
+    n_play = p.evaluate("ANALYTICS.debugLog.length")
+
+    def act(name, fn):
+        n = p.evaluate("ANALYTICS.debugLog.length")
+        fn()
+        acts[name] = p.evaluate(PT_EVENTS_SINCE_JS, n)
+    act('play', lambda: tb('play'))
+    if p.evaluate("editorMode") or not p.evaluate("!!playtestLevel"):
+        raise RuntimeError('play did not start a play-test (play-test session)')
+    h = p.evaluate("TELEMETRY.levelHash(playtestLevel)")
+    act('place X', lambda: draw_seg(p, LINE_X))
+    act('place Y', lambda: draw_seg(p, LINE_Y))
+    if p.evaluate("lines.filter(l => l.type == 'player').length") != 2 or p.evaluate("levelStarted"):
+        raise RuntimeError('two player lines not placed (play-test session)')
+    step('playtest 2 lines')
+
+    def drag_y():
+        end = p.evaluate("(() => { const l = lines.filter(l => l.type == 'player')[1]; return [l.posX2, l.posY2] })()")
+        p.mouse.move(*to_client(p, *end))
+        p.mouse.down()
+        for k in range(1, 6):
+            p.mouse.move(*to_client(p, end[0] + 6 * k, end[1] + 4 * k))
+        p.mouse.up()
+        frames(p)
+        if p.evaluate("(() => { const l = lines.filter(l => l.type == 'player')[1]; return [l.posX2, l.posY2] })()") == end:
+            raise RuntimeError('drag did not move line Y (play-test session)')
+    act('drag Y', drag_y)
+
+    def bin_y():
+        mid = p.evaluate("(() => { const l = lines.filter(l => l.type == 'player')[1]; return [(l.posX + l.posX2) / 2, (l.posY + l.posY2) / 2] })()")
+        click(p, *mid)
+        if p.evaluate("playerSel") is None:
+            raise RuntimeError('line Y not selected (play-test session)')
+        click(p, *p.evaluate("binCenter(lines[playerSel])"))
+        if p.evaluate("lines.filter(l => l.type == 'player').length") != 1:
+            raise RuntimeError('bin did not delete line Y (play-test session)')
+    act('delete Y', bin_y)
+    step('playtest drag+delete')
+    act('run+pause', lambda: (click(p, *p.evaluate(PLAY_ICON_JS)), click(p, *p.evaluate(PLAY_ICON_JS))))
+    if p.evaluate("physics") or not p.evaluate("speedIconVisible()"):
+        raise RuntimeError('run not paused / speed box hidden (play-test session)')
+    act('speed on/off', lambda: (click(p, *box_centre(p, "speedIconRect()")), click(p, *box_centre(p, "speedIconRect()"))))
+    act('restart', lambda: click(p, *box_centre(p, "restartIconRect()")))
+    if p.evaluate("levelStarted"):
+        raise RuntimeError('HUD restart did not reset the run (play-test session)')
+    step('playtest restart')
+
+    def offmap():
+        telemetry_run(p)
+        p.wait_for_function("!levelStarted", timeout=30000, polling=50)  # the ball left the map: automatic restart
+    act('run+offmap', offmap)
+    step('playtest offmap')
+
+    def win():
+        telemetry_run(p)
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
+        p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+    act('run+win', win)
+    step('playtest win')
+    stats_win = p.evaluate(PT_STATS_JS)
+    act('back', lambda: click(p, *p.evaluate(WIN_NEXT_JS)))  # play-test: 'editor' in place of 'next level'
+    if not p.evaluate("editorMode") or p.evaluate("!!playtestLevel"):
+        raise RuntimeError('completion window editor button did not return to the editor (play-test session)')
+    step('playtest back')
+    window = p.evaluate("(a) => ANALYTICS.debugLog.slice(a).map(e => [e.fn, ...e.args.map(x => x === undefined ? null : x)])", n_play)
+    stats1 = p.evaluate(PT_STATS_JS)
+    tb('exit')
+    if p.evaluate("editorMode"):
+        raise RuntimeError('exit did not close the editor (play-test session)')
+    step('exit playtest')
+    design = [e for e in window if e[0] == 'addDesignEvent']
+    count = {k: sum(1 for e in design if str(e[1]).startswith(k + ':')) for k in ('level', 'lines', 'ui', 'session', 'edit', 'editor')}
+    iso = {'hash': h, 'window': 'ANALYTICS.debugLog from the play click to the back click (inclusive)', 'windowEvents': len(window),
+           'counts': count, 'progression': sum(1 for e in window if e[0] == 'addProgressionEvent'),
+           'statsBefore': stats0, 'statsAtWin': stats_win, 'statsAfter': stats1,
+           'statsStoredIdentical': stats0['stored'] == stats_win['stored'] == stats1['stored'],
+           'statsMemIdentical': stats0['mem'] == stats_win['mem'] == stats1['mem'], 'acts': acts, 'windowLog': window}
+    iso['pass'] = bool(count['level'] == 0 and count['lines'] == 0 and count['ui'] == 0 and iso['progression'] == 0
+                       and iso['statsStoredIdentical'] and iso['statsMemIdentical'] and count['edit'] > 0)
+    return iso
+
+
 def sc_telemetry_editor(page, info):
     with open(TELEMETRY_EDITOR_EXPECTED) as f:
         want = json.load(f)
@@ -2469,6 +2583,7 @@ def sc_telemetry_editor(page, info):
         step('exit unchanged')
         toolbar_drag = toolbar_session(p, tb, step)
         objects = objects_session(p, tb, step)  # TASK-234
+        iso = playtest_session(p, tb, step)  # TASK-235
         open_menu(p)
         click(p, *p.evaluate(EDITOR_BUTTON_JS))
         if not p.evaluate("editorMode"):
@@ -2540,6 +2655,20 @@ def sc_telemetry_editor(page, info):
                       t['inputs']['touchstart'] == 1 and t['inputs']['touchend'] == 1 and t['inputs']['mousedown'] == 0)
     with open(os.path.join(OUT_DIR, 'touch.json'), 'w') as f:
         json.dump(tj, f, separators=(',', ':'))
+    # TASK-235: every edit: hash equals an editor:sum hash sent at 'play' (the editor:sum events right after btn:play)
+    play_hashes = []
+    for i, e in enumerate(actual):
+        if e[1].startswith('editor:btn:') and e[1].endswith(':play') and i + 1 < len(actual) and actual[i + 1][1].startswith('editor:sum:'):
+            play_hashes.append(actual[i + 1][1].split(':')[3])
+    edit_ids = [e[1] for e in actual if e[1].startswith('edit:')]
+    iso['editHashes'] = sorted({i.split(':')[1] for i in edit_ids})
+    iso['playSumHashes'] = play_hashes
+    iso['editHashEqualsPlaySum'] = bool(edit_ids and set(iso['editHashes']) <= set(play_hashes) and iso['hash'] in play_hashes)
+    iso['pass'] = bool(iso['pass'] and iso['editHashEqualsPlaySum'])
+    with open(os.path.join(OUT_DIR, 'isolation.json'), 'w') as f:
+        json.dump(iso, f, separators=(',', ':'))
+    if not iso['pass']:
+        raise RuntimeError('play-test isolation / hash check failed (isolation.json)')
     if not ej['pass']:
         raise RuntimeError('editor errors: not produced %s (errors.json)' % ej['notProduced'])
     if not tj['pass']:
