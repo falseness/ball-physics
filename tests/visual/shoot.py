@@ -217,7 +217,7 @@ def sc_next_level_order(page, info):
     info['level2'] = page.evaluate("({thisLevel, srcId: levels[thisLevel].srcId, drawMenu})")
     if info['level2'] != {'thisLevel': i2, 'srcId': 2, 'drawMenu': False}:
         raise RuntimeError('level 2 not loaded: %s' % info['level2'])
-    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; physics = true }")
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; physics = true }")
     page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
     info['won'] = page.evaluate("({levelCompletedWindow, thisLevel, unlock: levels[thisLevel].unlock})")
     frames(page)
@@ -264,6 +264,9 @@ def progress_out(info, name, data):
         json.dump(data, f, separators=(',', ':'))
 
 
+# TASK-213: the win shortcuts put the ball centre on the pennant edge flag[2]-flag[3] (flagCollision is then true at
+# once). They used to put it on the flag origin, which sits on the floor line: the contact push-out (TASK-199) moves
+# such a ball out of the floor, away from the pole, and it fell off the map instead of winning.
 def win_level_src(page, src):
     # Menu -> 'Levels' -> map slot (real clicks); real win through gameMechanics' flagCollision (ball on the flag).
     i = page.evaluate("n => levelBySrc(n)", src)
@@ -271,7 +274,7 @@ def win_level_src(page, src):
     st = page.evaluate("({thisLevel, srcId: levels[thisLevel].srcId, drawMenu})")
     if st != {'thisLevel': i, 'srcId': src, 'drawMenu': False}:
         raise RuntimeError('level %s not loaded: %s' % (src, st))
-    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; physics = true }")
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; physics = true }")
     page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
     frames(page, 5)
     return page.evaluate("i => ({levelCompletedWindow, thisLevel, srcId: levels[i].srcId, unlock: levels[i].unlock})", i)
@@ -1428,7 +1431,7 @@ def sc_lines_passed_restore(page, info):
     pick_level(page, 0)
     x = draw_seg(page, LINE_X)
     # real win through gameMechanics' flagCollision with line X on the field (as win_level_src)
-    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0; physics = true }")
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0; physics = true }")
     page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
     frames(page, 3)
     won = lines_state(page)
@@ -1508,7 +1511,7 @@ def sc_lines_storage_blocked(page, info):
     pick_level(page, 1)
     pick_level(page, 0)
     back = lines_state(page)  # in-memory copy still restores the lines this session
-    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0; physics = true }")
+    page.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0; physics = true }")
     page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
     won = lines_state(page)
     page.evaluate(LOOP_COUNTER_JS)
@@ -1829,7 +1832,7 @@ def sc_telemetry_levels(page, info):
         step('restart')
         telemetry_run(p)
         # the run goes through gameMechanics' flagCollision: the ball is put on the flag (as win_level_src)
-        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0 }")
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
         p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
         step('win')
         click(p, *p.evaluate(WIN_RESTART_JS))  # the completion window has no map button
@@ -2015,7 +2018,7 @@ def sc_telemetry_ui(page, info):
             raise RuntimeError('preview play did not start level 2')
         step('map_level+preview_play')
         telemetry_run(p)  # play box, no lines
-        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX; ball.posY = L.flagY; ball.speedX = ball.speedY = 0 }")
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
         p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
         click(p, *p.evaluate(WIN_NEXT_JS))
         if p.evaluate("thisLevel") != 2 or p.evaluate("levels[thisLevel].srcId") != 11:
