@@ -528,7 +528,10 @@ LEVEL21_MAX_FRAMES = 1500
 # the reference row), then two --mode local (+-2 px) hill-climb steps for robustness. TASK-138 added the sloped roof
 # over the start pad (it stopped 2-line wins off the pad); on that final layout 14 of the 24 single-coordinate +-2 px
 # variants win (artifacts/TASK-138/g3_local.json). Keep these exact integer coordinates.
-LEVEL22_LINES = [((150, 413), (420, 470)), ((1140, 660), (640, 760)), ((720, 482), (60, 540))]
+# TASK-208: under the TASK-199/200/201 contact physics the old second line (1140,660)-(640,760) loses (the ball leaves
+# the map on frame 477, artifacts/TASK-208/logs/trace_l22_oldref.jsonl); a single-coordinate shift of it, (1140,620), wins
+# on frame 395 (A->B, A->B) with 19 of 24 +-2 px variants (artifacts/TASK-208/runs/g3_l22.json).
+LEVEL22_LINES = [((150, 413), (420, 470)), ((1140, 620), (640, 760)), ((720, 482), (60, 540))]
 LEVEL22_MAX_FRAMES = 1500
 
 # Level 23 (srcId 23, lineK 2) solution: the ball rolls off its start slope; line 1 is a kicker under the slope's end
@@ -541,7 +544,10 @@ LEVEL22_MAX_FRAMES = 1500
 # first lines with every second line of a reflector lattice under the floor's right end
 # (artifacts/TASK-141/search_ref.json: 52 wins of 7410); 16 of the 16 single-coordinate +-2 px variants win
 # (artifacts/TASK-141/local_ref.json). Keep these exact integer coordinates.
-LEVEL23_LINES = [((330, 425), (450, 395)), ((880, 760), (1060, 580))]
+# TASK-208: under the contact physics the old kicker (330,425)-(450,395) no longer clears B (B->A, off the map on
+# frame 288, artifacts/TASK-208/logs/trace_l23_oldref.jsonl); (320,425) wins on frame 232 (A->B) with 14 of 16 +-2 px
+# variants (artifacts/TASK-208/runs/g3_l23.json).
+LEVEL23_LINES = [((320, 425), (450, 395)), ((880, 760), (1060, 580))]
 LEVEL23_MAX_FRAMES = 1500
 
 # Level 24 (srcId 24, lineK 3) solution: line 1 is a long, almost flat line over the start pad that rolls the ball
