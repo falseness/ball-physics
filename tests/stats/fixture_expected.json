@@ -9,8 +9,8 @@
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-20.jsonl",
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-21.jsonl"
  ],
- "lines": 15,
- "records": 12,
+ "lines": 20,
+ "records": 17,
  "other_key_records": 1,
  "no_body_records": 1,
  "excluded_test_records": 1,
@@ -18,10 +18,11 @@
  "unparsed_lines": [
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-21.jsonl:3"
  ],
- "events": 200,
+ "events": 403,
  "duplicate_events": 8,
  "unknown_events": {
-  "edit:zzzz:attempt": 1
+  "edit:zzzz:attempt": 1,
+  "f30:ret:bogus": 1
  },
  "users": {
   "user-a": {
@@ -359,6 +360,174 @@
    "totals": {
     "attempts": 1,
     "wins": 1,
+    "restarts": 0,
+    "abandons": 0,
+    "offmap": 0,
+    "lines_place": 0,
+    "lines_delete": 0,
+    "lines_drag": 0,
+    "lines_drag_rejected": 0,
+    "lines_reject_limit": 0,
+    "buttons": 0
+   }
+  },
+  "user-d": {
+   "first_seen": "2026-11-21T09:00:00.000Z",
+   "last_seen": "2026-11-21T09:00:00.000Z",
+   "inits": 0,
+   "builds": [
+    "1.0.2"
+   ],
+   "sessions": 1,
+   "session_list": [
+    {
+     "session_id": "sd1",
+     "build": "1.0.2",
+     "first_ts": "2026-11-21T09:00:00.000Z",
+     "events": 52,
+     "play_seconds": 0,
+     "length": 0
+    }
+   ],
+   "levels_tried": [],
+   "levels": {},
+   "buttons": {},
+   "button_ctx": {},
+   "play_seconds": 0,
+   "session_seconds": 0,
+   "hides": 0,
+   "levels_seen_max": 0,
+   "totals": {
+    "attempts": 0,
+    "wins": 0,
+    "restarts": 0,
+    "abandons": 0,
+    "offmap": 0,
+    "lines_place": 0,
+    "lines_delete": 0,
+    "lines_drag": 0,
+    "lines_drag_rejected": 0,
+    "lines_reject_limit": 0,
+    "buttons": 0
+   }
+  },
+  "user-e": {
+   "first_seen": "2026-11-21T09:10:00.000Z",
+   "last_seen": "2026-11-21T09:10:00.000Z",
+   "inits": 0,
+   "builds": [
+    "1.0.2"
+   ],
+   "sessions": 1,
+   "session_list": [
+    {
+     "session_id": "se1",
+     "build": "1.0.2",
+     "first_ts": "2026-11-21T09:10:00.000Z",
+     "events": 30,
+     "play_seconds": 0,
+     "length": 0
+    }
+   ],
+   "levels_tried": [],
+   "levels": {},
+   "buttons": {},
+   "button_ctx": {},
+   "play_seconds": 0,
+   "session_seconds": 0,
+   "hides": 0,
+   "levels_seen_max": 0,
+   "totals": {
+    "attempts": 0,
+    "wins": 0,
+    "restarts": 0,
+    "abandons": 0,
+    "offmap": 0,
+    "lines_place": 0,
+    "lines_delete": 0,
+    "lines_drag": 0,
+    "lines_drag_rejected": 0,
+    "lines_reject_limit": 0,
+    "buttons": 0
+   }
+  },
+  "user-f": {
+   "first_seen": "2026-11-21T09:20:00.000Z",
+   "last_seen": "2026-11-21T10:20:00.000Z",
+   "inits": 0,
+   "builds": [
+    "1.0.2"
+   ],
+   "sessions": 2,
+   "session_list": [
+    {
+     "session_id": "sf1",
+     "build": "1.0.2",
+     "first_ts": "2026-11-21T09:20:00.000Z",
+     "events": 45,
+     "play_seconds": 0,
+     "length": 0
+    },
+    {
+     "session_id": "sf2",
+     "build": "1.0.2",
+     "first_ts": "2026-11-21T10:20:00.000Z",
+     "events": 53,
+     "play_seconds": 0,
+     "length": 0
+    }
+   ],
+   "levels_tried": [],
+   "levels": {},
+   "buttons": {},
+   "button_ctx": {},
+   "play_seconds": 0,
+   "session_seconds": 0,
+   "hides": 0,
+   "levels_seen_max": 0,
+   "totals": {
+    "attempts": 0,
+    "wins": 0,
+    "restarts": 0,
+    "abandons": 0,
+    "offmap": 0,
+    "lines_place": 0,
+    "lines_delete": 0,
+    "lines_drag": 0,
+    "lines_drag_rejected": 0,
+    "lines_reject_limit": 0,
+    "buttons": 0
+   }
+  },
+  "user-h": {
+   "first_seen": "2026-11-21T11:00:00.000Z",
+   "last_seen": "2026-11-21T11:00:00.000Z",
+   "inits": 0,
+   "builds": [
+    "1.0.2"
+   ],
+   "sessions": 1,
+   "session_list": [
+    {
+     "session_id": "sh1",
+     "build": "1.0.2",
+     "first_ts": "2026-11-21T11:00:00.000Z",
+     "events": 23,
+     "play_seconds": 0,
+     "length": 0
+    }
+   ],
+   "levels_tried": [],
+   "levels": {},
+   "buttons": {},
+   "button_ctx": {},
+   "play_seconds": 0,
+   "session_seconds": 0,
+   "hides": 0,
+   "levels_seen_max": 0,
+   "totals": {
+    "attempts": 0,
+    "wins": 0,
     "restarts": 0,
     "abandons": 0,
     "offmap": 0,
@@ -727,6 +896,1096 @@
     "users": 1,
     "exits": 1,
     "abandons": 0
+   }
+  }
+ },
+ "first30": {
+  "steps": [
+   "first_move",
+   "first_press",
+   "point1",
+   "point2",
+   "line_drag",
+   "line_delete",
+   "reject_limit",
+   "run",
+   "pause",
+   "offmap",
+   "restart",
+   "win",
+   "menu_open",
+   "map_open",
+   "level_change",
+   "hidden"
+  ],
+  "targets": [
+   "hud_play",
+   "hud_menu",
+   "hud_restart",
+   "hud_speed",
+   "bin",
+   "line_end",
+   "line",
+   "ball",
+   "flag",
+   "field",
+   "menu",
+   "map",
+   "other"
+  ],
+  "kinds": {
+   "new": {
+    "sessions": 3,
+    "first_frame_sessions": 3,
+    "load": {
+     "html": {
+      "count": 3,
+      "missing": 0,
+      "median": 200,
+      "p75": 800,
+      "p90": 800
+     },
+     "dom": {
+      "count": 3,
+      "missing": 0,
+      "median": 500,
+      "p75": 2500,
+      "p90": 2500
+     },
+     "onload": {
+      "count": 2,
+      "missing": 1,
+      "median": 575,
+      "p75": 700,
+      "p90": 700
+     },
+     "boot": {
+      "count": 3,
+      "missing": 0,
+      "median": 510,
+      "p75": 2510,
+      "p90": 2510
+     },
+     "platform": {
+      "count": 3,
+      "missing": 0,
+      "median": 520,
+      "p75": 2900,
+      "p90": 2900
+     },
+     "storage": {
+      "count": 3,
+      "missing": 0,
+      "median": 530,
+      "p75": 2950,
+      "p90": 2950
+     },
+     "fonts": {
+      "count": 3,
+      "missing": 0,
+      "median": 600,
+      "p75": 3600,
+      "p90": 3600
+     },
+     "first_frame": {
+      "count": 3,
+      "missing": 0,
+      "median": 640,
+      "p75": 3700,
+      "p90": 3700
+     },
+     "transfer_kb": {
+      "count": 3,
+      "missing": 0,
+      "median": 950,
+      "p75": 1000,
+      "p90": 1000
+     },
+     "resources": {
+      "count": 3,
+      "missing": 0,
+      "median": 30,
+      "p75": 31,
+      "p90": 31
+     }
+    },
+    "context": {
+     "nav": {
+      "navigate": 3
+     },
+     "input": {
+      "mouse": 2,
+      "touch": 1
+     },
+     "embed": {
+      "iframe": 1,
+      "top": 2
+     },
+     "platform": {
+      "local": 2,
+      "yandex": 1
+     },
+     "vw": {
+      "lt1024": 1,
+      "lt1440": 1,
+      "lt480": 1
+     },
+     "visitor": {
+      "new": 3
+     }
+    },
+    "funnel": [
+     {
+      "index": 1,
+      "step": "first_move",
+      "sessions": 2,
+      "pct": 0.6667,
+      "conversion": 0.6667,
+      "median_ms": 1400
+     },
+     {
+      "index": 2,
+      "step": "first_press",
+      "sessions": 3,
+      "pct": 1.0,
+      "conversion": 1.5,
+      "median_ms": 3000
+     },
+     {
+      "index": 3,
+      "step": "point1",
+      "sessions": 2,
+      "pct": 0.6667,
+      "conversion": 0.6667,
+      "median_ms": 2250
+     },
+     {
+      "index": 4,
+      "step": "point2",
+      "sessions": 1,
+      "pct": 0.3333,
+      "conversion": 0.5,
+      "median_ms": 2600
+     },
+     {
+      "index": 5,
+      "step": "line_drag",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 6,
+      "step": "line_delete",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 7,
+      "step": "reject_limit",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 8,
+      "step": "run",
+      "sessions": 1,
+      "pct": 0.3333,
+      "conversion": null,
+      "median_ms": 2650
+     },
+     {
+      "index": 9,
+      "step": "pause",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 10,
+      "step": "offmap",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 11,
+      "step": "restart",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 12,
+      "step": "win",
+      "sessions": 1,
+      "pct": 0.3333,
+      "conversion": null,
+      "median_ms": 9000
+     },
+     {
+      "index": 13,
+      "step": "menu_open",
+      "sessions": 1,
+      "pct": 0.3333,
+      "conversion": 1.0,
+      "median_ms": 4000
+     },
+     {
+      "index": 14,
+      "step": "map_open",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 15,
+      "step": "level_change",
+      "sessions": 1,
+      "pct": 0.3333,
+      "conversion": null,
+      "median_ms": 11000
+     },
+     {
+      "index": 16,
+      "step": "hidden",
+      "sessions": 1,
+      "pct": 0.3333,
+      "conversion": 1.0,
+      "median_ms": 12500
+     }
+    ],
+    "end": {
+     "sessions": 2,
+     "furthest": {
+      "3": 1,
+      "15": 1
+     }
+    },
+    "leaves": {
+     "count": 1,
+     "by_step": {
+      "menu_open": 1
+     },
+     "by_bucket": {
+      "0_5": 0,
+      "5_10": 0,
+      "10_15": 1,
+      "15_20": 0,
+      "20_25": 0,
+      "25_30": 0
+     }
+    },
+    "presses": {
+     "total": 6,
+     "by_target": {
+      "field": 4,
+      "hud_menu": 1,
+      "other": 1
+     },
+     "top_cells": {
+      "field": [
+       [
+        "10_12",
+        2
+       ],
+       [
+        "12_9",
+        1
+       ],
+       [
+        "14_12",
+        1
+       ]
+      ],
+      "hud_menu": [
+       [
+        "31_0",
+        1
+       ]
+      ],
+      "other": [
+       [
+        "16_10",
+        1
+       ]
+      ]
+     },
+     "field": {
+      "presses": 4,
+      "before_point1": 2,
+      "no_point1_2s": 0
+     }
+    },
+    "heartbeat": {
+     "5": {
+      "sessions": 3,
+      "moved_median": 450,
+      "idle_median": 2000,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "10": {
+      "sessions": 3,
+      "moved_median": 0,
+      "idle_median": 7000,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "15": {
+      "sessions": 2,
+      "moved_median": 60,
+      "idle_median": 8000,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 0.5,
+      "not_visible": 0
+     },
+     "20": {
+      "sessions": 2,
+      "moved_median": 150,
+      "idle_median": 9500,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 0.5,
+      "not_visible": 0
+     },
+     "25": {
+      "sessions": 2,
+      "moved_median": 0,
+      "idle_median": 14500,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 0.5,
+      "not_visible": 0
+     },
+     "30": {
+      "sessions": 2,
+      "moved_median": 0,
+      "idle_median": 19500,
+      "idle_over_10s": 2,
+      "idle_over_10s_share": 1.0,
+      "not_visible": 0
+     }
+    }
+   },
+   "ret": {
+    "sessions": 2,
+    "first_frame_sessions": 2,
+    "load": {
+     "html": {
+      "count": 1,
+      "missing": 1,
+      "median": 50,
+      "p75": 50,
+      "p90": 50
+     },
+     "dom": {
+      "count": 1,
+      "missing": 1,
+      "median": 150,
+      "p75": 150,
+      "p90": 150
+     },
+     "onload": {
+      "count": 1,
+      "missing": 1,
+      "median": 260,
+      "p75": 260,
+      "p90": 260
+     },
+     "boot": {
+      "count": 2,
+      "missing": 0,
+      "median": 125,
+      "p75": 160,
+      "p90": 160
+     },
+     "platform": {
+      "count": 2,
+      "missing": 0,
+      "median": 135,
+      "p75": 170,
+      "p90": 170
+     },
+     "storage": {
+      "count": 2,
+      "missing": 0,
+      "median": 142.5,
+      "p75": 175,
+      "p90": 175
+     },
+     "fonts": {
+      "count": 2,
+      "missing": 0,
+      "median": 165,
+      "p75": 200,
+      "p90": 200
+     },
+     "first_frame": {
+      "count": 2,
+      "missing": 0,
+      "median": 185,
+      "p75": 220,
+      "p90": 220
+     },
+     "transfer_kb": {
+      "count": 2,
+      "missing": 0,
+      "median": 6,
+      "p75": 12,
+      "p90": 12
+     },
+     "resources": {
+      "count": 2,
+      "missing": 0,
+      "median": 15,
+      "p75": 30,
+      "p90": 30
+     }
+    },
+    "context": {
+     "nav": {
+      "back_forward": 1,
+      "reload": 1
+     },
+     "input": {
+      "mouse": 1,
+      "touch": 1
+     },
+     "embed": {
+      "top": 2
+     },
+     "platform": {
+      "local": 1,
+      "yandex": 1
+     },
+     "vw": {
+      "lt1024": 1,
+      "lt768": 1
+     },
+     "visitor": {
+      "ret": 2
+     }
+    },
+    "funnel": [
+     {
+      "index": 1,
+      "step": "first_move",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": 0.5,
+      "median_ms": 300
+     },
+     {
+      "index": 2,
+      "step": "first_press",
+      "sessions": 2,
+      "pct": 1.0,
+      "conversion": 2.0,
+      "median_ms": 750
+     },
+     {
+      "index": 3,
+      "step": "point1",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": 0.5,
+      "median_ms": 500
+     },
+     {
+      "index": 4,
+      "step": "point2",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": 1.0,
+      "median_ms": 1200
+     },
+     {
+      "index": 5,
+      "step": "line_drag",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 6,
+      "step": "line_delete",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 7,
+      "step": "reject_limit",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": null,
+      "median_ms": 7000
+     },
+     {
+      "index": 8,
+      "step": "run",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": 1.0,
+      "median_ms": 1250
+     },
+     {
+      "index": 9,
+      "step": "pause",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 10,
+      "step": "offmap",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": null,
+      "median_ms": 5100
+     },
+     {
+      "index": 11,
+      "step": "restart",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": 1.0,
+      "median_ms": 7500
+     },
+     {
+      "index": 12,
+      "step": "win",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 13,
+      "step": "menu_open",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 14,
+      "step": "map_open",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 15,
+      "step": "level_change",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 16,
+      "step": "hidden",
+      "sessions": 1,
+      "pct": 0.5,
+      "conversion": null,
+      "median_ms": 3000
+     }
+    ],
+    "end": {
+     "sessions": 1,
+     "furthest": {
+      "11": 1
+     }
+    },
+    "leaves": {
+     "count": 1,
+     "by_step": {
+      "first_press": 1
+     },
+     "by_bucket": {
+      "0_5": 1,
+      "5_10": 0,
+      "10_15": 0,
+      "15_20": 0,
+      "20_25": 0,
+      "25_30": 0
+     }
+    },
+    "presses": {
+     "total": 6,
+     "by_target": {
+      "field": 5,
+      "hud_restart": 1
+     },
+     "top_cells": {
+      "field": [
+       [
+        "20_10",
+        2
+       ],
+       [
+        "12_15",
+        1
+       ],
+       [
+        "8_15",
+        1
+       ],
+       [
+        "9_16",
+        1
+       ]
+      ],
+      "hud_restart": [
+       [
+        "1_0",
+        1
+       ]
+      ]
+     },
+     "field": {
+      "presses": 5,
+      "before_point1": 3,
+      "no_point1_2s": 2
+     }
+    },
+    "heartbeat": {
+     "5": {
+      "sessions": 1,
+      "moved_median": 900,
+      "idle_median": 3800,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "10": {
+      "sessions": 1,
+      "moved_median": 200,
+      "idle_median": 2500,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "15": {
+      "sessions": 1,
+      "moved_median": 0,
+      "idle_median": 7500,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "20": {
+      "sessions": 1,
+      "moved_median": 0,
+      "idle_median": 12500,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 1.0,
+      "not_visible": 0
+     },
+     "25": {
+      "sessions": 1,
+      "moved_median": 0,
+      "idle_median": 17500,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 1.0,
+      "not_visible": 0
+     },
+     "30": {
+      "sessions": 1,
+      "moved_median": 0,
+      "idle_median": 22500,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 1.0,
+      "not_visible": 0
+     }
+    }
+   },
+   "all": {
+    "sessions": 5,
+    "first_frame_sessions": 5,
+    "load": {
+     "html": {
+      "count": 4,
+      "missing": 1,
+      "median": 160,
+      "p75": 200,
+      "p90": 800
+     },
+     "dom": {
+      "count": 4,
+      "missing": 1,
+      "median": 400,
+      "p75": 500,
+      "p90": 2500
+     },
+     "onload": {
+      "count": 3,
+      "missing": 2,
+      "median": 450,
+      "p75": 700,
+      "p90": 700
+     },
+     "boot": {
+      "count": 5,
+      "missing": 0,
+      "median": 310,
+      "p75": 510,
+      "p90": 2510
+     },
+     "platform": {
+      "count": 5,
+      "missing": 0,
+      "median": 330,
+      "p75": 520,
+      "p90": 2900
+     },
+     "storage": {
+      "count": 5,
+      "missing": 0,
+      "median": 340,
+      "p75": 530,
+      "p90": 2950
+     },
+     "fonts": {
+      "count": 5,
+      "missing": 0,
+      "median": 400,
+      "p75": 600,
+      "p90": 3600
+     },
+     "first_frame": {
+      "count": 5,
+      "missing": 0,
+      "median": 420,
+      "p75": 640,
+      "p90": 3700
+     },
+     "transfer_kb": {
+      "count": 5,
+      "missing": 0,
+      "median": 900,
+      "p75": 950,
+      "p90": 1000
+     },
+     "resources": {
+      "count": 5,
+      "missing": 0,
+      "median": 30,
+      "p75": 30,
+      "p90": 31
+     }
+    },
+    "context": {
+     "nav": {
+      "back_forward": 1,
+      "navigate": 3,
+      "reload": 1
+     },
+     "input": {
+      "mouse": 3,
+      "touch": 2
+     },
+     "embed": {
+      "iframe": 1,
+      "top": 4
+     },
+     "platform": {
+      "local": 3,
+      "yandex": 2
+     },
+     "vw": {
+      "lt1024": 2,
+      "lt1440": 1,
+      "lt480": 1,
+      "lt768": 1
+     },
+     "visitor": {
+      "new": 3,
+      "ret": 2
+     }
+    },
+    "funnel": [
+     {
+      "index": 1,
+      "step": "first_move",
+      "sessions": 3,
+      "pct": 0.6,
+      "conversion": 0.6,
+      "median_ms": 800
+     },
+     {
+      "index": 2,
+      "step": "first_press",
+      "sessions": 5,
+      "pct": 1.0,
+      "conversion": 1.6667,
+      "median_ms": 1500
+     },
+     {
+      "index": 3,
+      "step": "point1",
+      "sessions": 3,
+      "pct": 0.6,
+      "conversion": 0.6,
+      "median_ms": 1500
+     },
+     {
+      "index": 4,
+      "step": "point2",
+      "sessions": 2,
+      "pct": 0.4,
+      "conversion": 0.6667,
+      "median_ms": 1900
+     },
+     {
+      "index": 5,
+      "step": "line_drag",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 6,
+      "step": "line_delete",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": null,
+      "median_ms": null
+     },
+     {
+      "index": 7,
+      "step": "reject_limit",
+      "sessions": 1,
+      "pct": 0.2,
+      "conversion": null,
+      "median_ms": 7000
+     },
+     {
+      "index": 8,
+      "step": "run",
+      "sessions": 2,
+      "pct": 0.4,
+      "conversion": 2.0,
+      "median_ms": 1950
+     },
+     {
+      "index": 9,
+      "step": "pause",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 10,
+      "step": "offmap",
+      "sessions": 1,
+      "pct": 0.2,
+      "conversion": null,
+      "median_ms": 5100
+     },
+     {
+      "index": 11,
+      "step": "restart",
+      "sessions": 1,
+      "pct": 0.2,
+      "conversion": 1.0,
+      "median_ms": 7500
+     },
+     {
+      "index": 12,
+      "step": "win",
+      "sessions": 1,
+      "pct": 0.2,
+      "conversion": 1.0,
+      "median_ms": 9000
+     },
+     {
+      "index": 13,
+      "step": "menu_open",
+      "sessions": 1,
+      "pct": 0.2,
+      "conversion": 1.0,
+      "median_ms": 4000
+     },
+     {
+      "index": 14,
+      "step": "map_open",
+      "sessions": 0,
+      "pct": 0.0,
+      "conversion": 0.0,
+      "median_ms": null
+     },
+     {
+      "index": 15,
+      "step": "level_change",
+      "sessions": 1,
+      "pct": 0.2,
+      "conversion": null,
+      "median_ms": 11000
+     },
+     {
+      "index": 16,
+      "step": "hidden",
+      "sessions": 2,
+      "pct": 0.4,
+      "conversion": 2.0,
+      "median_ms": 7750
+     }
+    ],
+    "end": {
+     "sessions": 3,
+     "furthest": {
+      "3": 1,
+      "11": 1,
+      "15": 1
+     }
+    },
+    "leaves": {
+     "count": 2,
+     "by_step": {
+      "first_press": 1,
+      "menu_open": 1
+     },
+     "by_bucket": {
+      "0_5": 1,
+      "5_10": 0,
+      "10_15": 1,
+      "15_20": 0,
+      "20_25": 0,
+      "25_30": 0
+     }
+    },
+    "presses": {
+     "total": 12,
+     "by_target": {
+      "field": 9,
+      "hud_menu": 1,
+      "hud_restart": 1,
+      "other": 1
+     },
+     "top_cells": {
+      "field": [
+       [
+        "10_12",
+        2
+       ],
+       [
+        "20_10",
+        2
+       ],
+       [
+        "12_15",
+        1
+       ],
+       [
+        "12_9",
+        1
+       ],
+       [
+        "14_12",
+        1
+       ],
+       [
+        "8_15",
+        1
+       ],
+       [
+        "9_16",
+        1
+       ]
+      ],
+      "hud_menu": [
+       [
+        "31_0",
+        1
+       ]
+      ],
+      "hud_restart": [
+       [
+        "1_0",
+        1
+       ]
+      ],
+      "other": [
+       [
+        "16_10",
+        1
+       ]
+      ]
+     },
+     "field": {
+      "presses": 9,
+      "before_point1": 5,
+      "no_point1_2s": 2
+     }
+    },
+    "heartbeat": {
+     "5": {
+      "sessions": 4,
+      "moved_median": 545,
+      "idle_median": 2200,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "10": {
+      "sessions": 4,
+      "moved_median": 0,
+      "idle_median": 6500,
+      "idle_over_10s": 0,
+      "idle_over_10s_share": 0.0,
+      "not_visible": 0
+     },
+     "15": {
+      "sessions": 3,
+      "moved_median": 0,
+      "idle_median": 7500,
+      "idle_over_10s": 1,
+      "idle_over_10s_share": 0.3333,
+      "not_visible": 0
+     },
+     "20": {
+      "sessions": 3,
+      "moved_median": 0,
+      "idle_median": 12500,
+      "idle_over_10s": 2,
+      "idle_over_10s_share": 0.6667,
+      "not_visible": 0
+     },
+     "25": {
+      "sessions": 3,
+      "moved_median": 0,
+      "idle_median": 17500,
+      "idle_over_10s": 2,
+      "idle_over_10s_share": 0.6667,
+      "not_visible": 0
+     },
+     "30": {
+      "sessions": 3,
+      "moved_median": 0,
+      "idle_median": 22500,
+      "idle_over_10s": 3,
+      "idle_over_10s_share": 1.0,
+      "not_visible": 0
+     }
+    }
    }
   }
  }

@@ -33,6 +33,22 @@ EDITOR_REST = {  # name -> pattern of the parts after <ctx> (None = no more part
     'line_end': r'(ok|refused|degenerate)', 'line_del': r'(tool|key)', 'portal': r'(a|b)', 'portal_move': r'(ok|refused)',
     'portal_del': None, 'move': r'(ball|flag)', 'error': r'([a-z0-9_]{1,64})'}
 EDITOR_NOT_ACTION = ('open', 'sum', 'actions', 'exit', 'abandon', 'error')  # every other editor: event is one action
+# TASK-241: first-30-seconds rows (TASK-238..240), docs/telemetry.md 'First 30 seconds'
+F30_STEPS = ['first_move', 'first_press', 'point1', 'point2', 'line_drag', 'line_delete', 'reject_limit', 'run', 'pause',
+             'offmap', 'restart', 'win', 'menu_open', 'map_open', 'level_change', 'hidden']
+F30_TARGETS = ['hud_play', 'hud_menu', 'hud_restart', 'hud_speed', 'bin', 'line_end', 'line', 'ball', 'flag', 'field',
+               'menu', 'map', 'other']
+LOAD_STAGES = ['html', 'dom', 'onload', 'boot', 'platform', 'storage', 'fonts', 'first_frame', 'transfer_kb', 'resources']
+F30_BEATS = [5, 10, 15, 20, 25, 30]
+F30_KINDS = ('new', 'ret', 'all')
+CTX_KEYS = {'nav': None, 'input': r'(touch|mouse)', 'embed': r'(top|iframe)', 'platform': r'([A-Za-z0-9_.\-]{1,64})',
+            'vw': r'(lt480|lt768|lt1024|lt1440|ge1440)', 'visitor': r'(new|ret)'}
+LOAD_RE = re.compile(r'^load:(' + '|'.join(LOAD_STAGES) + r')$')
+LOAD_NAV_RE = re.compile(r'^load:nav:(navigate|reload|back_forward|prerender)$')
+CTX_RE = re.compile(r'^ctx:(input|embed|platform|vw|visitor):(.+)$')
+F30_RE = re.compile(r'^f30:(new|ret):(' + '|'.join(F30_STEPS) + r'|end|leave|leave_step:(?:' + '|'.join(F30_STEPS) + r'|none))$')
+F30_PRESS_RE = re.compile(r'^f30:press:(' + '|'.join(F30_TARGETS) + r'):(\d{1,2})_(\d{1,2})$')
+F30_HB_RE = re.compile(r'^f30:hb:(5|10|15|20|25|30):(moved|idle|visible|step)$')
 EDIT_RE = re.compile(r'^edit:([0-9a-f]{8}):(attempt|run|restart|offmap|win|line_place|line_delete|line_drag|speed_on|speed_off|back)$')
 
 
@@ -206,6 +222,7 @@ def build_report(root, key, since=None, until=None, include_test=False):
     users, seen_uuid = {}, set()
     editors, elevels = {}, {}  # TASK-236: user -> editor record; ctx -> editor opens
     sess = {}  # (user, session_id) -> {'build', 'first_ts', 'events', 'play_max', 'length'}
+    f30s = {}  # TASK-241: (user, session_id) -> first-30 record (new_f30)
 
     def user(uid, ts):
         u = users.setdefault(uid, new_user())
@@ -341,6 +358,9 @@ def build_report(root, key, since=None, until=None, include_test=False):
                         else:
                             u['levels_seen_max'] = max(u['levels_seen_max'], int(val or 0))
                         continue
+                    if eid.startswith(('load:', 'ctx:', 'f30:')):  # TASK-241
+                        if first30_event(f30s.setdefault((uid, sid), new_f30()), eid, val):
+                            continue
                     if eid.startswith(('editor:', 'edit:')):
                         ed = editors.get(uid) or new_editor()
                         if editor_event(ed, eid, val, elevels):
@@ -391,7 +411,152 @@ def build_report(root, key, since=None, until=None, include_test=False):
     rep['levels'] = {k: levels[k] for k in sorted(levels, key=num)}
     rep['unknown_events'] = dict(sorted(rep['unknown_events'].items()))
     rep['editor'] = editor_section(editors, elevels, list(rep['users']))
+    rep['first30'] = first30_section([f for f in f30s.values() if f['any']])
     return rep
+
+
+def new_f30():
+    return {'any': False, 'kind': None, 'load': {}, 'ctx': {}, 'steps': {}, 'end': None, 'leave': None,
+            'leave_step': None, 'presses': [], 'hb': {}}
+
+
+def first30_event(f, eid, val):
+    """TASK-241: one load: / ctx: / f30: design event into the session's first-30 record; False if not in the catalogue.
+    A page load sends each id once; a repeated id in the same session keeps its first value (presses are all kept)."""
+    num = val if isinstance(val, (int, float)) and not isinstance(val, bool) else None
+    m = LOAD_RE.match(eid)
+    if m:
+        if num is None:
+            return False
+        f['load'].setdefault(m.group(1), num)
+    elif LOAD_NAV_RE.match(eid):
+        f['ctx'].setdefault('nav', eid.split(':')[2])
+    elif CTX_RE.match(eid):
+        key, v = CTX_RE.match(eid).groups()
+        if not re.fullmatch(CTX_KEYS[key], v):
+            return False
+        f['ctx'].setdefault(key, v)
+        if key == 'visitor':
+            f['kind'] = v
+    elif F30_PRESS_RE.match(eid):
+        t, gx, gy = F30_PRESS_RE.match(eid).groups()
+        if num is None:
+            return False
+        f['presses'].append((t, f'{int(gx)}_{int(gy)}', num))
+    elif F30_HB_RE.match(eid):
+        s, part = F30_HB_RE.match(eid).groups()
+        if num is None:
+            return False
+        f['hb'].setdefault(int(s), {}).setdefault(part, num)
+    elif F30_RE.match(eid):
+        k, what = F30_RE.match(eid).groups()
+        if what.startswith('leave_step:'):
+            if f['leave_step'] is None:
+                f['leave_step'] = what.split(':')[1]
+        else:
+            if num is None:
+                return False
+            if what in ('end', 'leave'):
+                f[what] = num if f[what] is None else f[what]
+            else:
+                f['steps'].setdefault(what, num)
+        f['kind'] = f['kind'] or k  # ctx:visitor wins (sent first, at t0)
+    else:
+        return False
+    f['any'] = True
+    return True
+
+
+def pct(n, d):
+    return round(n / d, 4) if d else None
+
+
+def rank_pct(vals, q):
+    """Nearest-rank percentile of a sorted list: the value at rank ceil(q * n) (1-based); None for no values."""
+    if not vals:
+        return None
+    r = -(-q * len(vals) // 1)  # ceil
+    return vals[max(1, int(r)) - 1]
+
+
+def med(vals):
+    """statistics.median; a whole number as an int (1900, not 1900.0); None for no values"""
+    if not vals:
+        return None
+    m = statistics.median(vals)
+    return int(m) if m == int(m) else m
+
+
+def first30_section(recs):
+    """TASK-241: report['first30'] = {'steps', 'targets', 'kinds': {new, ret, all}} over sessions with a first-30 row."""
+    out = {'steps': F30_STEPS, 'targets': F30_TARGETS, 'kinds': {}}
+    for kind in F30_KINDS:
+        rs = [f for f in recs if kind == 'all' or f['kind'] == kind]
+        ff = sum(1 for f in rs if 'first_frame' in f['load'])
+        k = {'sessions': len(rs), 'first_frame_sessions': ff}
+        # load stages: -1 (not measurable) counted as missing, left out of the statistics
+        k['load'] = {}
+        for st in LOAD_STAGES:
+            v = sorted(f['load'][st] for f in rs if st in f['load'] and f['load'][st] >= 0)
+            k['load'][st] = {'count': len(v), 'missing': sum(1 for f in rs if st in f['load'] and f['load'][st] < 0),
+                             'median': med(v), 'p75': rank_pct(v, 0.75), 'p90': rank_pct(v, 0.9)}
+        k['context'] = {}
+        for key in CTX_KEYS:
+            c = {}
+            for f in rs:
+                if key in f['ctx']:
+                    c[f['ctx'][key]] = c.get(f['ctx'][key], 0) + 1
+            k['context'][key] = dict(sorted(c.items()))
+        # funnel: sessions that reached each step, share of the first-frame sessions, conversion from the previous
+        # step (first step: from the first-frame sessions), median ms since t0
+        k['funnel'], prev = [], ff
+        for i, st in enumerate(F30_STEPS, 1):
+            v = sorted(f['steps'][st] for f in rs if st in f['steps'])
+            k['funnel'].append({'index': i, 'step': st, 'sessions': len(v), 'pct': pct(len(v), ff),
+                                'conversion': pct(len(v), prev), 'median_ms': med(v)})
+            prev = len(v)
+        ends = {}
+        for f in rs:
+            if f['end'] is not None:
+                ends[f['end']] = ends.get(f['end'], 0) + 1
+        k['end'] = {'sessions': sum(ends.values()), 'furthest': {str(e): n for e, n in sorted(ends.items())}}
+        lv = [f for f in rs if f['leave'] is not None]
+        by_step = {}
+        for f in lv:
+            by_step[f['leave_step'] or 'none'] = by_step.get(f['leave_step'] or 'none', 0) + 1
+        buckets = {f'{b}_{b + 5}': 0 for b in range(0, 30, 5)}
+        for f in lv:
+            b = min(25, max(0, int(f['leave'] // 5000) * 5))
+            buckets[f'{b}_{b + 5}'] += 1
+        k['leaves'] = {'count': len(lv), 'by_step': dict(sorted(by_step.items())), 'by_bucket': buckets}
+        # presses: per target the total and the top 20 cells (count desc, then cell); field presses made before the
+        # session's point1 (or with no point1) and whether point1 followed within 2 s
+        by_t, cells = {}, {}
+        field = {'presses': 0, 'before_point1': 0, 'no_point1_2s': 0}
+        for f in rs:
+            p1 = f['steps'].get('point1')
+            for t, cell, ms in f['presses']:
+                by_t[t] = by_t.get(t, 0) + 1
+                cells.setdefault(t, {})[cell] = cells.setdefault(t, {}).get(cell, 0) + 1
+                if t == 'field':
+                    field['presses'] += 1
+                    if p1 is None or ms <= p1:
+                        field['before_point1'] += 1
+                        field['no_point1_2s'] += not (p1 is not None and p1 - ms <= 2000)
+        k['presses'] = {'total': sum(by_t.values()), 'by_target': dict(sorted(by_t.items())),
+                        'top_cells': {t: [[c, n] for c, n in sorted(cells[t].items(), key=lambda x: (-x[1], x[0]))[:20]]
+                                      for t in sorted(cells)},
+                        'field': field}
+        k['heartbeat'] = {}
+        for b in F30_BEATS:
+            hs = [f['hb'][b] for f in rs if b in f['hb']]
+            idle = sorted(h['idle'] for h in hs if 'idle' in h)
+            over = sum(1 for x in idle if x > 10000)
+            k['heartbeat'][str(b)] = {'sessions': len(hs), 'moved_median': med(sorted(h['moved'] for h in hs if 'moved' in h)),
+                                      'idle_median': med(idle), 'idle_over_10s': over, 'idle_over_10s_share': pct(over, len(idle)),
+                                      'not_visible': sum(1 for h in hs if h.get('visible') == 0)}
+        out['kinds'][kind] = k
+    return out
 
 
 def editor_section(editors, elevels, order):
@@ -465,6 +630,7 @@ def markdown(rep):
         if u['buttons']:
             o += ['Buttons: ' + ', '.join(f"{b} {c}" for b, c in u['buttons'].items()), '']
     o += editor_markdown(rep.get('editor') or {'users': {}, 'levels': {}})
+    o += first30_markdown(rep.get('first30') or first30_section([]))
     return '\n'.join(o) + '\n'
 
 
@@ -502,6 +668,38 @@ def editor_markdown(ed):
                          f"{p['win_seconds']} | {p['restarts']} | {p['offmap']} | {p['lines_placed']} | {p['lines_deleted']} | "
                          f"{p['lines_dragged']} | {p['lines_drag_rejected']} | {p['speed_on']}/{p['speed_off']} | {p['backs']} |")
             o.append('')
+    return o
+
+
+def first30_markdown(f3):
+    """TASK-241: '## First 30 seconds', one subsection per kind (new / ret / all)."""
+    kv = lambda d: ', '.join(f'{k} {v}' for k, v in d.items()) or '-'
+    na = lambda v: '-' if v is None else v
+    pc = lambda v: '-' if v is None else f'{v * 100:.1f}%'
+    o = ['## First 30 seconds', '', 'Sessions with a load: / ctx: / f30: event, split by visitor kind (`new` = first-ever '
+         'session). Times in ms (load stages since navigation start, steps since t0). Funnel: % of the sessions with a '
+         'first frame; conversion = sessions at this step / sessions at the previous step (steps are not nested, so it '
+         'can exceed 1). Percentiles: nearest rank.', '']
+    for kind, k in f3['kinds'].items():
+        o += [f'### First 30 s: {kind}', '', f"sessions {k['sessions']}, with a first frame {k['first_frame_sessions']}", '',
+              '| load stage | count | missing (-1) | median | p75 | p90 |', '|' + '---|' * 6]
+        o += [f"| {st} | {x['count']} | {x['missing']} | {na(x['median'])} | {na(x['p75'])} | {na(x['p90'])} |"
+              for st, x in k['load'].items()]
+        o += [''] + [f'- {key}: {kv(c)}' for key, c in k['context'].items()] + [
+            '', '| # | step | sessions | % of first-frame sessions | conversion from previous | median ms |', '|' + '---|' * 6]
+        o += [f"| {x['index']} | {x['step']} | {x['sessions']} | {pc(x['pct'])} | {pc(x['conversion'])} | {na(x['median_ms'])} |"
+              for x in k['funnel']]
+        lv, pr = k['leaves'], k['presses']
+        o += ['', f"end at 30 s: {k['end']['sessions']} sessions, furthest index {kv(k['end']['furthest'])}",
+              f"leaves: {lv['count']}; by last step: {kv(lv['by_step'])}; by 5 s bucket: {kv(lv['by_bucket'])}",
+              f"presses: {pr['total']}; by target: {kv(pr['by_target'])}; field presses {pr['field']['presses']}, before "
+              f"point1 {pr['field']['before_point1']}, not followed by point1 within 2 s {pr['field']['no_point1_2s']}"]
+        o += [f"- top cells {t}: " + ', '.join(f'{c} ({n})' for c, n in cells) for t, cells in pr['top_cells'].items()]
+        o += ['', '| beat s | sessions | median moved px | median idle ms | idle > 10 s | share idle > 10 s | hidden |',
+              '|' + '---|' * 7]
+        o += [f"| {b} | {x['sessions']} | {na(x['moved_median'])} | {na(x['idle_median'])} | {x['idle_over_10s']} | "
+              f"{pc(x['idle_over_10s_share'])} | {x['not_visible']} |" for b, x in k['heartbeat'].items()]
+        o.append('')
     return o
 
 

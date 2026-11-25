@@ -190,6 +190,98 @@ Order at `exit`: `btn:...:exit`, `sum:...:lines`, `portals`, `linek`, `changed`,
 
 On `pagehide`: `abandon` / `Fail` for an unwon attempt, `session:levels_seen`, then `flush` and `endSession`.
 
+## First 30 seconds (TASK-238..241)
+
+Why players leave at the start. **t0** = the rAF time of the first `gameLoop` frame after `bootComplete`
+(`TELEMETRY.firstFrame`, `index.html` `boot()`). The **window** is t0..t0+30 s. `load:` / `ctx:` rows are sent once per
+page load at t0; `f30:` rows only inside the window (plus one `leave` when the page hides or closes inside it). Times are
+integer ms (load stages: since navigation start; `f30:` values: since t0). `<k>` = `new` for a visitor's first-ever session
+(no `bp.first.v1` at boot; the key is read and written only through `PLATFORM.storage`, written after t0) or `ret`.
+Ids follow the GameAnalytics design-id form (at most 5 parts, `[A-Za-z0-9_.-]`, 64 chars each, numeric values). Nothing
+is sampled, throttled or coalesced; touch input goes through the same listeners as the mouse. Scripts and expected
+values: shoot.py `telemetry_first30` (visitors A-E under a paused `page.clock`), `tests/visual/telemetry_expected_first30.json`.
+
+| event id | when | value | ticket |
+|----------|------|-------|--------|
+| `load:html` | t0, once per page load | ms since navigation start: `responseEnd` of the navigation entry; -1 = not measurable | TASK-238 |
+| `load:dom` | t0, once per page load | ms since navigation start: `domContentLoadedEventEnd`; -1 = not measurable | TASK-238 |
+| `load:onload` | t0, once per page load | ms since navigation start: `loadEventEnd`; -1 when the load event has not ended yet; -1 = not measurable | TASK-238 |
+| `load:boot` | t0, once per page load | ms since navigation start: `boot()` entry (`TELEMETRY.loadMark`); -1 = not measurable | TASK-238 |
+| `load:platform` | t0, once per page load | ms since navigation start: after `PLATFORM.init`; -1 = not measurable | TASK-238 |
+| `load:storage` | t0, once per page load | ms since navigation start: after the storage `getMany`; -1 = not measurable | TASK-238 |
+| `load:fonts` | t0, once per page load | ms since navigation start: after `fontsReady`; -1 = not measurable | TASK-238 |
+| `load:first_frame` | t0, once per page load | ms since navigation start: t0 itself; -1 = not measurable | TASK-238 |
+| `load:transfer_kb` | t0, after the stages | navigation + resource `transferSize` / 1024, rounded | TASK-238 |
+| `load:resources` | t0 | resource entries loaded so far | TASK-238 |
+| `load:nav:<navigate\|reload\|back_forward\|prerender>` | t0 | - | TASK-238 |
+| `ctx:input:<touch\|mouse>` | t0; `touch` = `(pointer: coarse)` | - | TASK-238 |
+| `ctx:embed:<top\|iframe>` | t0 | - | TASK-238 |
+| `ctx:platform:<platformId>` | t0; `PLATFORM.platformId` (`local` without one) | - | TASK-238 |
+| `ctx:vw:<lt480\|lt768\|lt1024\|lt1440\|ge1440>` | t0; `innerWidth` bucket | - | TASK-238 |
+| `ctx:visitor:<new\|ret>` | t0; `<k>` of this page load | - | TASK-238 |
+| `f30:<k>:first_move` | funnel step 1 (pointer): the first `mousemove` / `touchmove`; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:first_press` | funnel step 2 (pointer): the first `mousedown` / `touchstart` anywhere on the page; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:point1` | funnel step 3 (line): a line's first point (`handleClick`'s new `Line`, `startLineAtEnd`, a touch drag start); once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:point2` | funnel step 4 (line): a player line placed (`TELEMETRY.linePlaced`); once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:line_drag` | funnel step 5 (line): a player line end dropped (accepted or not); once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:line_delete` | funnel step 6 (line): a player line deleted with the bin; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:reject_limit` | funnel step 7 (line): a press on the field with the `lineK` limit reached; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:run` | funnel step 8 (play): a run starts (auto-run after the last line, or the play box); once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:pause` | funnel step 9 (play): the HUD play box pauses the run; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:offmap` | funnel step 10 (play): the ball left the map; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:restart` | funnel step 11 (play): a restart button; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:win` | funnel step 12 (play): the ball reached the flag; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:menu_open` | funnel step 13 (navigation): the HUD menu icon opens the pause menu; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:map_open` | funnel step 14 (navigation): the route map opens; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:level_change` | funnel step 15 (navigation): a level started from the map or by 'next level'; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:hidden` | funnel step 16 (tab): `visibilitychange` to hidden (after `leave`); once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:end` | t0+30 s, if the page is still open (no `pagehide` before) | furthest funnel index reached (0 = none) | TASK-239 |
+| `f30:<k>:leave` | `visibilitychange` hidden or `pagehide` inside the window, once | ms since t0 | TASK-239 |
+| `f30:<k>:leave_step:<step>` | right after `leave` (then `ANALYTICS.flush`) | - (`<step>` = last step sent before, or `none`) | TASK-239 |
+| `f30:press:<target>:<gx>_<gy>` | every `mousedown` / `touchstart` inside the window | ms since t0 | TASK-240 |
+| `f30:hb:<s>:moved` | heartbeat at `<s>` = 5, 10, 15, 20, 25, 30 s after t0 while the page is open | pointer path in logical px since the previous beat | TASK-240 |
+| `f30:hb:<s>:idle` | same beat, after `moved` | ms since the last pointer / key input (or t0) at the nominal beat time | TASK-240 |
+| `f30:hb:<s>:visible` | same beat | 1 = visible, 0 = hidden | TASK-240 |
+| `f30:hb:<s>:step` | same beat | furthest funnel index so far | TASK-240 |
+
+Funnel indexes (`end` / `hb:<s>:step` values; index = position in `F30_STEPS` + 1):
+
+| index | step | group |
+|---|---|---|
+| 1 | first_move | pointer |
+| 2 | first_press | pointer |
+| 3 | point1 | line |
+| 4 | point2 | line |
+| 5 | line_drag | line |
+| 6 | line_delete | line |
+| 7 | reject_limit | line |
+| 8 | run | play |
+| 9 | pause | play |
+| 10 | offmap | play |
+| 11 | restart | play |
+| 12 | win | play |
+| 13 | menu_open | navigation |
+| 14 | map_open | navigation |
+| 15 | level_change | navigation |
+| 16 | hidden | tab |
+
+Press targets (`<target>`, `index.html` `f30PressTarget`, decided in the capture phase before any game handler, in
+`handleClick`'s priority): `map` (route map open), `other` (editor, completion window, play-test edit box, outside the
+field / letterbox), `menu` (pause menu open), `hud_menu`, `hud_play`, `hud_restart`, `hud_speed`, `bin`, `line_end`,
+`line`, `ball`, `flag` (bounding box of the flag), `field` (anything else on the field). `<gx>_<gy>` = `floor(x / 40)` _
+`floor(y / 40)` on the logical 1280x800 field, clamped to 0..31 / 0..19.
+
+Order at t0: `load:html` .. `load:resources`, `load:nav`, `ctx:input`, `embed`, `platform`, `vw`, `visitor`. A press: `f30:press`
+first (capture phase), then the steps it causes (`first_press`, `point1`, ...). Hide inside the window: `leave`,
+`leave_step`, `hidden`. A beat at 30 s comes before `end`.
+
+Checks: `shoot.py --scenarios telemetry_first30` (TASK-238..240: load/ctx sequence, visitors A-E exact ids and values,
+`funnel.json`, `window.json`, `targets.json`, `heartbeat.json`). Since TASK-241 the scenario's log (both loads of the
+first part + every visitor's debug log) covers every `load:` / `ctx:` / `f30:` row above (`sequence_first30.json`
+`coverage`), and with `telemetry_levels,telemetry_ui,telemetry_editor` in the same run it rewrites `coverage.json` over
+every catalogue row against the four logs (`scope`: `all rows, levels+ui+editor+first30 logs`). Without the first30
+scenario the other three keep their old scopes (first-30 rows left out).
+
 ## Per-user counters
 
 `PLATFORM.storage` key `bp.stats.v1` (platform facade, never `localStorage` directly), read at boot with the
@@ -274,10 +366,31 @@ Writes `DIR/report.json` and `DIR/report.md`:
   `line_would_leave_the_field`, `line_too_short_for_its_portal`, `invalid_level_file`, `old_portal_format` (any other
   `[a-z0-9_]` code is counted as is).
 
+- `first30` (TASK-241), from the `load:` / `ctx:` / `f30:` rows ("First 30 seconds" above), per GA session (one page
+  load), split `kinds.new` / `kinds.ret` (by `ctx:visitor`, else the `<k>` of the `f30:` ids) / `kinds.all`; sessions =
+  sessions with any of these rows:
+  - `load[<stage>]` for `html`, `dom`, `onload`, `boot`, `platform`, `storage`, `fonts`, `first_frame`, `transfer_kb`,
+    `resources`: count, `missing` (value -1, left out), median, p75, p90 (nearest rank: the value at rank ceil(q * n));
+    `context`: counts of `nav`, `input`, `embed`, `platform`, `vw`, `visitor`;
+  - `funnel`: for each step in funnel order (index 1..16): sessions that reached it, `pct` of the sessions with
+    `load:first_frame`, `conversion` = sessions at this step / sessions at the previous step (the first step: / first-frame
+    sessions; `null` when the previous step has 0; steps are not nested, so it can exceed 1), `median_ms` since t0. The
+    `point1` row = sessions that placed the first point of a line, `point2` = sessions that placed a whole line.
+    `end`: sessions still open at 30 s and their furthest index;
+  - `leaves`: count, by `leave_step`, by 5 s bucket of the `leave` value (`0_5` .. `25_30`);
+  - `presses`: total, by target, the top 20 `<gx>_<gy>` cells per target (count desc, then cell), and `field`: field
+    presses, those made before the session's `point1` (or with no `point1`), and of those the ones not followed by
+    `point1` within 2 s (`no_point1_2s`: presses on the field that did not start a line);
+  - `heartbeat[<s>]`: sessions with that beat, median `moved` and `idle`, sessions idle more than 10 s (`idle` > 10000)
+    and their share, sessions with `visible` 0.
+  Medians are ints when whole. A `load:` / `ctx:` / `f30:` id that does not fit the rows (unknown step or target,
+  non-numeric value) goes to `unknown_events`. Markdown: `## First 30 seconds`, one subsection per kind.
+
 Check: `python3 tools/stats_report.py --root tests/stats/fixture --out DIR && python3 tests/stats/check_fixture.py
 DIR/report.json` (fixture written by `tests/stats/make_fixture.py`, expected report hand-written in
 `tests/stats/fixture_expected.json`; since TASK-236 the fixture has editor and play-test events for user-a and user-b
-and one malformed `edit:` id).
+and one malformed `edit:` id; since TASK-241 five first-30 sessions of users d, e, f (new + ret) and h: one win, two
+leaves, one malformed `f30:` id).
 
 Typical use on the relay host: `python3 tools/stats_report.py --since 2026-11-25 --out /tmp/bp-stats` and read
 `report.md` (per user: levels tried, attempts, wins, restarts, buttons, lines, play time; per level totals).

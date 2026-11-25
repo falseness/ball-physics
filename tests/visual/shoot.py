@@ -1923,7 +1923,11 @@ def telemetry_doc_ids():
                 rows.append({'row': cell, 'kind': 'facade', 'fn': toks[0]})
             elif ':' in toks[0]:
                 ph = {'<srcId>': r'\d+', '<ctx>': r'(L\d+|map)', '<from>': '(menu|win)', '<h>': '[0-9a-f]{8}',
-                      '<code>': '[a-z0-9_]{1,64}'}  # TASK-232; TASK-234 <code>
+                      '<code>': '[a-z0-9_]{1,64}',  # TASK-232; TASK-234 <code>
+                      # TASK-241: first-30 rows (load: / ctx: / f30:)
+                      '<k>': '(new|ret)', '<step>': '(' + '|'.join(F30_STEPS + ['none']) + ')',
+                      '<target>': '(' + '|'.join(F30_TARGETS) + ')', '<gx>': r'\d+', '<gy>': r'\d+',
+                      '<s>': '(5|10|15|20|25|30)', '<platformId>': r'[A-Za-z0-9_.\-]{1,64}'}
                 # TASK-233: '<a|b|c>' = one of the listed words
                 pat = ''.join(ph.get(x, '(' + x[1:-1] + ')' if x.startswith('<') and '|' in x else re.escape(x))
                               for x in re.split(r'(<[^>]+>)', toks[0]))
@@ -1931,10 +1935,18 @@ def telemetry_doc_ids():
     return rows
 
 
-def telemetry_coverage(logs, editor=False):
+def first30_row(r):
+    # TASK-241: load: / ctx: / f30: rows (TASK-238..240), covered by the telemetry_first30 log
+    return r['row'].startswith(('`load:', '`ctx:', '`f30:'))
+
+
+def telemetry_coverage(logs, editor=False, first30=False):
     # TASK-232: editor: rows are covered by telemetry_editor's own log (editor=True), all other rows by levels + ui
     # TASK-236: editor=None = every catalogue row (editor:/edit: included) against all the logs given
-    rows = [r for r in telemetry_doc_ids() if editor is None or r['row'].startswith(('`editor:', '`edit:')) == editor]
+    # TASK-241: first-30 rows only with first30=True (editor=None: every row incl. load:/ctx:/f30:; editor=True/False:
+    # only those rows); without it they are left out, as before TASK-241
+    rows = [r for r in telemetry_doc_ids() if first30_row(r) == bool(first30) or (first30 and editor is None)]
+    rows = [r for r in rows if first30_row(r) or editor is None or r['row'].startswith(('`editor:', '`edit:')) == editor]
     out = []
     for r in rows:
         hits = 0
@@ -1959,8 +1971,10 @@ def write_coverage():
     if not {'telemetry_levels', 'telemetry_ui'} <= set(TELEMETRY_LOGS):
         return None
     full = 'telemetry_editor' in TELEMETRY_LOGS
-    cov = telemetry_coverage(TELEMETRY_LOGS, editor=None if full else False)
-    cov['scope'] = 'all rows, levels+ui+editor logs' if full else 'non-editor rows, levels+ui logs'
+    f30 = full and 'telemetry_first30' in TELEMETRY_LOGS  # TASK-241: + load:/ctx:/f30: rows vs the first30 log
+    cov = telemetry_coverage(TELEMETRY_LOGS, editor=None if full else False, first30=f30)
+    cov['scope'] = ('all rows, levels+ui+editor+first30 logs' if f30 else 'all rows except load:/ctx:/f30:, levels+ui+editor logs'
+                    if full else 'non-editor rows, levels+ui logs')
     with open(os.path.join(OUT_DIR, 'coverage.json'), 'w') as f:
         json.dump(cov, f, separators=(',', ':'))
     return cov
@@ -3122,12 +3136,13 @@ def f30_run_visitor(page, name):
         {'A': f30_visitor_a, 'B': f30_visitor_b, 'C': lambda v: f30_visitor_c(v, cdp), 'D': f30_visitor_d,
          'E': lambda v: f30_visitor_e(v, cdp)}[name](v)
         full = v.log()
+        debug_full = p.evaluate(FULL_LOG_JS)  # TASK-241: coverage of the load:/ctx:/f30: rows
         log, press, hb = f30_split(full)
         state = p.evaluate("TELEMETRY.f30State()")
         visitor = p.evaluate("TELEMETRY.firstVisitor()")
         debug_all = p.evaluate("ANALYTICS.debugLog.length")
     return {'visitor': visitor, 'startMs': v.start, 'timeline': v.timeline, 'log': log, 'state': state,
-            'press': press, 'hb': hb, 'presses': v.presses, 'full': full,
+            'press': press, 'hb': hb, 'presses': v.presses, 'full': full, 'debugFull': debug_full,
             'debugLogLen': debug_all, 'errors': errors, 'seconds': round(time.time() - t1, 1)}
 
 
@@ -3140,6 +3155,7 @@ def sc_telemetry_first30(page, info):
         backend = p.evaluate("ANALYTICS_BACKEND.backendId")
         frames(p, 3)
         actual = p.evaluate(TELEMETRY_FIRST30_LOG_JS)
+        full_first = p.evaluate(FULL_LOG_JS)  # TASK-241: the first (new visitor) load, for coverage
         first = {'visitor': p.evaluate("TELEMETRY.firstVisitor()"),
                  'stored': p.evaluate("async () => (await PLATFORM.storage.getMany([FIRST_STORE]))[FIRST_STORE]")}
         reload_page(p)
@@ -3148,7 +3164,7 @@ def sc_telemetry_first30(page, info):
         second = {'visitor': p.evaluate("TELEMETRY.firstVisitor()"),
                   'stored': p.evaluate("async () => (await PLATFORM.storage.getMany([FIRST_STORE]))[FIRST_STORE]")}
         full = p.evaluate(FULL_LOG_JS)
-    TELEMETRY_LOGS['telemetry_first30'] = full
+    TELEMETRY_LOGS['telemetry_first30'] = full_first + full
     ids, ids_after = [e[0] for e in actual], [e[0] for e in after]
     vals, order_ok = first30_values(actual)
     vals_after, order_ok_after = first30_values(after)
@@ -3302,6 +3318,12 @@ def sc_telemetry_first30(page, info):
                      'once_per_step': all(w['sentOncePerStep'] for w in win['visitors'].values())}
     win['pass'] = all(win['checks'].values())
     seq['pass'] = bool(seq['pass'] and seq['visitorsPass'])
+    # TASK-241: the scenario's log = both loads + every visitor's debug log; first-30 rows covered by it alone
+    TELEMETRY_LOGS['telemetry_first30'] = full_first + full + [e for r in vis_runs.values() for e in r['debugFull']]
+    seq['coverage'] = telemetry_coverage({'telemetry_first30': TELEMETRY_LOGS['telemetry_first30']}, editor=True, first30=True)
+    allcov = write_coverage()
+    info['telemetryCoverage'] = None if allcov is None else {'scope': allcov['scope'], 'pass': allcov['pass'],
+                                                             'uncovered': allcov['uncovered']}
     for name, d in (('funnel.json', funnel), ('window.json', win), ('targets.json', tg), ('heartbeat.json', hbj)):
         with open(os.path.join(OUT_DIR, name), 'w') as f:
             json.dump(d, f, separators=(',', ':'))
@@ -3314,6 +3336,10 @@ def sc_telemetry_first30(page, info):
                               'targetsPass': tg['pass'], 'heartbeatPass': hbj['pass']})
     if not seq['pass']:
         raise RuntimeError('first30 load/ctx or f30 visitor sequence mismatch (sequence_first30.json)')
+    if not seq['coverage']['pass']:
+        raise RuntimeError('first30 coverage: uncovered %s (sequence_first30.json)' % seq['coverage']['uncovered'])
+    if allcov is not None and not allcov['pass']:
+        raise RuntimeError('telemetry coverage: uncovered %s (coverage.json)' % allcov['uncovered'])
     if not funnel['pass']:
         raise RuntimeError('first30 funnel check failed (funnel.json)')
     if not win['pass']:
