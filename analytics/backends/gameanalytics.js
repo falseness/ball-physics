@@ -4,10 +4,10 @@
 // sanitized every argument. Needs the vendored SDK
 // analytics/vendor/GameAnalytics.min.js (v5.0.0, MIT) loaded before it.
 //
-// GA_KEYS stays empty in the repo. tools/build_release.py --portal itch
-// rewrites that one line with GA_GAME_KEY / GA_SECRET_KEY from the
-// environment; without both keys (or without the SDK) every method is a
-// no-op. Nothing here ever throws into the game.
+// The GameAnalytics keys of the game "ball-physics" are committed in GA_KEYS
+// below (the browser SDK signs requests in the client; see
+// docs/telemetry.md). Without both keys (or without the SDK) every method is
+// a no-op. Nothing here ever throws into the game.
 //
 // GameAnalytics drops events ("SDK is disabled") until its init request has
 // answered, which takes a network round trip after initialize(). Events sent
