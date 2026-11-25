@@ -1,0 +1,1 @@
+start,running,menu_level,resized,level1,level5,level9,level13,level17,level21,level25,level29,l19_rim_backside,progress_garbage,map_play,map_card_plain,lines_reload,lines_storage_blocked,speed_toggle,telemetry_ui
