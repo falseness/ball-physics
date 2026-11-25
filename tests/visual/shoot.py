@@ -2112,6 +2112,9 @@ def speed_hud_compare(out_dir):
         on = Image.open(os.path.join(out_dir, 'speed_on.png')).convert('RGB')
     except FileNotFoundError:
         return
+    if not os.path.exists(SPEED_CONCEPT):  # gitignored artifacts/ absent (clean checkout): visual aid only
+        print('hud_compare skipped: concept missing %s' % SPEED_CONCEPT)
+        return
     con = Image.open(SPEED_CONCEPT).convert('RGB')
     k = off.width / 1280
     crop = lambda im, kk: im.crop((int(930 * kk), int(10 * kk), int(1270 * kk), int(96 * kk)))
