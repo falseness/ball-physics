@@ -44,6 +44,11 @@
 //   editor:actions:<ctx>             value = toolbar button clicks + object edits this session (before exit / abandon)
 //   editor:exit:<ctx>                value = seconds in the editor since open, play-test time excluded
 //   editor:abandon:<ctx>             pagehide while the editor is open (not during a play-test), value = seconds
+// TASK-233: toolbar events (editorToolbar; each counts as one action):
+//   editor:tool:<ctx>:<select|line|portal|delete>, editor:snap:<ctx>:<on|off>,
+//   editor:rotate:<ctx>:<cw|ccw>:<flag|portal|line>, editor:portal_size:<ctx>:<bigger|smaller> (value = new h, 0 = refused),
+//   editor:linek:<ctx>:<inc|dec> (value = lineK after the click), editor:btn:<ctx>:<new|play|export|import|exit>,
+//   editor:import:<ctx>:<ok|invalid|old_format> (editorImportText finished), editor:bar_move:<ctx> (toolbar dragged)
 // Per-user counters: PLATFORM.storage key STATS_STORE ('bp.stats.v1'), JSON
 //   {[srcId]: {attempts, wins, restarts, offmap, abandons, seconds}}; seconds = time inside attempts (wall clock).
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
@@ -223,6 +228,15 @@ const TELEMETRY = (function()
         {
             if (ed && editorActive())
                 ++ed.actions
+        },
+        // TASK-233: toolbar event 'editor:<kind>:<ctx>[:<rest>]' (tool, snap, rotate, portal_size, linek, btn, import,
+        // bar_move); each one is one editor action
+        editorToolbar(kind, rest, value)
+        {
+            if (!ed || !editorActive())
+                return
+            ++ed.actions
+            editorEvent(kind + ':' + ed.ctx + (rest ? ':' + rest : ''), value)
         },
         // 'play' (before the play-test starts) / back from the play-test (after editorMode is on again)
         editorPlay()

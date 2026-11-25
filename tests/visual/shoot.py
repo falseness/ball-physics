@@ -1909,7 +1909,7 @@ def telemetry_doc_ids():
         for line in f:
             if not line.startswith('| ') or line.startswith('| event id') or line.startswith('|--'):
                 continue
-            cell = line.split('|')[1].strip()
+            cell = re.split(r'(?<!\\)\|', line)[1].strip().replace('\\|', '|')  # TASK-233: '\\|' inside a cell
             toks = re.findall(r'`([^`]+)`', cell)
             if not toks:
                 continue
@@ -1918,8 +1918,10 @@ def telemetry_doc_ids():
             elif cell.startswith('facade'):
                 rows.append({'row': cell, 'kind': 'facade', 'fn': toks[0]})
             elif ':' in toks[0]:
-                pat = re.escape(toks[0]).replace(re.escape('<srcId>'), r'\d+').replace(re.escape('<ctx>'), r'(L\d+|map)')
-                pat = pat.replace(re.escape('<from>'), '(menu|win)').replace(re.escape('<h>'), '[0-9a-f]{8}')  # TASK-232
+                ph = {'<srcId>': r'\d+', '<ctx>': r'(L\d+|map)', '<from>': '(menu|win)', '<h>': '[0-9a-f]{8}'}  # TASK-232
+                # TASK-233: '<a|b|c>' = one of the listed words
+                pat = ''.join(ph.get(x, '(' + x[1:-1] + ')' if x.startswith('<') and '|' in x else re.escape(x))
+                              for x in re.split(r'(<[^>]+>)', toks[0]))
                 rows.append({'row': cell, 'kind': 'design', 'regex': '^' + pat + '$'})
     return rows
 
@@ -2083,8 +2085,11 @@ EDITOR_LINE = ((300, 560), (520, 640))
 GA_PART = re.compile(r'^[A-Za-z0-9 \-_.()!?]{1,64}$')
 
 
+EDITOR_BTN_CENTRE_JS = "id => { const b = EDITOR_BUTTONS.find(b => b.id == id); return [b.x + b.w / 2, b.y + b.h / 2] }"
+
+
 def editor_tool(p, bid):
-    click(p, *p.evaluate("id => { const b = EDITOR_BUTTONS.find(b => b.id == id); return [b.x + b.w / 2, b.y + b.h / 2] }", bid))
+    click(p, *p.evaluate(EDITOR_BTN_CENTRE_JS, bid))
 
 
 def fnv1a(s):
@@ -2099,16 +2104,132 @@ def ga_design_id_ok(eid):
     return 1 <= len(parts) <= 5 and all(GA_PART.match(x) for x in parts)
 
 
+# TASK-233: an editor session from the pause menu that clicks every toolbar button: select, snap on / off, ⟳ on the
+# flag, new, lines − twice (the second clamped at 0), lines +, two level lines, a portal pair, ⟲ on the selected portal,
+# size − / size + / size + (refused: portal B's line is too short for h 60), ⟳ on the selected line, the delete tool by a
+# touch tap, a toolbar drag, export, import of the exported file / a non-JSON file / a version 1 file with portals, exit.
+EDITOR_TB_LINE_A = ((150, 300), (650, 300))
+EDITOR_IMPORT_WAIT_JS = """n => ANALYTICS.debugLog.slice(n).some(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('editor:import:'))"""
+
+
+def toolbar_session(p, tb, step):
+    open_menu(p)
+    click(p, *p.evaluate(EDITOR_BUTTON_JS))
+    if not p.evaluate("editorMode"):
+        raise RuntimeError('menu editor button did not open the editor (toolbar session)')
+    step('open menu toolbar')
+    tb('select')
+    tb('snap')
+    tb('snap')
+    if p.evaluate("editor.snap"):
+        raise RuntimeError('snap is still on')
+    tb('flagCW')  # nothing selected: the flag
+    tb('new')
+    if p.evaluate("editor.level.lines.length") != 0:
+        raise RuntimeError('new did not empty the level')
+    tb('linesDec')
+    tb('linesDec')  # clamped at 0
+    tb('linesInc')
+    if p.evaluate("editor.level.lineK") != 1:
+        raise RuntimeError('lineK not back at 1')
+    step('new + lineK')
+    r = p.evaluate("ball.radius")
+    hmax = p.evaluate("EDITOR_PORTAL_H") + p.evaluate("EDITOR_PORTAL_H_STEP")
+    lb = 2 * (hmax - 8 + r)  # fits h 45, not h 60
+    line_b = ((150, 500), (150 + lb, 500))
+    tb('line')
+    for a, b in (EDITOR_TB_LINE_A, line_b):
+        click(p, *a)
+        click(p, *b)
+    if p.evaluate("editor.level.lines.length") != 2:
+        raise RuntimeError('line tool did not add two lines')
+    tb('portal')
+    click(p, 400, 290)
+    click(p, 150 + lb / 2, 490)
+    if p.evaluate("editor.level.portals.length") != 2:
+        raise RuntimeError('portal tool did not place a pair')
+    step('lines + portals')
+    tb('select')
+    click(p, *p.evaluate("(() => { const P = editorPortals()[0]; return [P.x, P.y] })()"))
+    if not p.evaluate("!!editorSelectedPortal()"):
+        raise RuntimeError('portal A not selected')
+    tb('flagCCW')
+    tb('portalSmaller')
+    tb('portalBigger')
+    tb('portalBigger')  # refused: portal does not fit on line B
+    if p.evaluate("editor.level.portals[0].h") != hmax - p.evaluate("EDITOR_PORTAL_H_STEP"):
+        raise RuntimeError('refused resize changed h')
+    step('portal edits')
+    click(p, 600, 300)
+    if not p.evaluate("!!editorSelectedLine()"):
+        raise RuntimeError('line A not selected')
+    tb('flagCW')
+    tb('delete', touch=True)
+    if p.evaluate("editor.tool") != 'delete':
+        raise RuntimeError('touch tap did not pick the delete tool')
+    step('line rotate + delete tool (touch)')
+    R = p.evaluate("editorBarRect()")
+    gx, gy = R[0] + 3, R[1] + R[3] / 2  # left pad of the panel (no button)
+    n = p.evaluate("ANALYTICS.debugLog.length")
+    p.mouse.move(*to_client(p, gx, gy))
+    p.mouse.down()
+    p.mouse.move(*to_client(p, gx + 20, gy + 300), steps=5)
+    p.mouse.up()
+    frames(p)
+    if p.evaluate("editorBarRect()")[1] == R[1]:
+        raise RuntimeError('toolbar drag did not move the panel')
+    toolbar_drag = p.evaluate("n => ANALYTICS.debugLog.slice(n).filter(e => e.fn == 'addDesignEvent').map(e => e.args[0])", n)
+    step('toolbar drag')
+    with p.expect_download() as dl:
+        tb('export')
+    files = {'ok': os.path.join(OUT_DIR, 'import_ok.json'), 'invalid': os.path.join(OUT_DIR, 'import_invalid.json'),
+             'old_format': os.path.join(OUT_DIR, 'import_old_format.json')}
+    dl.value.save_as(files['ok'])
+    with open(files['invalid'], 'w') as f:
+        f.write('this is not a level file')
+    with open(files['old_format'], 'w') as f:
+        json.dump({'version': 1, 'ballX': 200, 'ballY': 200, 'flagX': 1000, 'flagY': 600, 'flagRotate': 0, 'lineK': 1,
+                   'lines': [[100, 300, 600, 300]], 'portals': [{'x': 300, 'y': 200, 'angle': 0}, {'x': 500, 'y': 200, 'angle': 0}]}, f)
+    for kind in ('ok', 'invalid', 'old_format'):
+        def pick(path=files[kind]):
+            n = p.evaluate("ANALYTICS.debugLog.length")
+            p.set_input_files('#editorImportFile', path)
+            p.wait_for_function(EDITOR_IMPORT_WAIT_JS, arg=n, timeout=10000, polling=50)
+        tb('import', after=pick)
+    step('import x3')
+    tb('exit')
+    if p.evaluate("editorMode"):
+        raise RuntimeError('exit did not close the editor (toolbar session)')
+    step('exit toolbar')
+    return toolbar_drag
+
+
 def sc_telemetry_editor(page, info):
     with open(TELEMETRY_EDITOR_EXPECTED) as f:
         want = json.load(f)
     errors, steps = [], []
-    with telemetry_page(page, errors) as p:
+    buttons = {}  # TASK-233: toolbar button id -> editor: event ids its clicks produced
+    with telemetry_page(page, errors, has_touch=True) as p:
         backend = p.evaluate("ANALYTICS_BACKEND.backendId")
 
         def step(name):
             steps.append({'step': name, 'editorMode': p.evaluate("editorMode"), 'playtest': p.evaluate("!!playtestLevel"),
                           'logLength': p.evaluate("ANALYTICS.debugLog.length")})
+
+        def tb(bid, touch=False, after=None):
+            # one toolbar button click (or touch tap); after() runs before the events are collected (import: pick a file)
+            n = p.evaluate("ANALYTICS.debugLog.length")
+            if touch:
+                p.touchscreen.tap(*to_client(p, *p.evaluate(EDITOR_BTN_CENTRE_JS, bid)))
+                frames(p)
+            else:
+                editor_tool(p, bid)
+            if after:
+                after()
+            new = p.evaluate("n => ANALYTICS.debugLog.slice(n).filter(e => e.fn == 'addDesignEvent' &&"
+                             " String(e.args[0]).startsWith('editor:')).map(e => e.args[0])", n)
+            buttons.setdefault(bid, []).extend(new)
+            return new
         if p.evaluate("levels[thisLevel].srcId") != 1:
             raise RuntimeError('boot did not open srcId 1')
         step('boot')
@@ -2118,13 +2239,13 @@ def sc_telemetry_editor(page, info):
             raise RuntimeError('menu editor button did not open the editor')
         step('open menu')
         n0 = p.evaluate("editor.level.lines.length")
-        editor_tool(p, 'line')
+        tb('line')
         click(p, *EDITOR_LINE[0])
         click(p, *EDITOR_LINE[1])
         if p.evaluate("editor.level.lines.length") != n0 + 1:
             raise RuntimeError('line tool did not add a line')
         step('line')
-        editor_tool(p, 'play')
+        tb('play')
         if p.evaluate("editorMode") or not p.evaluate("!!playtestLevel"):
             raise RuntimeError('play did not start a play-test')
         frames(p, 10)
@@ -2134,11 +2255,11 @@ def sc_telemetry_editor(page, info):
             raise RuntimeError('edit box did not return to the editor')
         step('back')
         with p.expect_download() as dl:
-            editor_tool(p, 'export')
+            tb('export')
         exported = dl.value.suggested_filename
         step('export')
         level_json = p.evaluate("editorLevelToJSON(editor.level)")
-        editor_tool(p, 'exit')
+        tb('exit')
         if p.evaluate("editorMode") or p.evaluate("levels[thisLevel].lines.length") != n0 + 1:
             raise RuntimeError('exit did not write the line back')
         step('exit')
@@ -2150,10 +2271,11 @@ def sc_telemetry_editor(page, info):
         if not p.evaluate("editorMode"):
             raise RuntimeError('win window editor button did not open the editor')
         step('open win')
-        editor_tool(p, 'exit')
+        tb('exit')
         if p.evaluate("editorMode"):
             raise RuntimeError('exit did not close the editor')
         step('exit unchanged')
+        toolbar_drag = toolbar_session(p, tb, step)
         open_menu(p)
         click(p, *p.evaluate(EDITOR_BUTTON_JS))
         if not p.evaluate("editorMode"):
@@ -2163,6 +2285,7 @@ def sc_telemetry_editor(page, info):
         step('pagehide')
         actual = p.evaluate(TELEMETRY_EDITOR_LOG_JS)
         full = p.evaluate(FULL_LOG_JS)
+        bspec = p.evaluate("EDITOR_BUTTONS.map(b => ({id: b.id, kind: b.kind}))")
         hv = p.evaluate("""() => {
             const A = editorCloneLevel(levels[thisLevel]), B = editorCloneLevel(levels[thisLevel])
             const C = editorCloneLevel(levels[thisLevel]); C.lines[0].posX += 1
@@ -2191,9 +2314,25 @@ def sc_telemetry_editor(page, info):
         json.dump(seq, f, separators=(',', ':'))
     with open(os.path.join(OUT_DIR, 'hash.json'), 'w') as f:
         json.dump(hj, f, separators=(',', ':'))
-    info['telemetry'] = {'sequencePass': seq['pass'], 'hashPass': hj['pass'], 'events': len(actual)}
+    # TASK-233: every EDITOR_BUTTONS id of kind tool / toggle / action with the editor: events its clicks produced
+    ids_kinds = [(b['id'], b['kind']) for b in bspec]
+    bj = {'source': 'EDITOR_BUTTONS (js/editor.js), kinds tool/toggle/action', 'toolbarDrag': toolbar_drag,
+          'buttons': [{'id': i, 'kind': k, 'events': buttons.get(i, [])} for i, k in ids_kinds if k != 'value']}
+    bj['zeroEvents'] = [b['id'] for b in bj['buttons'] if not b['events']]
+    bj['importOutcomes'] = sorted({e.split(':')[3] for e in buttons.get('import', []) if e.startswith('editor:import:')})
+    bj['refusedResize'] = [e for e in actual if e[1].startswith('editor:portal_size:') and e[2] == 0]
+    bj['lineKClampAt0'] = [e for e in actual if e[1].startswith('editor:linek:') and e[1].endswith(':dec') and e[2] == 0]
+    bj['rotateTargets'] = sorted({e.split(':')[4] for e in ids if e.startswith('editor:rotate:')})
+    bj['pass'] = bool(bj['buttons'] and not bj['zeroEvents'] and bj['importOutcomes'] == ['invalid', 'ok', 'old_format']
+                      and bj['refusedResize'] and len(bj['lineKClampAt0']) >= 2 and bj['rotateTargets'] == ['flag', 'line', 'portal']
+                      and any(e.startswith('editor:bar_move:') for e in toolbar_drag))
+    with open(os.path.join(OUT_DIR, 'buttons.json'), 'w') as f:
+        json.dump(bj, f, separators=(',', ':'))
+    info['telemetry'] = {'sequencePass': seq['pass'], 'hashPass': hj['pass'], 'buttonsPass': bj['pass'], 'events': len(actual)}
     if not seq['pass']:
         raise RuntimeError('telemetry editor sequence mismatch (sequence_editor.json)')
+    if not bj['pass']:
+        raise RuntimeError('toolbar button coverage failed (buttons.json)')
     if not hj['pass']:
         raise RuntimeError('levelHash check failed (hash.json)')
 

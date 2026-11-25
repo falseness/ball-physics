@@ -1,9 +1,19 @@
 {
- "note": "TASK-232: editor: design events of shoot.py telemetry_editor (none backend), in order. Script: editor from the pause menu, line tool + one line (300,560)-(520,640), play, HUD edit box back, export, exit (actions 5 = line tool, line, play, export, exit); win, completion window editor button, exit unchanged (actions 1 = exit); editor from the menu, pagehide (abandon, actions 0). Hash dd4a6cc4 = FNV-1a of editorLevelToJSON of level srcId 1 + that line. time>0 = any number > 0.",
+ "note": "TASK-232/233: editor: design events of shoot.py telemetry_editor (none backend), in order. Script: editor from the pause menu, line tool + one line (300,560)-(520,640), play, HUD edit box back, export, exit (actions 5 = line tool, line, play, export, exit); win, completion window editor button, exit unchanged (actions 1 = exit); TASK-233 toolbar session (toolbar_session): editor from the menu, select, snap on/off, flag cw, new, lines - x2 (clamped at 0), lines +, line tool + 2 lines, portal tool + pair, select + portal A, ccw (portal), size - (30), size + (45), size + (refused, 0), select line A, cw (line), delete tool (touch tap), toolbar drag, export, import ok / invalid / old_format, exit (actions 29 = 26 toolbar events + 2 lines + 1 portal pair); editor from the menu, pagehide (abandon, actions 0). Hash dd4a6cc4 = FNV-1a of editorLevelToJSON of level srcId 1 + that line; ea6a7443 = the toolbar session's level. time>0 = any number > 0.",
  "events": [
   [
    "addDesignEvent",
    "editor:open:L1:menu",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:tool:L1:line",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:play",
    null
   ],
   [
@@ -28,6 +38,11 @@
   ],
   [
    "addDesignEvent",
+   "editor:btn:L1:export",
+   null
+  ],
+  [
+   "addDesignEvent",
    "editor:sum:L1:dd4a6cc4:lines",
    4
   ],
@@ -45,6 +60,11 @@
    "addDesignEvent",
    "editor:sum:L1:dd4a6cc4:changed",
    1
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:exit",
+   null
   ],
   [
    "addDesignEvent",
@@ -83,6 +103,11 @@
   ],
   [
    "addDesignEvent",
+   "editor:btn:L1:exit",
+   null
+  ],
+  [
+   "addDesignEvent",
    "editor:sum:L1:dd4a6cc4:lines",
    4
   ],
@@ -105,6 +130,191 @@
    "addDesignEvent",
    "editor:actions:L1",
    1
+  ],
+  [
+   "addDesignEvent",
+   "editor:exit:L1",
+   "time>0"
+  ],
+  [
+   "addDesignEvent",
+   "editor:open:L1:menu",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:tool:L1:select",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:snap:L1:on",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:snap:L1:off",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:rotate:L1:cw:flag",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:new",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:linek:L1:dec",
+   0
+  ],
+  [
+   "addDesignEvent",
+   "editor:linek:L1:dec",
+   0
+  ],
+  [
+   "addDesignEvent",
+   "editor:linek:L1:inc",
+   1
+  ],
+  [
+   "addDesignEvent",
+   "editor:tool:L1:line",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:tool:L1:portal",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:tool:L1:select",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:rotate:L1:ccw:portal",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:portal_size:L1:smaller",
+   30
+  ],
+  [
+   "addDesignEvent",
+   "editor:portal_size:L1:bigger",
+   45
+  ],
+  [
+   "addDesignEvent",
+   "editor:portal_size:L1:bigger",
+   0
+  ],
+  [
+   "addDesignEvent",
+   "editor:rotate:L1:cw:line",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:tool:L1:delete",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:bar_move:L1",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:export",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:lines",
+   2
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:portals",
+   2
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:linek",
+   1
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:changed",
+   1
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:import",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:import:L1:ok",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:import",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:import:L1:invalid",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:import",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:import:L1:old_format",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:btn:L1:exit",
+   null
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:lines",
+   2
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:portals",
+   2
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:linek",
+   1
+  ],
+  [
+   "addDesignEvent",
+   "editor:sum:L1:ea6a7443:changed",
+   1
+  ],
+  [
+   "addDesignEvent",
+   "editor:actions:L1",
+   29
   ],
   [
    "addDesignEvent",

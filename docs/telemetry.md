@@ -110,6 +110,14 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `editor:actions:<ctx>` | right before `editor:exit` / `editor:abandon` | toolbar button clicks + object edits this editor session | TASK-232 |
 | `editor:exit:<ctx>` | toolbar `exit` (after the summary and `actions`) | seconds in the editor since open, play-test time excluded | TASK-232 |
 | `editor:abandon:<ctx>` | `pagehide` while the editor is open (not during a play-test), after `actions` | seconds, as `exit` | TASK-232 |
+| `editor:tool:<ctx>:<select\|line\|portal\|delete>` | a tool button | - | TASK-233 |
+| `editor:snap:<ctx>:<on\|off>` | the `snap` toggle (state after the click) | - | TASK-233 |
+| `editor:rotate:<ctx>:<cw\|ccw>:<flag\|portal\|line>` | ⟳ / ⟲; the last part is what the button rotated (selected portal, selected line, else the flag) | - | TASK-233 |
+| `editor:portal_size:<ctx>:<bigger\|smaller>` | `size +` / `size −` | new opening h; 0 = refused or no change (no portal selected, limit, does not fit) | TASK-233 |
+| `editor:linek:<ctx>:<inc\|dec>` | `lines +` / `lines −` | `lineK` after the click (also when clamped at 0 / 5) | TASK-233 |
+| `editor:btn:<ctx>:<new\|play\|export\|import\|exit>` | an action button, before its action (so before the `sum` rows of `play` / `export` / `exit`) | - | TASK-233 |
+| `editor:import:<ctx>:<ok\|invalid\|old_format>` | `editorImportText` finished (after the picked file was read) | - | TASK-233 |
+| `editor:bar_move:<ctx>` | a toolbar drag that moved the panel (mouseup / touchend) | - | TASK-233 |
 
 Order on a restart: `restart`, then `Fail` (only for an unwon attempt), then `Start` + `attempt`.
 Order on an off-map: `fail:offmap`, `Fail`, then `Start` + `attempt`.
@@ -139,7 +147,11 @@ or one object edit: a field click (line / portal / delete tool), a dropped drag 
 `editorLevelToJSON` of the working copy. Refused or no-op edits do not count. Play-test time is subtracted from the
 `exit` / `abandon` seconds. Script and expected list: shoot.py `telemetry_editor`, tests/visual/telemetry_expected_editor.json.
 
-Order at `exit`: `sum:...:lines`, `portals`, `linek`, `changed`, `actions`, `exit`. Order on `pagehide` with the editor open:
+TASK-233: every toolbar event above (`tool`, `snap`, `rotate`, `portal_size`, `linek`, `btn`, `import`, `bar_move`)
+is one editor action (it replaces the plain button-click count of TASK-232; an `import` thus counts `btn` and the
+outcome). They are sent from `editorClick` / `editorMouseUp` / `editorImportText`, which mouse and touch input share.
+
+Order at `exit`: `btn:...:exit`, `sum:...:lines`, `portals`, `linek`, `changed`, `actions`, `exit`. Order on `pagehide` with the editor open:
 `editor:actions`, `editor:abandon`, then the level / session events below.
 
 On `pagehide`: `abandon` / `Fail` for an unwon attempt, `session:levels_seen`, then `flush` and `endSession`.

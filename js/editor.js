@@ -236,14 +236,16 @@ function editorClick(coords)
             editorCountEdit(() => editorDeleteAt(coords))
         return
     }
-    TELEMETRY.editorAction() // TASK-232: every toolbar button click (tool, toggle, action)
+    // TASK-233: every toolbar button click sends one editor: event (one editor action each)
     if (b.kind == 'toggle')
     {
         editor[b.id] = !editor[b.id] // 'snap': kept across tool changes and play-tests until the editor reopens
+        TELEMETRY.editorToolbar(b.id, editor[b.id] ? 'on' : 'off')
         return
     }
     if (b.kind == 'tool')
     {
+        TELEMETRY.editorToolbar('tool', b.id)
         editor.tool = b.id
         editor.pending = null
         editor.portalPending = null
@@ -254,20 +256,36 @@ function editorClick(coords)
     editor.lastAction = b.id
     editor.actions++
     const W = editor.level
+    const rot = b.id == 'flagCW' ? 'cw' : 'ccw'
     if ((b.id == 'flagCCW' || b.id == 'flagCW') && editorSelectedPortal())
+    {
         editorRotatePortal(editorSelectedPortal(), b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP)
+        TELEMETRY.editorToolbar('rotate', rot + ':portal')
+    }
     else if ((b.id == 'flagCCW' || b.id == 'flagCW') && editorSelectedLine())
+    {
         editorRotateLine(editorSelectedLine(), b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP)
+        TELEMETRY.editorToolbar('rotate', rot + ':line')
+    }
     else if (b.id == 'flagCCW' || b.id == 'flagCW')
     {
         W.flagRotate += b.id == 'flagCW' ? EDITOR_FLAG_STEP : -EDITOR_FLAG_STEP
         editor.flagPoly = editorFlagPolygon(W.flagRotate)
+        TELEMETRY.editorToolbar('rotate', rot + ':flag')
     }
     else if (b.id == 'portalSmaller' || b.id == 'portalBigger')
-        editorResizePortals(b.id == 'portalBigger' ? EDITOR_PORTAL_H_STEP : -EDITOR_PORTAL_H_STEP)
+    {
+        const ok = editorResizePortals(b.id == 'portalBigger' ? EDITOR_PORTAL_H_STEP : -EDITOR_PORTAL_H_STEP)
+        TELEMETRY.editorToolbar('portal_size', b.id == 'portalBigger' ? 'bigger' : 'smaller', ok ? editorSelectedPortal().h : 0)
+    }
     else if (b.id == 'linesDec' || b.id == 'linesInc')
+    {
         W.lineK = Math.max(0, Math.min(EDITOR_MAX_LINEK, W.lineK + (b.id == 'linesInc' ? 1 : -1)))
-    else if (b.id == 'new')
+        TELEMETRY.editorToolbar('linek', b.id == 'linesInc' ? 'inc' : 'dec', W.lineK)
+    }
+    else // new, play, export, import, exit: the event goes first (play / exit leave the editor)
+        TELEMETRY.editorToolbar('btn', b.id)
+    if (b.id == 'new')
         editorNewLevel()
     else if (b.id == 'play')
         editorStartPlaytest()
@@ -537,7 +555,10 @@ function editorMouseUpDrop(coords)
         editorBarMoveTo(coords[0] + bd.dx, coords[1] + bd.dy)
         const R = editorBarRect()
         if (R[0] != bd.x0 || R[1] != bd.y0)
+        {
             editor.barDropAt = [coords[0], coords[1]] // swallow the click that follows this mouseup
+            TELEMETRY.editorToolbar('bar_move') // TASK-233
+        }
         editorBarSave()
         return
     }
@@ -1155,9 +1176,11 @@ function editorImportText(text)
     }
     if (!L || !editorMode || !editor.level)
     {
+        TELEMETRY.editorToolbar('import', err == 'old portal format' ? 'old_format' : 'invalid') // TASK-233 (gated: editor on)
         editorShowError(err, EDITOR_IMPORT_ERROR_MS)
         return false
     }
+    TELEMETRY.editorToolbar('import', 'ok') // TASK-233
     editor.level = L
     editor.pending = null
     editor.drag = null
@@ -1188,7 +1211,7 @@ function editorImportInput()
         input.value = '' // the same file can be picked again
         if (!f)
             return
-        f.text().then(editorImportText, () => editorShowError('invalid level file', EDITOR_IMPORT_ERROR_MS))
+        f.text().then(editorImportText, () => editorImportText('')) // unreadable file: 'invalid level file' (+ TASK-233 event)
     })
     document.body.appendChild(input)
     return input
