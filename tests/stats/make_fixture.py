@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Writes tests/stats/fixture/*.jsonl (TASK-195): hand-written tap records for tools/stats_report.py.
 
-2 users (user-a: 1 session over 2 batches + a re-sent batch; user-b: 2 sessions), 3 levels (srcId 1, 2, 3),
+3 users (user-a: 1 session over 2 batches + a re-sent batch; user-b: 2 sessions; user-c (TASK-216): 1 session sc1
+across UTC midnight, split over the 2026-11-20 and 2026-11-21 per-key files), 3 levels (srcId 1, 2, 3),
 wins, restarts, off-map, abandon, all 15 buttons, every line event; one test record, one unparsable line,
 one bodiless OPTIONS record and one other-game record in an old combined file, one other-game per-key file.
 Expected report: tests/stats/fixture_expected.json (written by hand, not by this script).
@@ -60,6 +61,10 @@ b2 = B2(['user', 'Start:L1', ('level:1:attempt', 4), ('lines:1:place', 1), ('lin
          ('session:play_seconds', 60), ('session:play_seconds', 120), ('end', 130)])
 t1 = [ev('user-test', 'st1', 'test-live-20261121', s) for s in ['user', 'Start:L1', ('level:1:attempt', 1)]]
 g1 = [ev('user-g', 'sg1', '1.0.0', s) for s in ['user', ('level:1:attempt', 1)]]
+C = lambda specs: [ev('user-c', 'sc1', '1.0.0', s) for s in specs]
+c1 = C(['user', 'Start:L1', ('level:1:attempt', 1), ('session:play_seconds', 30)])  # 2026-11-20 23:59:30Z
+c2 = C([('level:1:win', 50), ('level:1:win_attempt', 1), 'level:1:first_win', 'Complete:L1',
+        ('session:play_seconds', 60), ('end', 90)])  # 2026-11-21 00:00:40Z, next day's file
 
 files = {
     'events-2026-11-19.jsonl': [  # old combined file: only lines whose path holds KEY count
@@ -73,8 +78,10 @@ files = {
         rec('2026-11-20T10:05:00.000Z', EV, a2),
         rec('2026-11-20T10:06:00.000Z', EV, a2),  # SDK re-send of the same batch: duplicates by event_uuid
         rec('2026-11-20T12:00:00.000Z', EV, b1),
-        rec('2026-11-20T13:00:00.000Z', EV, b2)],
+        rec('2026-11-20T13:00:00.000Z', EV, b2),
+        rec('2026-11-20T23:59:30.000Z', EV, c1)],
     f'events-{KEY}-2026-11-21.jsonl': [
+        rec('2026-11-21T00:00:40.000Z', EV, c2),
         rec('2026-11-21T08:00:00.000Z', EV, t1, test=True),
         '{"ts":"2026-11-21T08:01:00.000Z","test":false,"path":"/v2/' + KEY + '/events","body":[{"v":2,'],  # cut line
     f'events-{OTHER}-2026-11-20.jsonl': [rec('2026-11-20T11:00:00.000Z', f'/v2/{OTHER}/events', g1)],
