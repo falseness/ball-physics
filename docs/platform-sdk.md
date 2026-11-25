@@ -1,5 +1,11 @@
 # Platform SDK map (facade backends)
 
+> **Ball-physics note:** this file is the grapnelninja copy, kept unchanged below. In ball-physics the
+> GameAnalytics keys ARE committed, in `analytics/backends/gameanalytics.js` `GA_KEYS` (see `docs/telemetry.md`;
+> the GA JS SDK signs events in the client). The `tools/*.py` build and test scripts named below belong to
+> grapnelninja and do not exist here; the ball-physics checks are `tests/platform/test_backends.py`,
+> `tests/platform/test_analytics.py`, `tests/platform/live_check.py` and `tests/platform/tap_split_check.py`.
+
 The game only calls `PLATFORM` (platform.js, the facade). Every public method
 delegates to the same-named inner method of `PLATFORM_BACKEND`, defined by one
 backend file under `platform/backends/`:
