@@ -432,11 +432,10 @@ LEVEL11_MAX_FRAMES = 3000
 LEVEL12_LINE = ((312, 214), (388, 240))
 LEVEL12_MAX_FRAMES = 3000
 
-# Level 13 'accelerator' reference solution (TASK-204, lineK 1; was TASK-074's ramp + (589,381)-(712,393) kicker, lineK 4):
-# under the contact physics the TASK-074 ramp under the ball wins on its own: the ball rolls right onto floor portal A,
-# loops A -> B (shelf underside) twice, gaining speed, and reaches the flag (won on physics frame 241). G3: 5 of 8
-# single-coordinate +-2 px variants also win (artifacts/TASK-204/gates_13.json).
-LEVEL13_LINES = (((381, 679), (696, 744)),)
+# Level 13 'accelerator' reference solution (TASK-074's ramp under the ball + (589,381)-(712,393) kicker). TASK-244: the
+# level is restored to its pre-TASK-202 layout (TASK-243) and so is this reference; under the contact physics it still
+# wins (physics frame 262), 12 of 16 single-coordinate +-2 px variants also win (artifacts/TASK-244/refs.json).
+LEVEL13_LINES = (((381, 679), (696, 744)), ((589, 381), (712, 393)))
 LEVEL13_MAX_FRAMES = 3000
 
 # Level 14 (srcId 14) solution: one long ramp under the ball. The ball rolls down it into portal A, comes out of B
@@ -665,7 +664,8 @@ LEVEL32_MAX_FRAMES = 1500
 # Levels 1-5 (srcId 1-5, no portals) references re-found for the TASK-199/200 contact physics (TASK-202): each is the
 # best of the winning random candidates of tools/level_search.py sample runs, ranked by the share of its single-
 # coordinate +-2 px variants that also win (all 100 %), with every drop-one variant losing (artifacts/TASK-202/search).
-# Levels 1, 2 and 3 got new layouts in TASK-202 (js/levels.js). Keep these exact integer coordinates.
+# TASK-202 gave levels 1, 2 and 3 new layouts; TASK-243 restored their pre-TASK-202 layouts and these references still
+# win on them (TASK-244, artifacts/TASK-244/refs.json). Keep these exact integer coordinates.
 LEVEL1_LINES = [((537, 248), (83, 689))]
 LEVEL1_MAX_FRAMES = 1500
 LEVEL2_LINES = [((532, 325), (99, 714))]
@@ -685,7 +685,10 @@ LEVEL7_LINES = [((964, 269), (393, 350))]
 LEVEL7_MAX_FRAMES = 1500
 LEVEL8_LINES = [((453, 480), (0, 565))]
 LEVEL8_MAX_FRAMES = 1500
-LEVEL9_LINES = [((476, 208), (188, 259))]  # level 9 layout changed in TASK-203 (wider gap in the x = 630 wall)
+# TASK-244: level 9 is back on its pre-TASK-203 layout (TASK-243) and the TASK-203 line (476,208)-(188,259) loses on it
+# (off the map); re-found by tools/level_search.py (sample 3000: 1 win, then a local scan around the old line and that
+# win, ranked by +-2 px robustness): the old line with its left end 32 px further left wins on frame 138, 6/8 variants.
+LEVEL9_LINES = [((476, 208), (156, 259))]
 LEVEL9_MAX_FRAMES = 1500
 LEVEL10_LINES = [((0, 460), (120, 580)), ((837, 355), (495, 687))]
 LEVEL10_MAX_FRAMES = 1500
