@@ -499,7 +499,10 @@ LEVEL19_MAX_FRAMES = 1500
 # divider (x 500..1000, y 460..780, length 40..260; artifacts/TASK-133/search_ref.json: 49 wins), then --mode local
 # (+-2 px): 22 of the 24 single-coordinate variants also win (artifacts/TASK-133/local_ref.json).
 # Keep these exact integer coordinates.
-LEVEL20_LINES = [((260, 395), (460, 420)), ((560, 460), (240, 760)), ((660, 500), (820, 580))]
+# TASK-207: under the contact physics the old reference (260,395)-(460,420), (560,460)-(240,760) loses (the ball
+# leaves B's stream off the map, frame 166); lines 1-2 re-found from single-coordinate +-10..60 px shifts of the old
+# reference, then --mode local: 24/24 +-2 px variants win, the reference wins on frame 182 (one A->B teleport).
+LEVEL20_LINES = [((220, 395), (420, 420)), ((560, 460), (280, 800)), ((660, 500), (820, 580))]
 LEVEL20_MAX_FRAMES = 1500
 
 # Level 21 (srcId 21, lineK 2) solution: a shallow ramp from just under the resting ball down-left off its pad (the ball

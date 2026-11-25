@@ -455,7 +455,10 @@ levels.push(
         new Line(820, 320, 980, 320, dotRadius, levelLineColor, 'line'),
         new Line(480, 760, 680, 560, dotRadius, levelLineColor, 'line'),
         new Line(140, 260, 300, 260, dotRadius, levelLineColor, 'line'),
-        new Line(140, 80, 300, 80, dotRadius, levelLineColor, 'line')
+        new Line(140, 80, 300, 80, dotRadius, levelLineColor, 'line'),
+        // TASK-207: guard right of the flag, above B's rightward exit stream: a ball bounced back from the right
+        // (one-line win under the contact physics) cannot reach the flag from the side
+        new Line(330, 20, 330, 170, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (580, 660) on the slope facing up-left
     // (-0.71, -0.71), B at (220, 260) on the pad facing up (0, -1)
