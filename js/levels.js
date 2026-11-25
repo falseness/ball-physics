@@ -779,7 +779,16 @@ levels.push(
         new Line(840, 260, 960, 260, dotRadius, levelLineColor, 'line'),
         new Line(1100, 300, 1200, 300, dotRadius, levelLineColor, 'line'),
         new Line(1100, 300, 1100, 790, dotRadius, levelLineColor, 'line'),
-        new Line(1200, 300, 1200, 790, dotRadius, levelLineColor, 'line')
+        new Line(1200, 300, 1200, 790, dotRadius, levelLineColor, 'line'),
+        // TASK-212 guard (line 8, after the portal hosts): under the contact physics one long ramp from the top left
+        // fed A diagonally, so B threw the ball up-left short of the top edge; it fell back onto the same ramp and
+        // bounced over to the flag (dense1 one-line wins). This steep slope above the shaft turns such an up-left
+        // ball straight up and out through the top; the reference (roof right of x 780) never reaches it.
+        new Line(715, 0, 765, 175, dotRadius, levelLineColor, 'line'),
+        // TASK-212 deflector (line 9): a one-line ramp ending inside the shaft let the ball skid left along the shaft
+        // floor into A, so B threw it out flat (vx ~18) straight into the flag. This slope between B's plate and the
+        // flag tower turns such a flat exit down-left to the floor; the reference arcs over it (y ~150 at x 1030).
+        new Line(1030, 215, 1070, 300, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 780) in the shaft floor facing up
     // (0, -1), B at (900, 260) in the floating plate facing up (0, -1); same facing, so a teleport reverses the velocity

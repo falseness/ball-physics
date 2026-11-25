@@ -640,7 +640,10 @@ LEVEL30_MAX_FRAMES = 1500
 # line 4 under the bell, 64/3780 wins; artifacts/TASK-157/search_ref.json). TASK-158 lengthened line 3 by 3 px at
 # each end (was (99,566)->(141,524)): tools/level_search.py --mode local then wins 17/32 single-coordinate +-2 px
 # variants instead of 15/32 (artifacts/TASK-158/g3_local.json); keep these exact integer coordinates.
-LEVEL31_LINES = [((1140, 430), (1220, 380)), ((735, 777), (785, 743)), ((96, 569), (144, 521)), ((521, 591), (561, 549))]
+# TASK-212 (contact physics): the old reference still won (frame 122) but entered door A at y ~757, on the opening's
+# lower edge, so only 12/32 +-2 px variants won (no line-2 or line-3 shift did). Line 2 moved to a lattice winner
+# (lines 1, 3, 4 kept; 4/1886 win, best local): (780,730)-(840,690), win frame 124 (A->B), 22/32 variants win.
+LEVEL31_LINES = [((1140, 430), (1220, 380)), ((780, 730), (840, 690)), ((96, 569), (144, 521)), ((521, 591), (561, 549))]
 LEVEL31_MAX_FRAMES = 1500
 # Level 32 ('under the wall', TASK-159, lineK 3; reference solution): line 1 kicks the ball, which bounces in place on its
 # pad, off to the right; line 2 turns the falling ball flat into the low tunnel under the lid, so it drops into the left
@@ -649,7 +652,10 @@ LEVEL31_MAX_FRAMES = 1500
 # the flag shaft (AB, BA). Found by a staged scan (artifacts/TASK-159/search/probe.py: 8 kicks x 1838 feed lines, 60
 # reach A; then line 3 right of B, 54/3459 wins; this one's +-2 px neighbourhood wins 24/24;
 # artifacts/TASK-159/search_ref.json); keep these exact integer coordinates.
-LEVEL32_LINES = [((154, 360), (217, 390)), ((326, 645), (420, 670)), ((893, 682), (863, 598))]
+# TASK-212 (contact physics): the old line 3 (893,682)-(863,598) sent the ball back into B (AB, BA, AB) and off the
+# map on frame 143; line 3's lower end moved down 40 px (single-coordinate +-10..60 px shift search, 17/143 win, then
+# --mode local on the best 4): (893,722)-(863,598) wins on frame 93 (AB, BA), 21/24 +-2 px variants win.
+LEVEL32_LINES = [((154, 360), (217, 390)), ((326, 645), (420, 670)), ((893, 722), (863, 598))]
 LEVEL32_MAX_FRAMES = 1500
 
 # Levels 1-5 (srcId 1-5, no portals) references re-found for the TASK-199/200 contact physics (TASK-202): each is the
