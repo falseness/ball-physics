@@ -83,6 +83,22 @@ const STATS_STORE = 'bp.stats.v1'
 // (no navigation entry) sends -1. Entries come from performance.getEntriesByType, else from a buffered
 // PerformanceObserver (some environments stub the performance object, e.g. test fake clocks).
 const FIRST_STORE = 'bp.first.v1'
+// TASK-239: first-30-seconds funnel. The window is t0..t0+30 s (F30_WINDOW_MS). Each step is sent once per page load,
+// at its first occurrence inside the window, as 'f30:<k>:<step>' (value = integer ms since t0); <k> = 'new' for a
+// visitor's first-ever session (no bp.first.v1 at boot), else 'ret'. Steps in funnel order (index = position + 1):
+//   pointer:    first_move (mousemove / touchmove), first_press (mousedown / touchstart anywhere)
+//   line:       point1 (a line's first point: handleClick's new Line, startLineAtEnd, a touch drag start),
+//               point2 (the line placed, TELEMETRY.linePlaced), line_drag, line_delete, reject_limit
+//   play:       run (TELEMETRY.run: the auto-run after the last line or the play box), pause, offmap, restart, win
+//   navigation: menu_open, map_open, level_change (a level started from the map or by 'next level')
+//   tab:        hidden (visibilitychange to hidden)
+//   f30:<k>:end              at t0+30 s if the page is still open; value = furthest funnel index reached (0 = none)
+//   f30:<k>:leave            pagehide / visibility hidden inside the window, once; value = ms since t0
+//   f30:<k>:leave_step:<s>   with leave: the last step sent before it (or 'none'); then ANALYTICS.flush()
+// Nothing is sampled or coalesced; an action after the window sends nothing.
+const F30_STEPS = ['first_move', 'first_press', 'point1', 'point2', 'line_drag', 'line_delete', 'reject_limit',
+    'run', 'pause', 'offmap', 'restart', 'win', 'menu_open', 'map_open', 'level_change', 'hidden']
+const F30_WINDOW_MS = 30000
 const TELEMETRY = (function()
 {
     let stats = {}
@@ -304,6 +320,49 @@ const TELEMETRY = (function()
             return true // a cross-origin top throws
         }
     }
+    // TASK-239: first-30 funnel state (see F30_STEPS)
+    const f30 = {sent: {}, last: 'none', furthest: 0, left: false, ended: false, closed: false}
+    function f30Kind()
+    {
+        return firstVisitor == 'ret' ? 'ret' : 'new'
+    }
+    function f30Since()
+    {
+        return t0 === null ? null : Math.round(performance.now() - t0)
+    }
+    function f30Open()
+    {
+        const t = f30Since()
+        return t !== null && t <= F30_WINDOW_MS && !f30.ended && !f30.closed
+    }
+    function f30Step(step)
+    {
+        const i = F30_STEPS.indexOf(step)
+        if (i < 0 || f30.sent[step] !== undefined || !f30Open())
+            return
+        const t = f30Since()
+        f30.sent[step] = t
+        f30.last = step
+        f30.furthest = Math.max(f30.furthest, i + 1)
+        ANALYTICS.design('f30:' + f30Kind() + ':' + step, t)
+    }
+    // leave + leave_step once (inside the window); flush is left to the caller
+    function f30Leave()
+    {
+        if (f30.left || !f30Open())
+            return false
+        f30.left = true
+        ANALYTICS.design('f30:' + f30Kind() + ':leave', f30Since())
+        ANALYTICS.design('f30:' + f30Kind() + ':leave_step:' + f30.last)
+        return true
+    }
+    function f30End()
+    {
+        if (f30.ended || f30.closed)
+            return
+        ANALYTICS.design('f30:' + f30Kind() + ':end', f30.furthest)
+        f30.ended = true
+    }
     function sendLoad()
     {
         const nav = perfEntries('navigation')[0] || null
@@ -351,6 +410,7 @@ const TELEMETRY = (function()
             if (firstVisitor === null)
                 firstVisitor = 'new'
             sendLoad()
+            setTimeout(f30End, F30_WINDOW_MS) // TASK-239: f30:<k>:end at t0+30 s
             if (firstVisitor == 'new')
             {
                 try
@@ -366,6 +426,22 @@ const TELEMETRY = (function()
         firstVisitor() { return firstVisitor },
         sinceT0() { return t0 === null ? null : Math.round(performance.now() - t0) },
         loadMarks() { return Object.assign({}, loadMarks) },
+        // TASK-239: first-30 funnel step (F30_STEPS); sent once, only inside the window
+        f30: f30Step,
+        // visibilitychange to hidden: leave (+ leave_step), the 'hidden' step, then flush
+        f30Hidden()
+        {
+            f30Leave()
+            f30Step('hidden')
+            ANALYTICS.flush()
+        },
+        // pagehide: leave (+ leave_step) inside the window; no 'end' after it (the caller flushes)
+        f30PageHide()
+        {
+            f30Leave()
+            f30.closed = true
+        },
+        f30State() { return JSON.parse(JSON.stringify(f30)) },
         editor: editorEvent,
         playtest: ptEvent,
         playtestActive: ptActive,
@@ -457,6 +533,8 @@ const TELEMETRY = (function()
         // a level start (see the reasons above)
         levelStart(reason)
         {
+            if (reason == 'map' || reason == 'next')
+                f30Step('level_change') // TASK-239
             start(reason)
         },
         // a button. name: run, pause, restart, menu_open, menu_close, resume, map_open, map_close, map_level,
@@ -464,6 +542,8 @@ const TELEMETRY = (function()
         // and preview_play, else none
         ui(name, value)
         {
+            if (name == 'pause' || name == 'menu_open' || name == 'map_open')
+                f30Step(name) // TASK-239
             if (ptActive() && !drawMap)
             {
                 if (name == 'speed_on' || name == 'speed_off')
@@ -476,6 +556,7 @@ const TELEMETRY = (function()
         // line events (see the header); place() numbers the lines placed in the open attempt
         linePlaced()
         {
+            f30Step('point2') // TASK-239
             if (ptActive())
                 return void ptEvent('line_place', ++pt.a.placed)
             if (!active())
@@ -483,9 +564,9 @@ const TELEMETRY = (function()
             const a = attempt && attempt.srcId === srcId() ? attempt : null
             lineEvent('place', a ? ++a.placed : 1)
         },
-        lineDeleted() { ptActive() ? ptEvent('line_delete') : lineEvent('delete') },
-        lineDragged(accepted) { ptActive() ? ptEvent('line_drag', accepted ? 1 : 0) : lineEvent('drag', accepted ? 1 : 0) },
-        lineRejectLimit() { lineEvent('reject_limit') },
+        lineDeleted() { f30Step('line_delete'); ptActive() ? ptEvent('line_delete') : lineEvent('delete') },
+        lineDragged(accepted) { f30Step('line_drag'); ptActive() ? ptEvent('line_drag', accepted ? 1 : 0) : lineEvent('drag', accepted ? 1 : 0) },
+        lineRejectLimit() { f30Step('reject_limit'); lineEvent('reject_limit') },
         // frame time (ms, capped by the caller); counts only while playing(); sends every milestone crossed
         tick(ms)
         {
@@ -504,6 +585,7 @@ const TELEMETRY = (function()
         // players = player lines on the field -> lines:<srcId>:used
         run(players)
         {
+            f30Step('run') // TASK-239
             if (ptActive())
             {
                 ptEvent('run')
@@ -526,6 +608,7 @@ const TELEMETRY = (function()
         // first win of the open attempt (index.html gameMechanics, real levels only)
         win()
         {
+            f30Step('win') // TASK-239
             if (ptActive())
             {
                 if (!pt.a.won)
@@ -552,6 +635,7 @@ const TELEMETRY = (function()
         // after the automatic off-map restart: Fail + fail:offmap, then a new attempt (nothing behind a win window)
         offMap()
         {
+            f30Step('offmap') // TASK-239
             if (ptActive())
             {
                 if (!pt.a.won)
@@ -572,6 +656,7 @@ const TELEMETRY = (function()
         // after a restart button: 'restart' (+ Fail for an unwon attempt), then a new attempt
         restart()
         {
+            f30Step('restart') // TASK-239
             if (ptActive())
             {
                 ptEvent('restart')

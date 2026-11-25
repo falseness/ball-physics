@@ -442,6 +442,7 @@
                                 return
                             line = new Line(coords[0], coords[1], coords[0], coords[1], dotRadius, '#0000ff', 'line')
                             linesK++
+                            TELEMETRY.f30('point1') // TASK-239 (also a touch drag start: touchstart -> handleClick)
                         }
                         else
                             TELEMETRY.lineRejectLimit() // TASK-192: a click on the field with no lines left
@@ -742,14 +743,23 @@
                 TELEMETRY.editorAbandon() // TASK-232: editor:actions + editor:abandon while the editor is open
                 TELEMETRY.leave() // TASK-191: an unwon attempt is abandoned before the flush
                 TELEMETRY.pageHide() // TASK-192: session:levels_seen
+                TELEMETRY.f30PageHide() // TASK-239: f30:<k>:leave + leave_step inside the first 30 s
                 ANALYTICS.flush()
                 ANALYTICS.sessionEnd()
             })
             document.addEventListener('visibilitychange', function()
             {
                 if (document.visibilityState === 'hidden')
+                {
                     TELEMETRY.hidden() // TASK-192: session:hide
+                    TELEMETRY.f30Hidden() // TASK-239: f30 leave (inside the first 30 s), 'hidden' step, flush
+                }
             })
+            // TASK-239: first-30 pointer steps (capture: every press / move anywhere, before any handler)
+            for (const type of ['mousemove', 'touchmove'])
+                document.addEventListener(type, function() { TELEMETRY.f30('first_move') }, {capture: true, passive: true})
+            for (const type of ['mousedown', 'touchstart'])
+                document.addEventListener(type, function() { TELEMETRY.f30('first_press') }, {capture: true, passive: true})
             // A page restored from the back/forward cache opens a new session
             window.addEventListener('pageshow', function(e)
             {

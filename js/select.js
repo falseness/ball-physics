@@ -201,6 +201,7 @@ function startLineAtEnd(coords)
         return false
     selectionClear()
     line = new Line(p[0], p[1], p[0], p[1], dotRadius, '#0000ff', 'line')
+    TELEMETRY.f30('point1') // TASK-239: a line's first point (at a player line end)
     linesK++
     return true
 }

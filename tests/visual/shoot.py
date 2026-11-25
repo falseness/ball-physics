@@ -2787,6 +2787,215 @@ def first30_values(log):
     return vals, ok
 
 
+# TASK-239: first-30 funnel ('f30:' ids, js/telemetry.js F30_STEPS). Each visitor opens its own clean context (touch on),
+# boots with page.clock installed before navigation, then the clock is paused and every action happens at an exact
+# fake time T (ms since t0, clock.run_for); no frames() / rAF waits while paused. Visitors (all 'new'):
+#   A: one press (on the ball: no line starts) at 5 s, pagehide at 12 s, clock to 31 s (no 'end' after a pagehide)
+#   B: point 1 only at 2 s; 'end' at 30 s; after the window (31 s+) point 2 + run, a hide and a pagehide send nothing
+#   C: touch drag line (point1 / point2 / auto-run), off-map, play + HUD restart, bin, a mouse line (auto-run), win
+#      (ball put on the flag as telemetry_levels does), end at 30 s; then a menu click at 31 s sends nothing
+#   D: the steps A..C do not reach: reject_limit, line_drag, pause, menu_open, map_open, level_change, hidden (+ leave)
+TELEMETRY_F30_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('f30:'))
+    .map(e => [e.args[0], e.args[1] ?? null])"""
+F30_STEPS = ['first_move', 'first_press', 'point1', 'point2', 'line_drag', 'line_delete', 'reject_limit', 'run', 'pause',
+             'offmap', 'restart', 'win', 'menu_open', 'map_open', 'level_change', 'hidden']
+F30_HIDE_JS = """() => { Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});
+    Object.defineProperty(document, 'hidden', {configurable: true, get: () => true});
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.visibilityState; delete document.hidden; document.dispatchEvent(new Event('visibilitychange')) }"""
+F30_PAGEHIDE_JS = "() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false}))"
+
+
+class F30Visitor:
+    def __init__(self, p):
+        self.p = p
+        self.timeline = []
+        p.clock.pause_at((p.evaluate("Date.now()") + 50) / 1000)  # Python: a number is seconds since the epoch
+        self.start = p.evaluate("TELEMETRY.sinceT0()")
+        if self.start is None or self.start >= 900:
+            raise RuntimeError('t0 not set or too late after pausing the clock: %r' % self.start)
+
+    def now(self):
+        return self.p.evaluate("TELEMETRY.sinceT0()")
+
+    def at(self, t, label=None):
+        d = t - self.now()
+        if d < 0:
+            raise RuntimeError('f30 visitor: %s at %d ms is already past (%d)' % (label, t, self.now()))
+        if d:
+            self.p.clock.run_for(d)
+        if self.now() != t:
+            raise RuntimeError('f30 visitor: clock at %d, wanted %d' % (self.now(), t))
+        if label:
+            self.timeline.append([t, label])
+
+    def wait_for(self, js, limit, step=100, label=None):
+        # advance in fixed steps until js holds (the game loop's frames run inside run_for)
+        while not self.p.evaluate(js):
+            if self.now() >= limit:
+                raise RuntimeError('f30 visitor: %s not reached by %d ms' % (js, limit))
+            self.p.clock.run_for(step)
+        if label:
+            self.timeline.append([self.now(), label])
+        return self.now()
+
+    def click(self, x, y):
+        self.p.mouse.click(*to_client(self.p, x, y))
+
+    def move(self, x, y):
+        self.p.mouse.move(*to_client(self.p, x, y))
+
+    def log(self):
+        return self.p.evaluate(TELEMETRY_F30_LOG_JS)
+
+
+def f30_next(t, step=1000):
+    return (t // step + 1) * step
+
+
+def f30_visitor_a(v):
+    v.at(5000, 'press on the ball')
+    v.click(*v.p.evaluate("[ball.posX, ball.posY]"))
+    if v.p.evaluate("!!line"):
+        raise RuntimeError('A: the press started a line')
+    v.at(12000, 'pagehide')
+    v.p.evaluate(F30_PAGEHIDE_JS)
+    v.at(31000, 'clock past the window')
+
+
+def f30_visitor_b(v):
+    (x1, y1), (x2, y2) = LINE_X
+    v.at(2000, 'point 1')
+    v.click(x1, y1)
+    if not v.p.evaluate("!!line"):
+        raise RuntimeError('B: point 1 not set')
+    v.at(30000, 'window end')
+    v.at(31000, 'point 2 after the window (line placed, auto-run)')
+    v.move(x2, y2)
+    v.click(x2, y2)
+    if not v.p.evaluate("levelStarted && physics"):
+        raise RuntimeError('B: the line after the window did not start the run')
+    v.at(31500, 'hide after the window')
+    v.p.evaluate(F30_HIDE_JS)
+    v.at(32000, 'pagehide after the window')
+    v.p.evaluate(F30_PAGEHIDE_JS)
+
+
+def f30_visitor_c(v, cdp):
+    (x1, y1), (x2, y2) = LINE_X
+    v.at(1000, 'mouse move')
+    v.move(300, 650)
+    # line 1 by touch: touchstart (point 1) at 2 s, moves, touchend (point 2, auto-run) at 3 s
+    ax, ay = to_client(v.p, x1, y1)
+    bx, by = to_client(v.p, x2, y2)
+    v.at(2000, 'touchstart (line 1)')
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': ax, 'y': ay}]})
+    if not v.p.evaluate("!!line"):
+        raise RuntimeError('C: touch did not start a line')
+    for i in range(1, 5):
+        v.at(2000 + i * 200, 'touchmove')
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [
+            {'x': ax + (bx - ax) * i / 4, 'y': ay + (by - ay) * i / 4}]})
+    v.at(3000, 'touchend (line 1 placed, auto-run)')
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    if not v.p.evaluate("levelStarted && physics && lines.filter(l => l.type == 'player').length == 1"):
+        raise RuntimeError('C: touch line not placed / run not started')
+    t = v.wait_for("TELEMETRY.attempt().n == 2 && !levelStarted", 25000, label='off-map')
+    t = f30_next(t)
+    v.at(t, 'play box (run again)')
+    v.click(*v.p.evaluate(PLAY_ICON_JS))
+    v.at(t + 500, 'HUD restart box')
+    if not v.p.evaluate("restartIconVisible()"):
+        raise RuntimeError('C: restart box hidden')
+    v.click(*box_centre(v.p, "restartIconRect()"))
+    v.at(t + 1000, 'select line 1')
+    mid = v.p.evaluate("(() => { const l = lines.find(l => l.type == 'player'); return [(l.posX + l.posX2) / 2, (l.posY + l.posY2) / 2] })()")
+    v.click(*mid)
+    if v.p.evaluate("playerSel") is None:
+        raise RuntimeError('C: line 1 not selected')
+    v.at(t + 1500, 'bin')
+    v.click(*v.p.evaluate("binCenter(lines[playerSel])"))
+    v.at(t + 2500, 'line 2 point 1 (mouse)')
+    v.click(x1, y1)
+    v.at(t + 3000, 'line 2 point 2 (auto-run)')
+    v.move(x2, y2)
+    v.click(x2, y2)
+    if not v.p.evaluate("levelStarted && physics && lines.filter(l => l.type == 'player').length == 1"):
+        raise RuntimeError('C: line 2 not placed / run not started')
+    v.p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
+    w = v.wait_for("levelCompletedWindow", 29000, step=16, label='win')
+    v.at(30000, 'window end')
+    v.at(31000, 'completion-window restart after the window')
+    v.click(*v.p.evaluate(WIN_RESTART_JS))
+    return w
+
+
+def f30_visitor_d(v):
+    (x1, y1), (x2, y2) = LINE_X
+    v.at(1000, 'line point 1')
+    v.click(x1, y1)
+    v.at(1500, 'line point 2 (auto-run)')
+    v.move(x2, y2)
+    v.click(x2, y2)
+    t = f30_next(v.wait_for("TELEMETRY.attempt().n == 2 && !levelStarted", 20000, label='off-map'))
+    v.at(t, 'field click at the line limit')
+    v.click(300, 700)
+    v.at(t + 1000, 'drag the line end')
+    v.p.mouse.move(*to_client(v.p, x2, y2))
+    v.p.mouse.down()
+    v.at(t + 1200)
+    v.p.mouse.move(*to_client(v.p, x2 - 60, y2 + 20), steps=4)
+    v.at(t + 1400)
+    v.p.mouse.up()
+    v.at(t + 2000, 'play box (run)')
+    v.click(*v.p.evaluate(PLAY_ICON_JS))
+    v.at(t + 2500, 'play box (pause)')
+    v.click(*v.p.evaluate(PLAY_ICON_JS))
+    v.at(t + 3000, 'menu icon')
+    v.click(*v.p.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"))
+    v.at(t + 3500, 'Levels (map)')
+    v.click(*v.p.evaluate(LEVELS_BUTTON_JS))
+    pt = v.p.evaluate(LEVEL_POINT_JS, 1)
+    v.at(t + 4000, 'map: select level 2')
+    v.click(*pt)
+    v.at(t + 4500, 'map: start level 2')
+    v.click(*pt)
+    if v.p.evaluate("drawMap || levels[thisLevel].srcId == 1"):
+        raise RuntimeError('D: level 2 not started from the map')
+    v.at(t + 5500, 'tab hidden')
+    v.p.evaluate(F30_HIDE_JS)
+    v.at(30000, 'window end')
+    v.at(31000, 'menu icon after the window')
+    v.click(*v.p.evaluate("[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"))
+
+
+def f30_funnel(log):
+    sent = {e[0].split(':')[2]: e[1] for e in log if len(e[0].split(':')) == 3}
+    steps = [s for s in F30_STEPS if s in sent]
+    leave_step = [e[0].split(':')[3] for e in log if e[0].split(':')[2:3] == ['leave_step']]
+    return {'steps': steps, 'times': {s: sent[s] for s in steps},
+            'furthest': max([F30_STEPS.index(s) + 1 for s in steps] or [0]),
+            'end': sent.get('end'), 'leave': sent.get('leave'), 'leave_step': leave_step[0] if leave_step else None}
+
+
+def f30_run_visitors(page):
+    out = {}
+    for name in ('A', 'B', 'C', 'D'):
+        errors = []
+        t1 = time.time()
+        with telemetry_page(page, errors, init=lambda p: p.clock.install(), has_touch=True) as p:
+            v = F30Visitor(p)
+            cdp = p.context.new_cdp_session(p) if name == 'C' else None
+            {'A': f30_visitor_a, 'B': f30_visitor_b, 'C': lambda v: f30_visitor_c(v, cdp), 'D': f30_visitor_d}[name](v)
+            log = v.log()
+            state = p.evaluate("TELEMETRY.f30State()")
+            visitor = p.evaluate("TELEMETRY.firstVisitor()")
+            debug_all = p.evaluate("ANALYTICS.debugLog.length")
+        out[name] = {'visitor': visitor, 'startMs': v.start, 'timeline': v.timeline, 'log': log, 'state': state,
+                     'debugLogLen': debug_all, 'errors': errors, 'seconds': round(time.time() - t1, 1)}
+    return out
+
+
 def sc_telemetry_first30(page, info):
     with open(TELEMETRY_FIRST30_EXPECTED) as f:
         want = json.load(f)
@@ -2855,13 +3064,62 @@ def sc_telemetry_first30(page, info):
         thr['slowdown'] = round(tf / uf, 1) if uf and tf else None
     except Exception as e:
         thr['error'] = '%s: %s' % (type(e).__name__, str(e).splitlines()[0] if str(e) else '')
+    # TASK-239: first-30 funnel visitors A..D (f30: ids) against want['visitors'] ([id, value] pairs, exact)
+    vis_runs = f30_run_visitors(page)
+    want_v = want.get('visitors', {})
+    seq['visitors'] = {n: {'expected': want_v.get(n), 'actual': r['log'], 'match': r['log'] == want_v.get(n),
+                           'timeline': r['timeline'], 'startMs': r['startMs'], 'errors': r['errors'],
+                           'seconds': r['seconds']} for n, r in vis_runs.items()}
+    seq['visitorsPass'] = all(x['match'] and not x['errors'] for x in seq['visitors'].values())
+    fun = {n: dict(f30_funnel(r['log']), visitor=r['visitor']) for n, r in vis_runs.items()}
+    reached = {s for f in fun.values() for s in f['steps']}
+    reached_abc = {s for n in 'ABC' for s in fun[n]['steps']}
+    funnel = {'steps': F30_STEPS, 'visitors': fun,
+              'notReachedInABC': [s for s in F30_STEPS if s not in reached_abc],
+              'notReached': [s for s in F30_STEPS if s not in reached],
+              'checks': {'A_leave_step_first_press': fun['A']['leave_step'] == 'first_press',
+                         'A_leave_12000': fun['A']['leave'] == 12000, 'A_no_end': fun['A']['end'] is None,
+                         'B_end_index_point1': fun['B']['end'] == F30_STEPS.index('point1') + 1,
+                         'C_reaches_win': 'win' in fun['C']['steps'],
+                         'C_end': fun['C']['end'] == fun['C']['furthest'],
+                         'D_end': fun['D']['end'] == fun['D']['furthest'],
+                         'all_new': all(f['visitor'] == 'new' for f in fun.values())}}
+    funnel['checks']['every_step_reached'] = not funnel['notReached']
+    funnel['pass'] = all(funnel['checks'].values())
+    # window: after t0+30 s nothing f30: (visitor timelines name the after-window actions); each id at most once
+    win = {'windowMs': 30000, 'visitors': {}}
+    for n, r in vis_runs.items():
+        ids = [e[0] for e in r['log']]
+        late = [e for e in r['log'] if e[1] is not None and e[1] > 30000 and ':end' not in e[0]]
+        after_actions = [x for x in r['timeline'] if x[0] > 30000]
+        win['visitors'][n] = {'afterWindowActions': after_actions, 'f30After30s': late,
+                              'duplicates': sorted({i for i in ids if ids.count(i) > 1}),
+                              'endValue': fun[n]['end'], 'sentOncePerStep': len(ids) == len(set(ids))}
+    win['checks'] = {'B_after_window_actions': len(win['visitors']['B']['afterWindowActions']) >= 3,
+                     'C_after_window_action': len(win['visitors']['C']['afterWindowActions']) >= 1,
+                     'no_f30_after_30s': all(not w['f30After30s'] for w in win['visitors'].values()),
+                     'B_no_point2_run_leave': not any(i[0].split(':')[2] in ('point2', 'run', 'leave', 'hidden')
+                                                      for i in vis_runs['B']['log']),
+                     'C_repeats_once': all(sum(1 for e in vis_runs['C']['log'] if e[0] == 'f30:new:' + s) == 1
+                                           for s in ('point1', 'point2', 'run')),
+                     'once_per_step': all(w['sentOncePerStep'] for w in win['visitors'].values())}
+    win['pass'] = all(win['checks'].values())
+    seq['pass'] = bool(seq['pass'] and seq['visitorsPass'])
+    for name, d in (('funnel.json', funnel), ('window.json', win)):
+        with open(os.path.join(OUT_DIR, name), 'w') as f:
+            json.dump(d, f, separators=(',', ':'))
     for name, d in (('sequence_first30.json', seq), ('visitor.json', vis), ('throttle.json', thr)):
         with open(os.path.join(OUT_DIR, name), 'w') as f:
             json.dump(d, f, separators=(',', ':'))
     info['telemetry'] = {'sequencePass': seq['pass'], 'visitorPass': vis['pass'], 'events': len(actual),
                          'throttledFirstFrame': thr.get('firstFrameMs')}
+    info['telemetry'].update({'visitorsPass': seq['visitorsPass'], 'funnelPass': funnel['pass'], 'windowPass': win['pass']})
     if not seq['pass']:
-        raise RuntimeError('first30 load/ctx sequence mismatch (sequence_first30.json)')
+        raise RuntimeError('first30 load/ctx or f30 visitor sequence mismatch (sequence_first30.json)')
+    if not funnel['pass']:
+        raise RuntimeError('first30 funnel check failed (funnel.json)')
+    if not win['pass']:
+        raise RuntimeError('first30 window check failed (window.json)')
     if not vis['pass']:
         raise RuntimeError('first30 visitor check failed (visitor.json)')
 
