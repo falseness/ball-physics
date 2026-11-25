@@ -656,6 +656,14 @@ levels.push(
     // the floor underside that bounced a rising ball back down onto the line's far end.
     // The flag stands on the pocket floor (not hanging from the ceiling): a ball rolling on top of the roof touched the
     // top of a hanging flag's pole through the ceiling line.
+    // TASK-210 (contact physics): a two-line win (a wall at the right edge, x 1225..1229, plus one long line through the
+    // well as kicker and lift) rattled the ball up the narrow channel between that wall and the block's right side
+    // (x = 1200) into the pocket mouth. The lip (1200,310)-(1220,310), line 11, caps that channel; the reference
+    // crosses y = 310 further right (x ~ 1240) and still wins.
+    // A ball that hit the well's left wall above A slowly lost its sideways speed in the contact and then bounced
+    // straight up and down along A's face for ever (rim-trap detector, 3 one-line candidates such as
+    // (200,680)-(920,604)). The deflector (520,505)-(535,520) above A (30 px above its top rim, y 535), line 12, sends
+    // a ball sliding down the wall back into the well; the reference passes ~50 px right of it.
     ballX: 580,
     ballY: 300,
     flagX: 1060,
@@ -673,7 +681,9 @@ levels.push(
         new Line(520, 260, 640, 260, dotRadius, levelLineColor, 'line'),
         new Line(1200, 310, 1200, 420, dotRadius, levelLineColor, 'line'),
         new Line(980, 420, 1200, 420, dotRadius, levelLineColor, 'line'),
-        new Line(980, 310, 980, 420, dotRadius, levelLineColor, 'line')
+        new Line(980, 310, 980, 420, dotRadius, levelLineColor, 'line'),
+        new Line(1200, 310, 1220, 310, dotRadius, levelLineColor, 'line'),
+        new Line(520, 505, 535, 520, dotRadius, levelLineColor, 'line')
     ],
     // wall portals {line, u, side, h, name} (see portalResolve): A at (520, 580) on the well's left wall facing
     // right (1, 0), B at (880, 420) on the underside of the floating pad facing down (0, 1)

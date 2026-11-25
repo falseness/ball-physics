@@ -587,7 +587,11 @@ LEVEL25_MAX_FRAMES = 1500
 # Found with exploration scans (artifacts/TASK-147/search/scan.py, same handleClick placement as
 # tools/level_search.py): a lattice of ramps x backboards with a fixed release line, then reflectors at the left edge
 # (artifacts/TASK-147/search_ref.json); keep these exact integer coordinates.
-LEVEL26_LINES = [((230, 286), (90, 300)), ((20, 480), (700, 580)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
+# TASK-210: under the contact physics the old ramp (20,480)-(700,580) loses: the ball falling off line 1 hits the
+# ramp's left end point and leaves the map on frame 85 (artifacts/TASK-210/logs/trace_l26_oldref.jsonl; 0 of 32
+# +-2 px variants win). Raising the ramp's left end, (10,450)-(700,620), wins on frame 310 (A->B) with 22 of 32
+# +-2 px variants (artifacts/TASK-210/runs/g3_l26.json).
+LEVEL26_LINES = [((230, 286), (90, 300)), ((10, 450), (700, 620)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
 LEVEL26_MAX_FRAMES = 1500
 # Level 27 ('side door', TASK-149, lineK 3; reference solution): line 1 is a tilted kicker inside the well, below
 # portal A. The ball bouncing straight up and down bounces off it sideways and, on its way up, drifts into the left
