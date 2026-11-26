@@ -44,7 +44,8 @@ const has = (name) => process.argv.includes(name)
 const rr = (v) => (typeof v === 'number' && isFinite(v)) ? +v.toPrecision(8) : v
 
 // ---------------- checker ----------------
-// step(x0, y0, x1, y1, vx1, vy1) for every step, in order; result() at the end.
+// step(x0, y0, x1, y1, vx1, vy1[, tele]) for every step, in order; result() at the end. tele (TASK-269, portal
+// suite): the step was a portal teleport, its jump is no tunnelling (b is not tested on it).
 export function makeChecker(segs, x, y)
 {
     const S = segs.map(s =>
@@ -109,7 +110,7 @@ export function makeChecker(segs, x, y)
         }
     }
     return {
-        step(x0, y0, x1, y1, vx1, vy1)
+        step(x0, y0, x1, y1, vx1, vy1, tele)
         {
             const depth = R - minDist(x1, y1), deep = depth > DEPTH_TOL
             if (depth > maxDepth) maxDepth = depth
@@ -120,7 +121,7 @@ export function makeChecker(segs, x, y)
             }
             else if (deep) ++transientDeep
             prevDeep = deep
-            const ci = crossed(x0, y0, x1, y1)
+            const ci = tele ? -1 : crossed(x0, y0, x1, y1)
             if (ci >= 0)
             {
                 ++cnt.b
@@ -433,6 +434,9 @@ function selftest()
     process.exit(pass ? 0 : 1)
 }
 
-if (has('--shard')) shard(arg('--shard'))
+// only when run as a script (tests/physics/portal_fast.mjs imports makeChecker)
+const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(SELF)
+if (!isMain) { /* imported */ }
+else if (has('--shard')) shard(arg('--shard'))
 else if (has('--selftest')) selftest()
 else main().catch(e => { console.error(e); process.exit(2) })
