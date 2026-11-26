@@ -34,6 +34,45 @@ side), the rest the **extra** branch (floor row). `routeAssign` gives each branc
 branch's slots (`ROUTEMAP.branches`) in play order. The number shown on a flag is the play-order
 position (index + 1), not the srcId.
 
+## Level table (27 levels)
+
+TASK-247 removed srcId 8, 11, 14, 27 and 29 (display 30, 3, 6, 19 and 21 of the earlier 32-level order; user:
+"lets remove completely levels: 3, 6, 19, 21, 30"). Their entries in `js/levels.js` are `null` placeholders, so the
+remaining levels keep their srcId; display numbers and map slots close the gaps. Current play order
+(display = number on the flag; from `node tests/visual/map_check.mjs` `assignment`):
+
+| display | srcId | branch | slot |
+| --- | --- | --- | --- |
+| 1 | 1 | start | S1 |
+| 2 | 2 | start | S2 |
+| 3 | 12 | main | M1 |
+| 4 | 13 | main | M2 |
+| 5 | 15 | main | M3 |
+| 6 | 16 | main | M4 |
+| 7 | 17 | main | M5 |
+| 8 | 18 | main | M6 |
+| 9 | 19 | main | M7 |
+| 10 | 20 | main | M8 |
+| 11 | 21 | main | M9 |
+| 12 | 22 | main | M10 |
+| 13 | 23 | main | M11 |
+| 14 | 24 | main | M12 |
+| 15 | 25 | main | M13 |
+| 16 | 26 | main | M14 |
+| 17 | 28 | main | M15 |
+| 18 | 30 | main | M16 |
+| 19 | 31 | main | M17 |
+| 20 | 32 | main | M18 |
+| 21 | 3 | extra | X1 |
+| 22 | 4 | extra | X2 |
+| 23 | 5 | extra | X3 |
+| 24 | 6 | extra | X4 |
+| 25 | 7 | extra | X5 |
+| 26 | 9 | extra | X6 |
+| 27 | 10 | extra | X7 |
+
+Spare slots: main M19-M27, extra X8.
+
 ## Saved progress
 
 Solved levels are stored under the key `bp.progress.v1` as JSON `{"solved": [srcId, ...]}`
@@ -133,8 +172,8 @@ identical trails) and the `speed_*` scenarios of tests/visual/shoot.py.
 2. Decide its branch: portal level -> `main`, otherwise `extra`.
 3. Check whether the branch has a spare slot: `node tests/visual/map_check.mjs` prints
    `branchLevels`, `slotsUsed`, `spareSlots` and `assignment`. The main branch keeps spare slots
-   (M23-M27 at the time of writing, the validator requires at least 4); the extra branch
-   (X1-X8) is full, so a new non-portal level needs a new `X` slot.
+   (M19-M27 at the time of writing, the validator requires at least 4); the extra branch
+   (X1-X8) has one spare slot (X8); once it is used, a new non-portal level needs a new `X` slot.
 4. To add a slot, in `js/routemap.js`:
    - add `ID: [cx, top, w, s]` to `slots` (platform centre x, platform top y, platform width,
      flag scale; 1280x800 game coordinates);
