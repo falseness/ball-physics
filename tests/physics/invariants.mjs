@@ -3,7 +3,7 @@
 //
 //   node tests/physics/invariants.mjs --selftest [--out FILE]
 //       synthetic traces (clean, stuck, livelock, tangential kick, free-flight kick, moving-away flip,
-//       energy gain, teleport speed change): each invariant must fire on its own trace only, and stay
+//       energy gain, energy loss (TASK-266), teleport speed change): each invariant must fire on its own trace only, and stay
 //       silent on the clean traces; plus loader parity (fast loader == TASK-197 vm loader, bit for bit).
 //   node tests/physics/invariants.mjs [--fuzz A-B] [--levels] [--scenes N] [--frames F] [--level-frames F] [--out FILE]
 //       --fuzz A-B: seeds A..B, N scenes each (default 2000), each a random 1-4 line scene with a ball drop,
@@ -218,8 +218,8 @@ function runLevels(levelFrames, levelList)
 
 // ---------------- selftest ----------------
 // Each trace is a list of steps [x0, y0, vx0, vy0, x1, y1, vx1, vy1, tele, vmx, vmy] over a fixed geometry.
-// Reference engine for the clean trace: reflect about the closest-point normal only when moving in,
-// push out to the radius, then gravity, then move.
+// Reference engine for the clean trace: reflect about the closest-point normal only when moving in (energy-exact
+// outgoing normal speed, TASK-266), then gravity, then move.
 function refTrace(segs, x, y, vx, vy, n)
 {
     const out = []
@@ -235,7 +235,16 @@ function refTrace(segs, x, y, vx, vy, n)
         if (best)
         {
             const nx = (x - best[0]) / best[2], ny = (y - best[1]) / best[2], vn = vx * nx + vy * ny
-            if (vn < 0) { vx -= 2 * vn * nx; vy -= 2 * vn * ny }
+            if (vn < 0)
+            {
+                // reflect, but with the outgoing normal speed w chosen so that the integrator invariant
+                // E = |v|^2/2 + g vy/2 + g (H - y) is unchanged (TASK-266: a bare reflection flips the g vy/2
+                // term and loses g |vn| ny per bounce, which the two-sided I3 reports): with v = t + w n,
+                // 0.5 w^2 + (g ny / 2) w = 0.5 vn^2 + (g ny / 2) vn  ->  w = -b + sqrt(b^2 + vn^2 + 2 b vn)
+                const tx = vx - vn * nx, ty = vy - vn * ny, b = 0.5 * G * ny
+                const w = -b + Math.sqrt(b * b + vn * vn + 2 * b * vn)
+                vx = tx + w * nx; vy = ty + w * ny
+            }
         }
         vy += G
         x += vx; y += vy
@@ -249,15 +258,18 @@ function selftest()
     const floor = [[100, 400, 900, 400]]
     const slope = [[100, 200, 700, 500]]
     const cases = []
-    const run = (name, segs, trace, expect, opts) =>
+    const run = (name, segs, trace, expect, opts, subKey) =>
     {
         const chk = Core.makeChecker(Object.assign({ g: G, r: R, segs }, opts || {}))
         trace.forEach(t => chk.step.apply(null, t))
         const res = chk.result()
+        // expect: null (nothing fires), an invariant, or a list of invariants that must fire together (and no other)
         const fired = Core.KINDS.filter(k => res.counts[k] > 0)
-        const pass = expect === null ? fired.length === 0 : (fired.length === 1 && fired[0] === expect)
-        cases.push({ name, expect: expect || 'none', steps: res.steps, contactSteps: res.contactSteps, counts: res.counts, sub: res.sub,
-            fired, pass, example: expect ? res.examples[expect][0] : null })
+        const want = expect === null ? [] : [].concat(expect)
+        const pass = fired.length === want.length && want.every(k => fired.indexOf(k) >= 0) &&
+            (!subKey || res.sub[subKey] > 0)
+        cases.push({ name, expect: want.length ? want.join('+') : 'none', subKey: subKey || null, steps: res.steps, contactSteps: res.contactSteps, counts: res.counts, sub: res.sub,
+            fired, pass, example: want.length ? res.examples[want[0]][0] : null })
     }
     // clean: drop onto a floor, several bounces (reference engine), 30000 steps
     run('clean_floor_bounces', floor, refTrace(floor, 500, 300, 0.003, 0, 30000), null)
@@ -289,11 +301,12 @@ function selftest()
         }
         run('livelock_slot', slot, t, 'I1')
     }
-    // I2 tangential kick: rolling on the floor, one contact step slows vx by 1e-5 (energy goes down)
+    // I2 tangential kick: rolling on the floor, one contact step slows vx by 1e-5 (energy goes down, so since
+    // TASK-266's two-sided I3 the energy loss fires I3 too)
     {
         const y = 400 - R + 0.001, vx = 0.01
         const t = [[300, y, vx, 0.0001, 300 + vx - 1e-5, y - 0.0001, vx - 1e-5, -0.0001, false]]
-        run('tangential_kick', floor, t, 'I2')
+        run('tangential_kick', floor, t, ['I2', 'I3'], null, 'I3:loss')
     }
     // I2 free-flight kick: no contact, vx changes by 1e-12
     run('free_flight_kick', floor, [[500, 100, 0.01, 0, 500.01, 100 + G, 0.01 + 1e-12, G, false]], 'I2')
@@ -302,7 +315,19 @@ function selftest()
     // I3 energy gain: a floor bounce that leaves faster than it came, by g (allowed by I2's vn_grow, caught by I3)
     {
         const y = 400 - R + 0.005, vy = 0.01, vy1 = -(vy + G)
-        run('energy_gain_bounce', floor, [[500, y, 0, vy, 500, y + vy1, 0, vy1, false]], 'I3')
+        run('energy_gain_bounce', floor, [[500, y, 0, vy, 500, y + vy1, 0, vy1, false]], 'I3', null, 'I3:gain')
+    }
+    // I3 energy loss (TASK-266): a floor bounce that leaves at 0.9 of its incoming normal speed (allowed by I2,
+    // caught by the two-sided I3 as a loss)
+    {
+        const y = 400 - R + 0.005, vy = 0.01, vy1 = -0.9 * vy
+        run('energy_loss_bounce', floor, [[500, y, 0, vy, 500, y + vy1, 0, vy1, false]], 'I3', null, 'I3:loss')
+    }
+    // I3 energy loss (TASK-266): the js/ball.js REST_SPEED resting contact: an approach at 0.005 px/step has its
+    // normal speed zeroed (v.n -> -g.n) instead of reflected
+    {
+        const y = 400 - R + 0.001, vy = 0.005
+        run('energy_loss_rest_zeroing', floor, [[500, y, 0, vy, 500, y, 0, 0, false]], 'I3', null, 'I3:loss')
     }
     // T: a teleport whose speed grows by 1e-6 relative
     {

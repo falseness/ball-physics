@@ -43,9 +43,10 @@
 //      away:       v0.n > tol (already moving away) => |J| <= tol (left unchanged)
 //    or, with 2+ contacts, J is a non-negative combination a n1 + b n2 of two touched normals with v1
 //    leaving both (vn_into on each) - a corner resolved in one step.
-// I3 'energy': on a contact step E1 - E0 <= 1e-6 * |E0| with E = |v|^2/2 + g vy/2 + g (H - y), H = 800.
+// I3 'energy': on a contact step |E1 - E0| <= 1e-6 * |E0| with E = |v|^2/2 + g vy/2 + g (H - y), H = 800.
 //    E is the exact free-flight invariant of the game's integrator (v += g, then x += v), so a free
-//    step keeps it to rounding and a contact may only keep or lower it.
+//    step keeps it to rounding; TASK-266: a contact must keep it too (elastic, no loss and no gain), so
+//    I3 is two-sided with sub-counts I3:loss (E1 < E0) and I3:gain (E1 > E0).
 // T  'teleport': portal teleport steps are exempt from I2/I3; instead |v after portalStep| equals
 //    |v before portalStep| within 1e-9 relative.
 var InvariantsCore = (function ()
@@ -247,8 +248,8 @@ var InvariantsCore = (function ()
                     dist: best[2], src: best[3], contacts: cs.length })
             }
             var E0 = energy(y0, vx0, vy0), E1 = energy(y1, vx1, vy1)
-            if (E1 - E0 > ENERGY_REL * Math.abs(E0))
-                report('I3', 'gain', { pos: [x0, y0], v0: [vx0, vy0], v1: [vx1, vy1], E0: E0, rel: (E1 - E0) / Math.abs(E0), contacts: cs.length })
+            if (Math.abs(E1 - E0) > ENERGY_REL * Math.abs(E0))
+                report('I3', E1 > E0 ? 'gain' : 'loss', { pos: [x0, y0], v0: [vx0, vy0], v1: [vx1, vy1], E0: E0, rel: (E1 - E0) / Math.abs(E0), contacts: cs.length })
         }
 
         function result()
