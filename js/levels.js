@@ -446,6 +446,10 @@ null, // srcId 14: removed (TASK-247)
     // lane. A's right half (the upper lane) is under a small roof, so it can only be reached from the right: one line
     // carries the ball past A, a second banks it back left under the roof into A's right half, and the flag, in a
     // pocket under the ceiling that is open only to the right, needs a third line that sends the ball back left.
+    // TASK-251: the roof (line 6) now hangs from just above A's centre down to the right, (478,630)-(560,690). Before,
+    // a ball merely tipped off the pad fell onto A's centre (blocked: the exit would overlap the shelf), bounced up
+    // against the flat roof and dropped back into A's right half, so the level was won without the speed panel
+    // (the long flat line 1). Now that bounce is thrown left, and A's right half is reached only from the right.
     ballX: 260,
     ballY: 470,
     flagX: 820,
@@ -459,7 +463,7 @@ null, // srcId 14: removed (TASK-247)
         new Line(400, 760, 560, 760, dotRadius, levelLineColor, 'line'),
         new Line(180, 490, 340, 490, dotRadius, levelLineColor, 'line'),
         new Line(700, 110, 900, 110, dotRadius, levelLineColor, 'line'),
-        new Line(470, 610, 560, 630, dotRadius, levelLineColor, 'line'),
+        new Line(478, 630, 560, 690, dotRadius, levelLineColor, 'line'),
         new Line(700, 110, 700, 260, dotRadius, levelLineColor, 'line'),
         new Line(700, 260, 900, 260, dotRadius, levelLineColor, 'line')
     ],

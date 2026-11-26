@@ -608,7 +608,8 @@ LEVEL23_MAX_FRAMES = 1500
 # tools/level_search.py): release lines over the pad, then a lattice of backboards (exit y < 360 = upper lane),
 # then a lattice of third lines right of the pocket (artifacts/TASK-143/search_ref.json: 29 wins of 590);
 # 15 of the 24 single-coordinate +-2 px variants win (artifacts/TASK-143/local_ref.json). Keep these exact
-# integer coordinates.
+# integer coordinates. TASK-251: unchanged on the new roof (478,630)-(560,690); still the 'proper' speed-panel route
+# of tools/route_check.py pred24 (artifacts/TASK-251/reference.json).
 LEVEL24_LINES = [((170, 476), (620, 513)), ((790, 610), (730, 714)), ((1000, 140), (1024, 278))]
 LEVEL24_MAX_FRAMES = 1500
 
@@ -988,7 +989,9 @@ def sc_l19_rim_backside(page, info, out_dir=None):
 # These real-input lines send the ball into A within 5 px of its centre; the exit must be refused (blocked,
 # reason 'overlap') and the shared embedded detector (tests/portal/embed.py EMBED_JS) must not fire within
 # L24_CENTER_FRAMES game frames (the ball may win, lose or bounce; this is not a solution).
-L24_CENTER_LINES = [((170, 476), (620, 513)), ((748, 595), (678, 726))]
+# TASK-251 (new roof (478,630)-(560,690)): the old backboard lines no longer reach A's centre; a short tip ramp off
+# the start pad now drops the ball onto A within 5 px of the centre (blocked, s = 3.6) and the roof throws it left.
+L24_CENTER_LINES = [((240, 482), (380, 500))]
 L24_CENTER_FRAMES = 600
 # Per-frame hook on the real game loop: the embedded detector and the ball path (one point per physics frame,
 # blocked exits marked like teleports) for the path strip.
