@@ -550,7 +550,8 @@ LEVEL19_MAX_FRAMES = 1500
 # TASK-207: under the contact physics the old reference (260,395)-(460,420), (560,460)-(240,760) loses (the ball
 # leaves B's stream off the map, frame 166); lines 1-2 re-found from single-coordinate +-10..60 px shifts of the old
 # reference, then --mode local: 24/24 +-2 px variants win, the reference wins on frame 182 (one A->B teleport).
-LEVEL20_LINES = [((220, 395), (420, 420)), ((560, 460), (280, 800)), ((660, 500), (820, 580))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 178, 20/24 +-2 px variants win).
+LEVEL20_LINES = [((220, 395), (420, 420)), ((560, 456), (280, 800)), ((660, 500), (820, 580))]
 LEVEL20_MAX_FRAMES = 1500
 
 # Level 21 (srcId 21, lineK 2) solution: a shallow ramp from just under the resting ball down-left off its pad (the ball
@@ -579,7 +580,8 @@ LEVEL21_MAX_FRAMES = 1500
 # TASK-208: under the TASK-199/200/201 contact physics the old second line (1140,660)-(640,760) loses (the ball leaves
 # the map on frame 477, artifacts/TASK-208/logs/trace_l22_oldref.jsonl); a single-coordinate shift of it, (1140,620), wins
 # on frame 395 (A->B, A->B) with 19 of 24 +-2 px variants (artifacts/TASK-208/runs/g3_l22.json).
-LEVEL22_LINES = [((150, 413), (420, 470)), ((1140, 620), (640, 760)), ((720, 482), (60, 540))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 368, 15/24 +-2 px variants win).
+LEVEL22_LINES = [((150, 413), (400, 470)), ((1140, 620), (640, 760)), ((720, 482), (60, 540))]
 LEVEL22_MAX_FRAMES = 1500
 
 # Level 23 (srcId 23, lineK 2) solution: the ball rolls off its start slope; line 1 is a kicker under the slope's end
@@ -595,7 +597,8 @@ LEVEL22_MAX_FRAMES = 1500
 # TASK-208: under the contact physics the old kicker (330,425)-(450,395) no longer clears B (B->A, off the map on
 # frame 288, artifacts/TASK-208/logs/trace_l23_oldref.jsonl); (320,425) wins on frame 232 (A->B) with 14 of 16 +-2 px
 # variants (artifacts/TASK-208/runs/g3_l23.json).
-LEVEL23_LINES = [((320, 425), (450, 395)), ((880, 760), (1060, 580))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 238, 14/16 +-2 px variants win).
+LEVEL23_LINES = [((320, 435), (490, 395)), ((880, 760), (1060, 580))]
 LEVEL23_MAX_FRAMES = 1500
 
 # Level 24 (srcId 24, lineK 3) solution: line 1 is a long, almost flat line over the start pad that rolls the ball
@@ -625,7 +628,8 @@ LEVEL24_MAX_FRAMES = 1500
 # artifacts/TASK-209/logs/trace_l25_oldref.jsonl; 2 of 16 +-2 px
 # variants win, artifacts/TASK-209/runs/oldref/); a single-coordinate shift of it, (495,597), wins on frame 155 (A->B)
 # with 12 of 16 +-2 px variants (artifacts/TASK-209/runs/g3_l25.json).
-LEVEL25_LINES = [((495, 597), (635, 603)), ((920, 693), (980, 747))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 155, 14/16 +-2 px variants win).
+LEVEL25_LINES = [((495, 597), (635, 603)), ((920, 693), (980, 751))]
 LEVEL25_MAX_FRAMES = 1500
 
 # Level 26 ('one line, two jobs', srcId 26, lineK 4): line 1 tips the ball off its pad to the left; line 2, a long
@@ -640,7 +644,8 @@ LEVEL25_MAX_FRAMES = 1500
 # ramp's left end point and leaves the map on frame 85 (artifacts/TASK-210/logs/trace_l26_oldref.jsonl; 0 of 32
 # +-2 px variants win). Raising the ramp's left end, (10,450)-(700,620), wins on frame 310 (A->B) with 22 of 32
 # +-2 px variants (artifacts/TASK-210/runs/g3_l26.json).
-LEVEL26_LINES = [((230, 286), (90, 300)), ((10, 450), (700, 620)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 304, 16/32 +-2 px variants win).
+LEVEL26_LINES = [((230, 286), (110, 300)), ((10, 450), (700, 620)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
 LEVEL26_MAX_FRAMES = 1500
 # TASK-248: the srcId 27 reference solution was removed with the level (TASK-247).
 # Level 28 ('wrap-around', TASK-151, lineK 2; reference solution): line 1 is a long ramp from the ball's pad down to
@@ -654,7 +659,8 @@ LEVEL26_MAX_FRAMES = 1500
 # it and leaves the map); line 2 is now (950,640)-(1070,790), from a 30 px lattice scan with line 1 kept
 # (artifacts/TASK-211/runs/lat28_r.json): the ball from B bounces off it to the right wall, comes back and leaves its
 # upper end up-right into the pocket (win frame 145, A->B, 15/15 +-2 px variants win).
-LEVEL28_LINES = [((550, 255), (40, 570)), ((950, 640), (1070, 790))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 322, 4/15 +-2 px variants win).
+LEVEL28_LINES = [((550, 255), (36, 570)), ((950, 640), (1070, 790))]
 LEVEL28_MAX_FRAMES = 1500
 # TASK-248: the srcId 29 reference solution was removed with the level (TASK-247).
 # Level 30 ('sky is lava', TASK-155, lineK 2; reference solution): line 1 knocks the ball, which bounces in place on its
@@ -703,7 +709,8 @@ LEVEL2_LINES = [((532, 325), (99, 714))]
 LEVEL2_MAX_FRAMES = 1500
 LEVEL3_LINES = [((387, 523), (1204, 103)), ((237, 446), (171, 44))]
 LEVEL3_MAX_FRAMES = 1500
-LEVEL4_LINES = [((100, 204), (774, 664)), ((548, 272), (296, 689))]
+# TASK-273: the old reference loses under the elastic contacts (TASK-270); re-found by tools/level_search.py local scans around it (win frame 103, 15/16 +-2 px variants win).
+LEVEL4_LINES = [((100, 200), (774, 664)), ((548, 272), (296, 689))]
 LEVEL4_MAX_FRAMES = 1500
 LEVEL5_LINES = [((192, 621), (1083, 9))]
 LEVEL5_MAX_FRAMES = 1500
@@ -970,9 +977,11 @@ def sc_l19_rim_backside(page, info, out_dir=None):
     from rimtrap import install
     install(page)
     place_and_start(page, info, 19, L19_RIM_LINES, 'l19_rim_backside', before_draw_js=L19_RIM_WATCH_JS)
+    # TASK-273: with elastic contacts (TASK-270) this ball leaves the map at ~frame 780 (a loss is allowed here); the
+    # restart turns physics off, so the frame counter stops: end the wait there too (same rule as l24_center_entry)
     page.wait_for_function("levelCompletedWindow || (window.__rt && window.__rt.trapped) || window.__l11Frames >= %d"
-                           % L19_RIM_FRAMES, timeout=180000, polling=100)
-    r = page.evaluate("""() => ({trapped: window.__rt.trapped, trapFrame: window.__rt.trapFrame,
+                           " || (window.__l11Frames > 0 && !physics)" % L19_RIM_FRAMES, timeout=180000, polling=100)
+    r = page.evaluate("""() => ({trapped: window.__rt.trapped, trapFrame: window.__rt.trapFrame, restarted: !physics,
         trapPortal: window.__rt.trapPortal, frames: window.__l11Frames, levelCompleted: levelCompletedWindow,
         winFrame: window.__l11Win, teleports: portalState.teleports.map(t => t.from + '->' + t.to),
         hostHits: portalState.hostHits, rimHits: portalState.rimHits, ball: [ball.posX, ball.posY],
@@ -991,7 +1000,10 @@ def sc_l19_rim_backside(page, info, out_dir=None):
 # L24_CENTER_FRAMES game frames (the ball may win, lose or bounce; this is not a solution).
 # TASK-251 (new roof (478,630)-(560,690)): the old backboard lines no longer reach A's centre; a short tip ramp off
 # the start pad now drops the ball onto A within 5 px of the centre (blocked, s = 3.6) and the roof throws it left.
-L24_CENTER_LINES = [((240, 482), (380, 500))]
+# TASK-273: under the elastic contacts (TASK-270) that ramp no longer reaches A's centre (no blocked exit); the scene's
+# setup line was re-found (artifacts/TASK-273/tools/l24_center_search.py, 715 variants of the old line, 14 meet the
+# precondition): the ball enters A at s = 0.46, exit refused for 'overlap'. The check itself is unchanged.
+L24_CENTER_LINES = [((240, 486), (388, 504))]
 L24_CENTER_FRAMES = 600
 # Per-frame hook on the real game loop: the embedded detector and the ball path (one point per physics frame,
 # blocked exits marked like teleports) for the path strip.
