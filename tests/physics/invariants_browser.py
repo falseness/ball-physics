@@ -3,6 +3,9 @@
 
   python3 tests/physics/invariants_browser.py [--levels 12,13,...] [--frames N]
   python3 tests/physics/invariants_browser.py --portal-fuzz SEED [--cases N] [--frames F]
+  python3 tests/physics/invariants_browser.py --parity-export SEED [--cases-per-kind N] > scenes.json
+  python3 tests/physics/invariants_browser.py --parity-run scenes.json [--frames F] > browser.json
+  python3 tests/physics/invariants_browser.py --math-check N > math.json
 
 Loads index.html (file://, Playwright chromium) and injects tests/physics/invariants_core.js. The shared run
 loop (LOOP_JS, window.__invRun) steps the game's own gamePhysics() parts (ball.physics(), ball.move(),
@@ -19,6 +22,10 @@ bounce happened (portalState.rimHits grew) and the portals' front normals when a
 (blockedExits grew). I1 depth uses the lines with each wall portal's opening (c +- h t) cut out of its host
 line. A step counts as a teleport (T rule: speed preserved) when portalState.teleports grows.
 Prints one compact JSON object on stdout ({levels: [...]} or {seed, scenes: [...]}).
+Portal parity (TASK-268): --parity-export writes N scenes of each tests/portal/fuzz.py generator (default, crossing,
+backside, touching; random.Random(0x9F2680 + SEED)) as JSON; --parity-run runs them in the page with
+tests/physics/portal_parity_core.js (bit-exact per-frame ball states + teleport records) for
+tests/physics/portal_parity.mjs, which runs the same scenes in node (harness makePortalWorld) and compares.
 """
 import argparse
 import json
@@ -161,7 +168,17 @@ def main():
     ap.add_argument('--frames', type=int, default=None, help='frame cap override (preview)')
     ap.add_argument('--portal-fuzz', type=int, default=None, help='TASK-201: portal fuzz seed (scenes from tests/portal/fuzz.py)')
     ap.add_argument('--cases', type=int, default=200, help='portal fuzz scenes per seed')
+    ap.add_argument('--parity-export', type=int, default=None, help='TASK-268: print parity scenes for this seed')
+    ap.add_argument('--cases-per-kind', type=int, default=50, help='TASK-268: parity scenes per generator')
+    ap.add_argument('--parity-run', default=None, help='TASK-268: run a parity scenes JSON file in the browser')
+    ap.add_argument('--math-check', type=int, default=None, help='TASK-268: Math results (PortalParity.mathSample) for N args per range')
     a = ap.parse_args()
+    if a.math_check is not None:
+        return math_check(a.math_check)
+    if a.parity_export is not None:
+        return parity_export(a.parity_export, a.cases_per_kind)
+    if a.parity_run is not None:
+        return parity_run(a.parity_run, a.frames)
     if a.portal_fuzz is not None:
         return portal_fuzz(a.portal_fuzz, a.cases, a.frames or 300)
     sols = solutions()
@@ -239,6 +256,73 @@ def portal_fuzz(seed, n, frames):
         browser.close()
     json.dump({'seed': seed, 'scenes': res, 'frames': frames, 'pageErrors': errors, 'seconds': time.time() - t0},
               sys.stdout, separators=(',', ':'))
+
+
+def parity_export(seed, per_kind):
+    """TASK-268: per_kind scenes of each generator (default / crossing alternate aimed and random balls)."""
+    import random
+    sys.path.insert(0, os.path.join(ROOT, 'tests', 'portal'))
+    import fuzz
+    rng = random.Random(0x9F2680 + seed)
+    out = []
+    for kind in PORTAL_KINDS:
+        for i in range(per_kind):
+            aimed = i % 2 == 0
+            cfg = (fuzz.make_case(rng, aimed) if kind == 'default' else fuzz.make_crossing_case(rng, aimed) if kind == 'crossing'
+                   else fuzz.make_backside_case(rng) if kind == 'backside' else fuzz.make_touching_case(rng))
+            out.append({'id': '%s#%d' % (kind, i), 'kind': kind, 'cfg': cfg})
+    json.dump({'seed': seed, 'scenes': out}, sys.stdout, separators=(',', ':'))
+
+
+PARITY_JS = r"""([cfg, frames]) => {
+    window.__portalTest.setup(cfg)
+    physics = false
+    return PortalParity.run(gamePhysics, () => ball, () => portalState, frames, cyclesPerTact)
+}"""
+
+
+def parity_run(path, frames):
+    """TASK-268: run the scenes of a --parity-export file in the game page; compact JSON on stdout."""
+    import time
+    from playwright.sync_api import sync_playwright
+    data = json.load(open(path))
+    frames = frames or data.get('frames') or 300
+    core = open(os.path.join(HERE, 'portal_parity_core.js')).read()
+    res = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={'width': 1280, 'height': 800})
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.goto('file://' + os.path.join(ROOT, 'index.html'))
+        page.wait_for_function('typeof gamePhysics === "function"')
+        page.add_script_tag(content=core)
+        t0 = time.time()
+        for i, sc in enumerate(data['scenes']):
+            r = page.evaluate(PARITY_JS, [sc['cfg'], frames])
+            r['id'] = sc['id']
+            res.append(r)
+            if (i + 1) % 50 == 0:
+                print('parity browser: %d/%d scenes' % (i + 1, len(data['scenes'])), file=sys.stderr, flush=True)
+        secs = time.time() - t0
+        browser.close()
+    json.dump({'frames': frames, 'scenes': res, 'pageErrors': errors, 'seconds': secs,
+               'browser': 'chromium (playwright)'}, sys.stdout, separators=(',', ':'))
+
+
+def math_check(n):
+    """TASK-268: the page's Math results on PortalParity.mathSample's arguments (compared in portal_parity.mjs)."""
+    from playwright.sync_api import sync_playwright
+    core = open(os.path.join(HERE, 'portal_parity_core.js')).read()
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto('file://' + os.path.join(ROOT, 'index.html'))
+        page.add_script_tag(content=core)
+        r = page.evaluate('(n) => PortalParity.mathSample(Math, n)', n)
+        r['browserVersion'] = browser.version
+        browser.close()
+    json.dump(r, sys.stdout, separators=(',', ':'))
 
 
 if __name__ == '__main__':

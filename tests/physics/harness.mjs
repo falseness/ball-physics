@@ -144,3 +144,60 @@ export function makeFastWorld(segments, opts = {})
         step(b) { b.physics(); b.move() },
     }
 }
+
+// TASK-268: headless portals. js/sprite.js, js/line.js, js/ball.js and js/portal.js (portalStep, portalHostSegs,
+// portalCaptureZone, the capture zone, teleports, rims) compiled in one function scope like makeFastWorld, with
+// stubs for the index.html / editor.js globals portal.js reads (ball, curLevel, playtestLevel, levels, the
+// window.__portalTest setup flags). gamePhysics() is taken verbatim from index.html, so a step is
+// ball.physics(), ball.move(), portalStep() exactly as in the game. makePortalWorld(cfg) returns
+// {T: window.__portalTest, gamePhysics, ball(), state(): portalState, portals(): currentPortals()}.
+// cfg: a tests/portal/fuzz.py case ({wall: true, lines, portals, ball}); set up by the real window.__portalTest.setup.
+// The game code sees `Math` = portalMath: node's Math with sin / cos replaced by tests/physics/glibc_sincos.js, the
+// glibc routines Chromium's V8 uses (node's fdlibm sin / cos differ in the last bit for ~3 % of arguments, which
+// changed teleport exit velocities). Checked against the browser by tests/physics/portal_parity.mjs.
+export const portalMath = (() =>
+{
+    const G = new Function(fs.readFileSync(path.join(ROOT, 'tests', 'physics', 'glibc_sincos.js'), 'utf8') + '\nreturn GlibcSinCos')()
+    const M = {}
+    for (const k of Object.getOwnPropertyNames(Math))
+        M[k] = Math[k]
+    M.sin = G.sin
+    M.cos = G.cos
+    return Object.freeze(M)
+})()
+let portalFactory = null
+const portalWorlds = new Map()
+export function makePortalWorld(cfg, opts = {})
+{
+    if (!portalFactory)
+    {
+        const src = ['js/sprite.js', 'js/line.js', 'js/ball.js', 'js/portal.js'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n')
+        const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
+        const gp = html.match(/function gamePhysics\(\)\s*\{[^}]*\}/)
+        if (!gp)
+            throw new Error('gamePhysics() not found in index.html')
+        portalFactory = new Function('G', 'Math', `var window = {}, gravitationalAcceleration = G, cyclesPerTact = ${STEPS_PER_FRAME}, GAME_W = 1280, GAME_H = 800
+            var physics = false, levelStarted = false, levelCompletedWindow = false, linesK = 0
+            var playtestLevel = null, levels = [], thisLevel = 0
+            function curLevel() { return playtestLevel || levels[thisLevel] }
+            ${src}
+            var ball = new Ball(10, 20, 80, 0, 0, '#ff0000', 'ball')
+            ${gp[0]}
+            return { T: window.__portalTest, gamePhysics: gamePhysics, ball: function () { return ball },
+                     state: function () { return portalState }, portals: function () { return currentPortals() } }`)
+    }
+    // One scope is reused across scenes (fresh: true forces a new one): window.__portalTest.setup resets everything
+    // a scene's physics reads (portalReset, a new scratch level object so the portal cache re-resolves, lines, the
+    // ball's position / speed / radius). A new scope per scene costs V8 its type feedback and optimized code every
+    // time (~5x slower in node 12); tests/physics/portal_parity.mjs checks both ways give the same bits.
+    const g = opts.g === undefined ? G : opts.g
+    let W = portalWorlds.get(g)
+    if (!W || opts.fresh)
+    {
+        W = portalFactory(g, portalMath)
+        if (!opts.fresh)
+            portalWorlds.set(g, W)
+    }
+    W.T.setup(cfg)
+    return W
+}
