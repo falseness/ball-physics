@@ -1,5 +1,5 @@
 {
- "note": "TASK-232/233/234/235: editor: and edit: (play-test) design events of shoot.py telemetry_editor (none backend), in order. Script: editor from the pause menu, line tool + one line (300,560)-(520,640) (TASK-234: line add 4), play, HUD edit box back, export, exit (actions 5 = line tool, line, play, export, exit); win, completion window editor button, exit unchanged (actions 1 = exit); TASK-233 toolbar session (toolbar_session): editor from the menu, select, snap on/off, flag cw, new, lines - x2 (clamped at 0), lines +, line tool + 2 lines, portal tool + pair, select + portal A, ccw (portal), size - (30), size + (45), size + (refused, 0), select line A, cw (line), delete tool (touch tap), toolbar drag, export, import ok / invalid / old_format, exit (actions 30 = 26 toolbar events + 2 line adds + portal a + portal b; TASK-234 errors portal_does_not_fit, invalid_level_file, old_portal_format are not actions); TASK-234 objects session (objects_session): new, line tool, cancel, lines C/D/E (add 1..3), portal tool, error portals_go_on_lines, A, error portals_overlap, B, select (a press that only selects line D sends nothing), move ball / flag, portal B moved ok / dropped on A (error portals_overlap, refused), line D moved, its end by mouse and by touch (line_end ok twice), onto its other end (degenerate), line C end too close (error line_too_short_for_its_portal, refused), cw on line E at the right edge (error line_would_leave_the_field, rotate cw line), seeded h 400 pair + line C drag (error line_too_short_for_its_portal, line_move refused), delete tool: line D, the pair; select line E + Delete key, exit (actions 27 = 8 toolbar + 19 object events; hash 94ebc9e9); TASK-235 play-test session (playtest_session): editor from the menu, new, lines + x2 (lineK 3), line tool + level line (300,560)-(520,640), play (hash 945a02b6 = the editor:sum hash at play; edit: attempt 1), player lines X and Y (line_place 1, 2), Y's end dragged (line_drag 1), Y binned (line_delete), run + pause, speed on / off, HUD restart (attempt 2), run, off-map (attempt 3), run, win (edit win time>0), completion window editor (back), exit (actions 7); editor from the menu, pagehide (abandon, actions 0). The first play-test (HUD edit box) sends edit:dd4a6cc4:attempt 1 and back. Hash dd4a6cc4 = FNV-1a of editorLevelToJSON of level srcId 1 + that line; ea6a7443 = the toolbar session's level. time>0 = any number > 0.",
+ "note": "TASK-232/233/234/235: editor: and edit: (play-test) design events of shoot.py telemetry_editor (none backend), in order. Script: editor from the pause menu, line tool + one line (300,560)-(520,640) (TASK-234: line add 3; srcId 1 restored by TASK-243 has 2 lines), play, HUD edit box back, export, exit (actions 5 = line tool, line, play, export, exit); win, completion window editor button, exit unchanged (actions 1 = exit); TASK-233 toolbar session (toolbar_session): editor from the menu, select, snap on/off, flag cw, new, lines - x2 (clamped at 0), lines +, line tool + 2 lines, portal tool + pair, select + portal A, ccw (portal), size - (30), size + (45), size + (refused, 0), select line A, cw (line), delete tool (touch tap), toolbar drag, export, import ok / invalid / old_format, exit (actions 30 = 26 toolbar events + 2 line adds + portal a + portal b; TASK-234 errors portal_does_not_fit, invalid_level_file, old_portal_format are not actions); TASK-234 objects session (objects_session): new, line tool, cancel, lines C/D/E (add 1..3), portal tool, error portals_go_on_lines, A, error portals_overlap, B, select (a press that only selects line D sends nothing), move ball / flag, portal B moved ok / dropped on A (error portals_overlap, refused), line D moved, its end by mouse and by touch (line_end ok twice), onto its other end (degenerate), line C end too close (error line_too_short_for_its_portal, refused), cw on line E at the right edge (error line_would_leave_the_field, rotate cw line), seeded h 400 pair + line C drag (error line_too_short_for_its_portal, line_move refused), delete tool: line D, the pair; select line E + Delete key, exit (actions 27 = 8 toolbar + 19 object events; hash 94ebc9e9); TASK-235 play-test session (playtest_session): editor from the menu, new, lines + x2 (lineK 3), line tool + level line (300,560)-(520,640), play (hash 945a02b6 = the editor:sum hash at play; edit: attempt 1), player lines X and Y (line_place 1, 2), Y's end dragged (line_drag 1), Y binned (line_delete), run + pause, speed on / off, HUD restart (attempt 2), run, off-map (attempt 3), run, win (edit win time>0), completion window editor (back), exit (actions 7); editor from the menu, pagehide (abandon, actions 0). The first play-test (HUD edit box) sends edit:5ea7fbdd:attempt 1 and back. Hash 5ea7fbdd = FNV-1a of editorLevelToJSON of level srcId 1 + that line; ea6a7443 = the toolbar session's level. time>0 = any number > 0.",
  "events": [
   [
    "addDesignEvent",
@@ -14,7 +14,7 @@
   [
    "addDesignEvent",
    "editor:line:L1:add",
-   4
+   3
   ],
   [
    "addDesignEvent",
@@ -23,32 +23,32 @@
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:lines",
-   4
+   "editor:sum:L1:5ea7fbdd:lines",
+   3
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:portals",
+   "editor:sum:L1:5ea7fbdd:portals",
    0
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:linek",
+   "editor:sum:L1:5ea7fbdd:linek",
    1
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:changed",
+   "editor:sum:L1:5ea7fbdd:changed",
    1
   ],
   [
    "addDesignEvent",
-   "edit:dd4a6cc4:attempt",
+   "edit:5ea7fbdd:attempt",
    1
   ],
   [
    "addDesignEvent",
-   "edit:dd4a6cc4:back",
+   "edit:5ea7fbdd:back",
    null
   ],
   [
@@ -58,22 +58,22 @@
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:lines",
-   4
+   "editor:sum:L1:5ea7fbdd:lines",
+   3
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:portals",
+   "editor:sum:L1:5ea7fbdd:portals",
    0
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:linek",
+   "editor:sum:L1:5ea7fbdd:linek",
    1
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:changed",
+   "editor:sum:L1:5ea7fbdd:changed",
    1
   ],
   [
@@ -83,22 +83,22 @@
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:lines",
-   4
+   "editor:sum:L1:5ea7fbdd:lines",
+   3
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:portals",
+   "editor:sum:L1:5ea7fbdd:portals",
    0
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:linek",
+   "editor:sum:L1:5ea7fbdd:linek",
    1
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:changed",
+   "editor:sum:L1:5ea7fbdd:changed",
    1
   ],
   [
@@ -123,22 +123,22 @@
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:lines",
-   4
+   "editor:sum:L1:5ea7fbdd:lines",
+   3
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:portals",
+   "editor:sum:L1:5ea7fbdd:portals",
    0
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:linek",
+   "editor:sum:L1:5ea7fbdd:linek",
    1
   ],
   [
    "addDesignEvent",
-   "editor:sum:L1:dd4a6cc4:changed",
+   "editor:sum:L1:5ea7fbdd:changed",
    0
   ],
   [
