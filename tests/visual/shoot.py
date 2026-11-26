@@ -3386,23 +3386,31 @@ def sc_telemetry_first30(page, info):
         raise RuntimeError('first30 heartbeat check failed (heartbeat.json)')
 
 
-# TASK-255: one centred menu layout (menuLayout, js/menu.js). layout.json: menuLayout('pause') (+ the 'win' layouts)
-# with centre / order / overlap checks; clicks.json: each pause menu button (and each completion window button) clicked
-# once with real input in a fresh page (own context, none telemetry backend), with the resulting state and the ui:
-# events it sent; pause.png: the pause menu.
-MENU_PAUSE_IDS = ['resume', 'restart', 'editor', 'Levels']
-MENU_WIN_IDS = ['next level', 'restart', 'editor', 'Levels']
+# TASK-255 / TASK-256: one centred menu layout (menuLayout, js/menu.js). layout.json: menuLayout of the pause menu
+# and of the three completion window variants, each read in the real state (a real win: normal srcId 1, the last
+# level, a play-test of srcId 1 started from the editor), with centre / order / overlap checks; clicks.json: each
+# button of each variant clicked once with real input from a fresh win in a fresh page (own context, none telemetry
+# backend), with the resulting state, the ui: events and every analytics event after the click (a won attempt is
+# closed: no abandon / Fail after it). pause.png, win.png, win_last.png, win_playtest.png: the four windows.
+MENU_IDS = {'pause': ['resume', 'restart', 'editor', 'Levels'],
+            'win': ['next level', 'restart', 'editor', 'Levels'],
+            'winLast': ['restart', 'editor', 'Levels'],  # 'Thanks for playing!' takes the next-level slot
+            'winPlaytest': ['restart', 'editor', 'Levels']}  # 'editor' = back to the editor (editorEndPlaytest)
+MENU_LABELS = {'pause': [], 'win': ['Level completed!'], 'winLast': ['Level completed!', 'Thanks for playing!'],
+               'winPlaytest': ['Level completed!']}
+MENU_PNG = {'win': 'win.png', 'winLast': 'win_last.png', 'winPlaytest': 'win_playtest.png'}
 MENU_STATE_JS = """() => ({drawMenu, levelCompletedWindow, editorMode, drawMap, physics, levelStarted, thisLevel,
-    srcId: levels[thisLevel].srcId, playerLines: lines.filter(l => l.type == 'player').length,
+    srcId: levels[thisLevel].srcId, playtest: !!playtestLevel, playerLines: lines.filter(l => l.type == 'player').length,
     ball: [ball.posX, ball.posY], ballStart: [curLevel().ballX, curLevel().ballY]})"""
 MENU_UI_JS = """n => ANALYTICS.debugLog.slice(n).filter(e => e.fn == 'addDesignEvent' && /^ui:/.test(String(e.args[0]))).map(e => e.args[0])"""
+MENU_EVENTS_JS = """n => ANALYTICS.debugLog.slice(n).map(e => [e.fn, ...e.args.map(a => a === undefined ? null : a)])"""
 
 
 def rects_overlap(a, b):
     return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
 
-def layout_check(L, want_ids):
+def layout_check(L, want_ids, want_labels=None):
     P = L['panel']
     c = [P[0] + P[2] / 2, P[1] + P[3] / 2]
     ids = [b['id'] for b in L['buttons']]
@@ -3410,49 +3418,86 @@ def layout_check(L, want_ids):
     overlaps = [[ids[i], ids[j]] for i in range(len(rs)) for j in range(i + 1, len(rs)) if rects_overlap(rs[i], rs[j])]
     logo = [i for i, r in zip(ids, rs) if rects_overlap(r, L['logo'])]
     inside = all(P[0] <= r[0] and r[0] + r[2] <= P[0] + P[2] and P[1] <= r[1] and r[1] + r[3] <= P[1] + P[3] for r in rs + [L['logo']])
-    same_size = len({(r[2], r[3]) for r in rs}) == 1
+    sizes = sorted({(r[2], r[3]) for r in rs})
     steps = sorted({rs[i + 1][1] - rs[i][1] for i in range(len(rs) - 1)})
+    labels = [t['text'] for t in L['labels']]
     ok = (abs(c[0] - 640) <= 1 and abs(c[1] - 400) <= 1 and ids == want_ids and not overlaps and not logo and inside
-          and same_size and (len(steps) <= 1 or (len(rs) == 4 and set(steps) <= {85, 170})))
-    return {'centre': c, 'ids': ids, 'overlaps': overlaps, 'logoOverlaps': logo, 'insidePanel': inside,
-            'sameSize': same_size, 'steps': steps, 'pass': bool(ok)}
+          and sizes == [(250, 50)] and steps == [85] and (want_labels is None or labels == want_labels))
+    return {'centre': c, 'ids': ids, 'labels': labels, 'overlaps': overlaps, 'logoOverlaps': logo, 'insidePanel': inside,
+            'sizes': sizes, 'steps': steps, 'pass': bool(ok)}
+
+
+def menu_win_now(p):
+    # real win through gameMechanics' flagCollision: the running ball is put on the pennant edge (TASK-213)
+    telemetry_run(p)
+    p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
+    p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+    frames(p)
 
 
 def menu_page_setup(p, kind):
-    # srcId 1 (lineK 1): one player line (it starts the run), then pause (play box) and the menu icon; or a win
+    # srcId 1 (lineK 1): one player line (it starts the run), then pause (play box) and the menu icon, or a win;
+    # winLast: the last level picked on the route map, one line, a run (play box), a win; winPlaytest: pause menu 'editor',
+    # toolbar 'play' (a play-test of srcId 1), one line (starts the run), a win
     if p.evaluate("levels[thisLevel].srcId") != 1:
         raise RuntimeError('boot did not open srcId 1')
-    draw_seg(p, LINE_X)
-    if kind == 'win':
-        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
-        p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
-        frames(p)
-    else:
+    if kind == 'pause':
+        draw_seg(p, LINE_X)
         click(p, *p.evaluate(PLAY_ICON_JS))  # pause the run
         open_menu(p)
         if not p.evaluate("drawMenu"):
             raise RuntimeError('pause menu did not open')
+        return
+    if kind == 'win':
+        draw_seg(p, LINE_X)
+    elif kind == 'winLast':
+        last = p.evaluate("levels.length - 1")
+        pick_level(p, last)
+        if p.evaluate("thisLevel") != last or p.evaluate("drawMap"):
+            raise RuntimeError('last level not started from the map')
+        draw_seg(p, LINE_X)  # a player line for 'restart' to keep (the play box then starts the run)
+    else:
+        open_menu(p)
+        click(p, *p.evaluate(EDITOR_BUTTON_JS))
+        if not p.evaluate("editorMode"):
+            raise RuntimeError('pause menu editor button did not open the editor')
+        editor_tool(p, 'play')
+        if p.evaluate("editorMode") or not p.evaluate("!!playtestLevel"):
+            raise RuntimeError('toolbar play did not start a play-test')
+        draw_seg(p, LINE_X)
+    menu_win_now(p)
+    if kind == 'winPlaytest' and not p.evaluate("!!playtestLevel"):
+        raise RuntimeError('play-test win left the play-test')
 
 
-def menu_click_ok(kind, bid, before, after, ui):
+def menu_click_ok(kind, bid, before, after, ui, events):
+    ctx = 'L%s' % before['srcId']
     if kind == 'pause':
         want_ui = {'resume': ['resume'], 'restart': ['restart'], 'editor': ['editor_open'], 'Levels': ['map_open']}[bid]
-        want_ui = ['ui:%s:L1' % u for u in want_ui] + ['ui:menu_close:L1']
+        want_ui = ['ui:%s:%s' % (u, ctx) for u in want_ui] + ['ui:menu_close:%s' % ctx]
+    elif kind == 'winPlaytest':
+        want_ui = []  # play-tests send no ui: events (TELEMETRY uiActive, docs/telemetry.md)
     else:
-        want_ui = ['ui:%s:L1' % {'next level': 'next_level', 'restart': 'restart', 'editor': 'editor_open', 'Levels': 'map_open'}[bid]]
+        want_ui = ['ui:%s:%s' % ({'next level': 'next_level', 'restart': 'restart', 'editor': 'editor_open', 'Levels': 'map_open'}[bid], ctx)]
     closed = not after['drawMenu'] and not after['levelCompletedWindow']
     if bid == 'resume':
         st = closed and not after['editorMode'] and not after['drawMap'] and after['playerLines'] == before['playerLines']
     elif bid == 'restart':
         st = (closed and not after['levelStarted'] and not after['physics'] and after['playerLines'] == before['playerLines'] >= 1
-              and after['ball'] == after['ballStart'] and after['thisLevel'] == before['thisLevel'])
+              and after['ball'] == after['ballStart'] and after['thisLevel'] == before['thisLevel']
+              and after['playtest'] == before['playtest'])
     elif bid == 'editor':
-        st = closed and after['editorMode'] is True
+        st = closed and after['editorMode'] is True and not after['playtest']
     elif bid == 'Levels':
         st = closed and after['drawMap'] is True and not after['editorMode']
     else:  # next level
-        st = closed and after['thisLevel'] == before['thisLevel'] + 1
-    return {'wantUi': want_ui, 'uiOk': ui == want_ui, 'stateOk': bool(st)}
+        st = closed and after['thisLevel'] == before['thisLevel'] + 1 and not after['drawMap']
+    r = {'wantUi': want_ui, 'uiOk': ui == want_ui, 'stateOk': bool(st)}
+    if kind != 'pause':  # the win closed the attempt: nothing after it may abandon or fail it
+        bad = [e for e in events if ':abandon' in ' '.join(str(a) for a in e[1:2]) or (e[0] == 'addProgressionEvent' and 'Fail' in str(e[1:]))]
+        r['abandonAfterWin'] = bad
+        r['noAbandonOk'] = not bad
+    return r
 
 
 def sc_menu_layout(page, info):
@@ -3463,39 +3508,41 @@ def sc_menu_layout(page, info):
     frames(page)
     page.screenshot(path=os.path.join(OUT_DIR, 'pause.png'))
     pause = page.evaluate("menuLayout('pause')")
-    lay = {'pause': pause, 'pauseCheck': layout_check(pause, MENU_PAUSE_IDS)}
-    page.evaluate("() => { drawMenu = false; levelCompletedWindow = true }")
+    lay = {'pause': pause, 'pauseCheck': layout_check(pause, MENU_IDS['pause'], MENU_LABELS['pause'])}
+    click(page, *page.evaluate(menu_btn_js('pause', 'resume')))
     frames(page)
-    page.screenshot(path=os.path.join(OUT_DIR, 'win.png'))
-    win = page.evaluate("menuLayout('win')")
-    lay['win'] = win
-    lay['winCheck'] = layout_check(win, MENU_WIN_IDS)
-    last = page.evaluate("() => { const t = thisLevel; thisLevel = levels.length - 1; const L = menuLayout('win'); thisLevel = t; return L }")
-    lay['winLast'] = last
-    lay['winLastCheck'] = layout_check(last, MENU_WIN_IDS[1:])
-    lay['winLastCheck']['labels'] = [t['text'] for t in last['labels']]
-    page.evaluate("() => { levelCompletedWindow = false; drawMenu = true }")
-    frames(page)
-    lay['pass'] = bool(lay['pauseCheck']['pass'] and lay['winCheck']['pass'] and lay['winLastCheck']['pass']
-                       and lay['winLastCheck']['labels'] == ['Level completed!', 'Thanks for playing!'])
+    for kind in ('win', 'winLast', 'winPlaytest'):  # each variant in the state of a real win
+        errs = []
+        with telemetry_page(page, errs) as p:
+            menu_page_setup(p, kind)
+            p.screenshot(path=os.path.join(OUT_DIR, MENU_PNG[kind]))
+            L = p.evaluate("menuLayout('win')")
+            st = p.evaluate(MENU_STATE_JS)
+        lay[kind] = L
+        lay[kind + 'Check'] = layout_check(L, MENU_IDS[kind], MENU_LABELS[kind])
+        lay[kind + 'Check'].update({'srcId': st['srcId'], 'playtest': st['playtest'], 'consoleErrors': errs})
+        if errs:
+            lay[kind + 'Check']['pass'] = False
+    lay['pass'] = all(lay[k + 'Check']['pass'] for k in MENU_IDS)
     with open(os.path.join(OUT_DIR, 'layout.json'), 'w') as f:
         json.dump(lay, f, separators=(',', ':'))
     clicks = {}
-    for kind, ids in (('pause', MENU_PAUSE_IDS), ('win', MENU_WIN_IDS)):
+    for kind, ids in MENU_IDS.items():
         for bid in ids:
             errs = []
             with telemetry_page(page, errs) as p:
                 menu_page_setup(p, kind)
                 before = p.evaluate(MENU_STATE_JS)
-                pt = p.evaluate(menu_btn_js(kind, bid))
+                pt = p.evaluate(menu_btn_js('win' if kind != 'pause' else 'pause', bid))
                 n = p.evaluate("ANALYTICS.debugLog.length")
                 click(p, *pt)
                 frames(p)
                 after = p.evaluate(MENU_STATE_JS)
                 ui = p.evaluate(MENU_UI_JS, n)
-            r = {'click': pt, 'before': before, 'after': after, 'ui': ui, 'consoleErrors': errs}
-            r.update(menu_click_ok(kind, bid, before, after, ui))
-            r['pass'] = bool(r['uiOk'] and r['stateOk'] and not errs)
+                events = p.evaluate(MENU_EVENTS_JS, n)
+            r = {'click': pt, 'before': before, 'after': after, 'ui': ui, 'events': events, 'consoleErrors': errs}
+            r.update(menu_click_ok(kind, bid, before, after, ui, events))
+            r['pass'] = bool(r['uiOk'] and r['stateOk'] and r.get('noAbandonOk', True) and not errs)
             clicks['%s:%s' % (kind, bid)] = r
     clicks_out = {'clicks': clicks, 'pass': all(c['pass'] for c in clicks.values())}
     with open(os.path.join(OUT_DIR, 'clicks.json'), 'w') as f:

@@ -85,7 +85,7 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `ui:menu_open:<ctx>` | the HUD menu icon opens the pause menu | - | TASK-192 |
 | `ui:menu_close:<ctx>` | the pause menu closes by any of its buttons, right after that button's event | - | TASK-192 |
 | `ui:resume:<ctx>` | pause menu 'resume' | - | TASK-192 |
-| `ui:map_open:<ctx>` | pause menu or completion window 'Levels' opens the route map (TASK-255: the completion window has no `menu_close`) | - | TASK-192 |
+| `ui:map_open:<ctx>` | pause menu or completion window 'Levels' opens the route map (TASK-255: the completion window has no `menu_close`; TASK-256: after a win it sends no `abandon`, the won attempt is already closed; a play-test's completion window sends no `ui:` event) | - | TASK-192 |
 | `ui:map_close:<ctx>` | the map closes: its menu icon (back to the pause menu) or a level starts from it | - | TASK-192 |
 | `ui:map_level:<ctx>` | a click / tap on a level slot on the map (selects it, or starts the selected one) | srcId of that level | TASK-192 |
 | `ui:preview_play:<ctx>` | the preview card's play button | srcId of that level | TASK-192 |
