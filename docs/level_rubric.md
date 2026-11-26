@@ -94,3 +94,20 @@ current contact physics (TASK-199..201) some of these levels fail the hard gates
 reported (TASK-245 style: the gate, the numbers, the evidence), not fixed by layout edits: do not edit a frozen
 definition, do not change the physics to make a gate or a reference pass, and do not delete or skip a shoot
 scenario. Only the reference solutions are re-found (TASK-244).
+
+Gate status of the frozen layouts (TASK-245, informational, preview budget: dense1 step 80, k=2/3 and G4 samples of
+1000, at HEAD 3edc3fe; FAIL is recorded, not fixed):
+
+| srcId | lineK | G1 | G2 | G3 | G4 | embedded/trapped |
+|---|---|---|---|---|---|---|
+| 1 | 1 | PASS (0 lines lose) | PASS | 8/8 | n/a | 0/0 |
+| 2 | 1 | FAIL: 0 lines win (frame 120) | FAIL | 8/8 | n/a | 0/0 |
+| 3 | 2 | FAIL: 370/13854 one-line wins | FAIL: line 2 alone wins | 15/16 | n/a | 0/0 |
+| 9 | 1 | PASS | PASS | 6/8 | n/a | 0/0 |
+| 11 | 2 | FAIL: 586/13893 one-line wins (reference is 1 line) | PASS | 8/8 | 17/1000 | 0/0 |
+| 13 | 4 | FAIL: 594 one-line, 5 two-line, 6 three-line wins (reference is 2 lines) | FAIL | 12/16 | 4/1000 | 0/0 |
+| 15 | 1 | PASS | PASS | 8/8 | 6/1000 | FAIL: 0/7 (G4 sample) |
+| 19 | 2 | FAIL: 1/13756 | PASS | 15/16 | 0/1000 | 0/0 |
+| 21 | 2 | FAIL: 1/13648 | PASS | 16/16 | 1/1000 | 0/0 |
+| 27 | 3 | PASS (0/13693, 0/1000 k=2) | PASS | 16/24 | 0/1000 | FAIL: 0/1 (dense1) |
+| 30 | 2 | FAIL: 3/13828 | PASS | 14/16 | 0/1000 | 0/0 |
