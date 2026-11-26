@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, '..', '..')
 const FROZEN = path.join(HERE, 'frozen.json')
-const SET = [1, 2, 3, 9, 11, 13, 15, 19, 21, 27, 30]
+const SET = [1, 2, 3, 9, 13, 15, 19, 21, 30] // TASK-247: srcId 11 and 27 were removed from the game
 const args = process.argv.slice(2)
 const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null }
 

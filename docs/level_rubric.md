@@ -86,7 +86,11 @@ Idea s/5, Aha s/5, Readability s/5, Flow s/5, mean m (every >= 3, mean >= 3.5)  
 User request (verbatim, TASK-243): "undo change to levels pls". The layouts that the physics re-check tickets
 TASK-202..212 changed are back to their definitions at git `5685fc4^` (just before TASK-202), exactly, and are frozen:
 
-- srcId 1, 2, 3, 9, 11, 13, 15, 19, 21, 27, 30
+- srcId 1, 2, 3, 9, 13, 15, 19, 21, 30
+
+TASK-247 removed srcId 8, 11, 14, 27 and 29 from the game (user: "lets remove completely levels: 3, 6, 19, 21, 30",
+display numbers at 32 levels); 11 and 27 left the frozen set with them. Their definitions in `js/levels.js` are `null`
+placeholders so the remaining 27 levels keep their srcId; saved data naming a removed srcId is ignored.
 
 `node tests/levels/frozen_check.mjs` (also in `tests/regression/run_checks.sh`, preview and full) compares a sha256 of
 each normalised definition with `tests/levels/frozen.json` and exits 1 naming the srcId on any change. Under the

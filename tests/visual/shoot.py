@@ -236,7 +236,7 @@ def sc_next_level_order(page, info):
 
 # TASK-178 saved progress. Each scenario also writes its own compact JSON (PROGRESS_FILES) into the task dir.
 PROGRESS_FILES = {'progress_reload': 'progress_reload.json', 'progress_storage_blocked': 'progress_blocked.json',
-                  'progress_garbage': 'progress_garbage.json'}
+                  'progress_garbage': 'progress_garbage.json', 'removed_levels_saved': 'saved.json'}
 # TASK-184: 'stored' is read through the platform facade (PLATFORM.storage.getMany); 'raw' is the backend's
 # localStorage value ('THROWS' when blocked; the local backend then keeps the value in memory).
 PROGRESS_STATE_JS = """async () => { let raw = null; try { raw = localStorage.getItem(PROGRESS_STORE) } catch (e) { raw = 'THROWS' }
@@ -334,6 +334,60 @@ def sc_progress_garbage(page, info):
             'completedCount': page.evaluate("levels.filter(l => l.unlock == 2).length"),
             'frameCount': [f0, f1], 'gameRunning': f1 > f0}
     progress_out(info, 'progress_garbage', data)
+
+
+# TASK-247: srcId 8, 11, 14, 27 and 29 were removed. Saved data naming them (bp.progress.v1 solved ids, bp.lines.v1 and
+# bp.stats.v1 entries) must load without errors, count as nothing and stay stored as it was.
+REMOVED_SRC = [8, 11, 14, 27, 29]
+REMOVED_SAVED = {
+    'bp.progress.v1': json.dumps({'solved': [1, 8, 11, 12]}, separators=(',', ':')),
+    'bp.lines.v1': json.dumps({'11': {'draft': [[100, 100, 300, 300]], 'passed': [[100, 100, 300, 300]], 'sha': '00000000'},
+                               '27': {'draft': [[200, 200, 400, 200]], 'passed': None, 'sha': '00000000'}}, separators=(',', ':')),
+    'bp.stats.v1': json.dumps({'11': {'attempts': 4, 'wins': 1, 'restarts': 2, 'offmap': 0, 'abandons': 0, 'seconds': 50},
+                               '27': {'attempts': 2, 'wins': 0, 'restarts': 1, 'offmap': 1, 'abandons': 1, 'seconds': 20}},
+                              separators=(',', ':')),
+}
+REMOVED_SAVED_INIT = '(() => { const v = %s; for (const k in v) localStorage.setItem(k, v[k]) })()' % json.dumps(REMOVED_SAVED)
+
+
+def sc_removed_levels_saved(page, info):
+    frames(page)
+    boot = page.evaluate("""removed => ({nLevels: levels.length, srcIds: levels.map(l => l.srcId), thisLevel,
+        levelBySrc: Object.fromEntries(removed.map(n => [n, levelBySrc(n)])), solved: progressSolved(),
+        completedSrcIds: levels.filter(l => l.unlock == 2).map(l => l.srcId),
+        restoredLines: levels.map((l, i) => ({srcId: l.srcId, n: linesSaved(i).length})).filter(r => r.n),
+        statsKeys: Object.keys(TELEMETRY.stats()).sort()})""", REMOVED_SRC)
+    open_map(page)  # real clicks: HUD menu icon -> 'Levels'
+    frames(page, 4)
+    st = page.evaluate(MAP_STATE_JS)
+    m = {k: st[k] for k in ('drawMap', 'nLevels', 'solvedNumbers', 'solvedSrcIds', 'next', 'expectedNext', 'flags', 'lamps',
+                            'platforms')}
+    m['nextSrcId'] = page.evaluate("n => levels[n - 1].srcId", st['next'])
+    m['ballSlot'] = page.evaluate("window.mapState.ball && window.mapState.ball.slot")
+    m['nextSlot'] = page.evaluate("n => { const a = routeAssign(levels); return Object.keys(a).find(k => a[k] === n - 1) || null }",
+                                  st['next'])
+    stored = page.evaluate("keys => Object.fromEntries(keys.map(k => [k, localStorage.getItem(k)]))", list(REMOVED_SAVED))
+    first_unsolved = next((i for i, n in enumerate(boot['srcIds']) if n not in boot['solved']), None)
+    # progress and lines are not written at all; stats gets the game's own counters for the level open at boot (srcId 1),
+    # the removed levels' entries must stay as stored
+    inj = {k: json.loads(v) for k, v in REMOVED_SAVED.items()}
+    now = {k: json.loads(v) if v else None for k, v in stored.items()}
+    kept = {k: {i: now[k] is not None and now[k].get(i) == inj[k][i] for i in ('11', '27')} for k in ('bp.lines.v1', 'bp.stats.v1')}
+    data = {'injected': REMOVED_SAVED, 'boot': boot, 'map': m, 'stored': stored,
+            'progressUnchanged': stored['bp.progress.v1'] == REMOVED_SAVED['bp.progress.v1'],
+            'linesUnchanged': stored['bp.lines.v1'] == REMOVED_SAVED['bp.lines.v1'], 'removedEntriesKept': kept,
+            'storedUnchanged': bool(stored['bp.progress.v1'] == REMOVED_SAVED['bp.progress.v1']
+                                    and stored['bp.lines.v1'] == REMOVED_SAVED['bp.lines.v1']
+                                    and all(all(v.values()) for v in kept.values())),
+            'firstUnsolvedSrcId': boot['srcIds'][first_unsolved]}
+    data['pass'] = bool(boot['nLevels'] == 27 and not set(REMOVED_SRC) & set(boot['srcIds'])
+                        and all(v == -1 for v in boot['levelBySrc'].values())
+                        and boot['solved'] == [1, 12] and boot['completedSrcIds'] == [1, 12] and m['solvedSrcIds'] == [1, 12]
+                        and not boot['restoredLines'] and m['drawMap'] and m['next'] == first_unsolved + 1
+                        and m['next'] == m['expectedNext'] and m['nextSrcId'] == data['firstUnsolvedSrcId']
+                        and m['lamps'] == 1 and m['ballSlot'] == m['nextSlot'] and m['platforms'] == 27
+                        and data['storedUnchanged'])
+    progress_out(info, 'removed_levels_saved', data)
 
 
 def sc_resized(page, info):
@@ -3409,6 +3463,7 @@ SCENARIOS = {
     'progress_reload': sc_progress_reload,
     'progress_storage_blocked': sc_progress_storage_blocked,
     'progress_garbage': sc_progress_garbage,
+    'removed_levels_saved': sc_removed_levels_saved,
     'map': sc_map,
     'map_progress': sc_map_progress,
     'map_open': sc_map_open,
@@ -3447,6 +3502,7 @@ PAGE_OPTIONS = {
 PAGE_INIT = {
     'progress_storage_blocked': STORAGE_THROW_JS,
     'progress_garbage': "localStorage.setItem('bp.progress.v1', '{solved: [1, 2,')",
+    'removed_levels_saved': REMOVED_SAVED_INIT,
 }
 OUT_DIR = None
 # Screenshot file name when it differs from the scenario name

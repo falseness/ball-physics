@@ -99,21 +99,7 @@ levels.push(
     ],
     unlock: 0
 },
-{
-    ballX: 350,
-    ballY: 15,
-    flagX: 240,
-    flagY: 100,
-    flagRotate: Math.PI,
-    lineK: 1,
-    lines: [
-        new Line(100, 100, 100, 400, dotRadius, levelLineColor, 'line'),
-        new Line(100, 400, 300, 400, dotRadius, levelLineColor, 'line'),
-        new Line(300, 360, 300, 100, dotRadius, levelLineColor, 'line'),
-        new Line(100, 100, 300, 100, dotRadius, levelLineColor, 'line')
-    ],
-    unlock: 0
-},
+null, // srcId 8: removed (TASK-247)
 {
     ballX: 40,
     ballY: 15,
@@ -150,33 +136,7 @@ levels.push(
     ],
     unlock: 0
 },
-{
-    // Level 11, the first portal level: the flag sits in a walled pocket on the right that the
-    // ball can only enter through portal B. Steer the ball into portal A, cut into the floor
-    // segment at y = 600 (front facing up); B is cut into the pocket's left wall x = 1040
-    // (front facing into the pocket, +x).
-    // Reference solution (tests/visual/shoot.py level11): one line (100, 180) -> (580, 450), then start;
-    // the ball rolls off its end into A, leaves B into the pocket and hits the flag.
-    ballX: 200,
-    ballY: 100,
-    flagX: 1200,
-    flagY: 450,
-    flagRotate: 0,
-    lineK: 2,
-    lines: [
-        new Line(1040, 0, 1040, 450, dotRadius, levelLineColor, 'line'),
-        new Line(1040, 450, 1270, 450, dotRadius, levelLineColor, 'line'),
-        new Line(1270, 450, 1270, 0, dotRadius, levelLineColor, 'line'),
-        new Line(450, 600, 750, 600, dotRadius, levelLineColor, 'line')
-    ],
-    // wall portals {line, u, side, h, name} (see portalResolve): A at (600, 600) facing up,
-    // B at (1040, 250) facing +x
-    portals: [
-        { line: 3, u: 0.5, side: -1, h: 45, name: 'A' },
-        { line: 0, u: 250 / 450, side: -1, h: 45, name: 'B' }
-    ],
-    unlock: 0
-},
+null, // srcId 11: removed (TASK-247)
 {
     // Level 12, 'understanding portals' (the user's editor export, squared): the ball drops onto
     // portal B (pad y = 510, front facing up) right under it and comes out of portal A (pad
@@ -228,31 +188,7 @@ levels.push(
     ],
     unlock: 0
 },
-{
-    // Level 14, 'horizontal acceleration' (the user's editor export, squared): the same ceiling and
-    // short wall as level 12, and two big portals (h 90, twice the default) each cut into its own
-    // vertical wall facing the other one: B on the left facing right, A on the right facing left.
-    // The flag hangs upside down on the right.
-    ballX: 197,
-    ballY: 436,
-    flagX: 1081,
-    flagY: 192,
-    flagRotate: -Math.PI,
-    lineK: 1,
-    lines: [
-        new Line(43, 112, 453, 112, dotRadius, levelLineColor, 'line'),
-        new Line(43, 112, 43, 209, dotRadius, levelLineColor, 'line'),
-        new Line(121, 270, 121, 510, dotRadius, levelLineColor, 'line'),
-        new Line(845, 422, 845, 662, dotRadius, levelLineColor, 'line')
-    ],
-    // wall portals {line, u, side, h, name} (see portalResolve): A at (845, 542) facing left (-1, 0),
-    // B at (121, 390) facing right (1, 0)
-    portals: [
-        { line: 3, u: 0.5, side: 1, h: 90, name: 'A' },
-        { line: 2, u: 0.5, side: -1, h: 90, name: 'B' }
-    ],
-    unlock: 0
-},
+null, // srcId 14: removed (TASK-247)
 {
     // Level 15 (source: artifacts/new_level15.json, the user's editor export, numbers kept verbatim):
     // a tall wall with portal A on its right face, a corner around the flag next to the wall top, and
@@ -609,50 +545,7 @@ levels.push(
     ],
     unlock: 0
 },
-{
-    // Level 27, 'side door' (TASK-149, lineK 3; walls reworked in TASK-150): the ball starts inside a closed well
-    // (walls x = 520 and x = 640, roof y = 260, floor y = 740) and bounces in place, straight up and down, forever.
-    // Portal A is cut into the well's LEFT wall (facing right), and the ball falls past it and rises past it twice per
-    // bounce without ever going in, because a portal only takes a ball that moves INTO its face. A falling ball moves
-    // along A's face, not into it. The only way out is to knock the ball sideways (one line inside the well) so it
-    // drifts into the left wall at A's depth. Portal B is on the underside of a short floating pad (facing down): A and
-    // B are a quarter turn apart, so the ball's sideways speed into A comes out of B straight down and its fall speed
-    // comes out of B sideways. Every B exit heads down and would leave the field, so a second line has to lift it.
-    // The flag stands in a pocket at the top right that is open only on its right side (x = 1200, y 140..310), so the
-    // rising ball has to come up through the gap at the right edge and be turned back left by a third line.
-    // TASK-150 (one long line through the well bottom up to the right edge won as kicker + lift): the well roof stops a
-    // ball that leaves B high from falling back into A again (AB, AB energy pumping); the pocket ceiling runs on to the
-    // right edge, so nothing drops into the mouth from above; and a solid block under the pocket (y 310..420) removes
-    // the floor underside that bounced a rising ball back down onto the line's far end.
-    // The flag stands on the pocket floor (not hanging from the ceiling): a ball rolling on top of the roof touched the
-    // top of a hanging flag's pole through the ceiling line.
-    ballX: 580,
-    ballY: 300,
-    flagX: 1060,
-    flagY: 310,
-    flagRotate: 0,
-    lineK: 3,
-    lines: [
-        new Line(520, 260, 520, 740, dotRadius, levelLineColor, 'line'),
-        new Line(640, 260, 640, 740, dotRadius, levelLineColor, 'line'),
-        new Line(520, 740, 640, 740, dotRadius, levelLineColor, 'line'),
-        new Line(820, 420, 940, 420, dotRadius, levelLineColor, 'line'),
-        new Line(980, 140, 1280, 140, dotRadius, levelLineColor, 'line'),
-        new Line(980, 140, 980, 310, dotRadius, levelLineColor, 'line'),
-        new Line(980, 310, 1200, 310, dotRadius, levelLineColor, 'line'),
-        new Line(520, 260, 640, 260, dotRadius, levelLineColor, 'line'),
-        new Line(1200, 310, 1200, 420, dotRadius, levelLineColor, 'line'),
-        new Line(980, 420, 1200, 420, dotRadius, levelLineColor, 'line'),
-        new Line(980, 310, 980, 420, dotRadius, levelLineColor, 'line')
-    ],
-    // wall portals {line, u, side, h, name} (see portalResolve): A at (520, 580) on the well's left wall facing
-    // right (1, 0), B at (880, 420) on the underside of the floating pad facing down (0, 1)
-    portals: [
-        { line: 0, u: 0.66667, side: -1, h: 45, name: 'A' },
-        { line: 3, u: 0.5, side: 1, h: 45, name: 'B' }
-    ],
-    unlock: 0
-},
+null, // srcId 27: removed (TASK-247)
 {
     // Level 28, 'wrap-around' (TASK-151, lineK 2): the field wraps sideways. Portal A is cut into a wall at the
     // LEFT edge (facing right) and portal B into a wall at the RIGHT edge (facing left), at the same height, so the
@@ -686,37 +579,7 @@ levels.push(
     ],
     unlock: 0
 },
-{
-    // Level 29, 'echo' (TASK-153, lineK 3): two identical towers, tower B = tower A moved by (560, -200), each
-    // with a wall portal on its LEFT face. Both portals face the same way, so a teleport reverses the velocity
-    // completely (rotation PI) and the exit point is the entry point moved by A->B: after B the ball replays its
-    // approach to A backwards, shifted by (560, -200). The flag stands on top of tower B, so its 'shadow' stands
-    // on top of tower A. The ball bounces in place on a pad right of tower A (peak y 300, 70 px below the flag), so
-    // line 1 knocks it left over tower A's top (through the flag's shadow), line 2 turns it back into A, and
-    // line 3 is line 2's twin moved by (560, -200): the replayed path bounces off it and flies over tower B's
-    // top into the flag.
-    ballX: 560,
-    ballY: 300,
-    flagX: 980,
-    flagY: 230,
-    flagRotate: 0,
-    lineK: 3,
-    lines: [
-        new Line(420, 430, 420, 790, dotRadius, levelLineColor, 'line'),
-        new Line(980, 230, 980, 590, dotRadius, levelLineColor, 'line'),
-        new Line(500, 560, 620, 560, dotRadius, levelLineColor, 'line')
-    ],
-    // wall portals {line, u, side, h, name} (see portalResolve): A at (420, 640) on tower A facing left (-1, 0),
-    // B at (980, 440) on tower B facing left (-1, 0); same facing, so a teleport reverses the velocity
-    // TASK-154: a same-facing pair also mirrors the offset along the opening (s -> -s), so a B->A->B round trip
-    // can gain up to 4h of height; h 15 (4h = 60) and towers 20 px taller (flag 70 px above the ball's peak)
-    // keep that pump from reaching the flag without the intended A->B
-    portals: [
-        { line: 0, u: 0.58333, side: 1, h: 15, name: 'A' },
-        { line: 1, u: 0.58333, side: 1, h: 15, name: 'B' }
-    ],
-    unlock: 0
-},
+null, // srcId 29: removed (TASK-247)
 {
     // Level 30, 'sky is lava' (TASK-155, lineK 2): the ball bounces in place on a pad at the left (peak y 420). Portal
     // A lies in the floor of a shaft (y 780), portal B in a floating plate high up (y 260), both facing up: a ball that
@@ -826,7 +689,11 @@ levels.push(
 // order above, never renumbered). Play order: level 1, level 2, then every level with a non-empty
 // `portals` list, then every remaining level (both groups in definition order). Tools and tests
 // address a level by srcId through levelBySrc(n) (index into the reordered levels).
-levels.forEach((l, i) => { l.srcId = i + 1 })
+// TASK-247: srcId 8, 11, 14, 27 and 29 were removed from the game; their definitions are null placeholders
+// above so every remaining level keeps its srcId. levelBySrc() returns -1 for them; saved data naming them
+// (bp.progress.v1, bp.lines.v1, bp.stats.v1) is ignored on load and left as stored.
+levels.forEach((l, i) => { if (l) l.srcId = i + 1 })
+levels = levels.filter(l => l)
 {
     const hasPortals = l => !!(l.portals && l.portals.length)
     const head = levels.slice(0, 2), rest = levels.slice(2)
