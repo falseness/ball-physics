@@ -115,3 +115,36 @@ Gate status of the frozen layouts (TASK-245, informational, preview budget: dens
 | 21 | 2 | FAIL: 1/13648 | PASS | 16/16 | 1/1000 | 0/0 |
 | 27 | 3 | PASS (0/13693, 0/1000 k=2) | PASS | 16/24 | 0/1000 | FAIL: 0/1 (dense1) |
 | 30 | 2 | FAIL: 3/13828 | PASS | 14/16 | 0/1000 | 0/0 |
+
+## Route predicates
+
+Some levels can be won by a route other than the designed one (TASK-250..253: srcId 24 "pick the half", srcId 32
+"under the wall"). `tools/route_check.py` replays a solution headless (the `tools/level_search.py` harness: index.html
+over file://, lines placed through `handleClick`, `gameMechanics()` stepped per frame), records a per-frame trace
+(ball position, speed in px/frame, line contacts within radius + 1 px, teleports with entry offset `s` and exit
+offset `exitS`) and tests the level's route predicate. A **proper** win satisfies the predicate; any other win is
+**easy**. A layout is "proper" when a G1-budget search (dense1 step 80, k=2 sample 10000, plus a 3000 sample with
+all lineK lines) finds wins and none of them is easy. Predicates test the route, never the reference's coordinates.
+
+- **srcId 24 'speed panel'** (artifacts/TASK-250/predicate.md): the win must use a near-horizontal player line as a
+  speed panel: a player line with |angle| <= 15 deg carries the ball for >= 30 frames or >= 60 px (a contact run:
+  contact frames with gaps <= 2 frames merged), the speed at the run's last contact minus its first is >= 2 px/frame,
+  and the run ends before the decisive entry into A (the last A teleport before the win). Thresholds: `P24`.
+- **srcId 32 'round trip'** (artifacts/TASK-252/predicate.md): from the teleport log alone. The last teleport before
+  the win is B -> A entering B's upper half (`s < 0`) and leaving A on the flag-shaft side (`exitS > 0`), and the
+  teleport before it is A -> B entering A's left half (`s < 0`) and leaving B through its lower half (`exitS > 0`).
+  Tangents: A t = +x, B t = +y.
+
+Run it (`--level` is the srcId, not the play-order index):
+
+    python3 tools/route_check.py --level 24 --lines '170,476,620,513;790,610,730,714;1000,140,1024,278'
+    python3 tools/route_check.py --level 32 --lines-file wins.jsonl --out res.jsonl   # batch, rows with "lines" or "c"
+
+Output is compact JSON `{win, frame, proper, reasons, end, lines, teleports, runs}`; `--trace FILE` writes the
+per-frame trace and `--screenshot FILE.png` draws the path (never overwrites). Predicates live in `PREDICATES`;
+add a level by writing `predN(row) -> (ok, reasons, runs)`.
+
+Known limitation (TASK-273, re-checked in TASK-254 at 50d1cf6): since the elastic contacts (TASK-270) the ball hops
+along srcId 24's panel (one contact every ~7 frames, speed still rising) instead of rolling, so the <= 2 frame gap
+merge never forms a 30-frame run and `pred24` reports the reference (win frame 283) as easy. srcId 32 is unaffected
+(reference win 93, proper). Until `pred24` is adapted to bouncing contact, treat its 'easy' verdicts as unreliable.
