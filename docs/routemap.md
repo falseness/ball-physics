@@ -1,6 +1,6 @@
 # Route map (level select)
 
-The pause menu's **Levels** button opens a full-screen route map (concept
+The **Levels** button of the pause menu and of the level-complete window (TASK-255) opens a full-screen route map (concept
 `artifacts/concepts/routemap/305-wall-full.png`). Every level is a flag on a platform ("slot");
 hovering or the first click/tap on a level shows its preview card, the card's play button or a
 second click/tap on the same level starts it. The HUD menu icon goes back to the pause menu.

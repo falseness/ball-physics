@@ -28,7 +28,7 @@
 // (portalTouches), and a teleport whose exit centre would be on the far side of a line other than
 // the exit's host line is refused, the ball bounces off the entry plane instead (portalTeleport).
 
-// blockedExits / blocked (TASK-104): teleports refused because a line blocks the exit spot (count /
+// blockedExits / blocked (TASK-104): teleports refused because a line obstructs the exit spot (count /
 // the first RIM_LOG_MAX records, teleport records with blocked: true and the bounced state in after)
 // rims: the first RIM_LOG_MAX rim bounces {step, rim, n, before:[vx,vy], after:[vx,vy]}
 // hostHits: host-line collisions so far; hostHit: the latest {step, line, v: [vx, vy] before}
@@ -460,7 +460,7 @@ function portalTouchesAt(P, b, f, d, ls)
         return false
     if (pointSegDist(b.posX, b.posY, x1, y1, x2, y2) > b.radius)
         return false
-    // TASK-104: a level / player line between the centre and the opening point it touches blocks the
+    // TASK-104: a level / player line between the centre and the opening point it touches obstructs the
     // capture (the line stays solid across an opening; rare: only a ball overlapping such a line)
     const s = Math.max(-P.h, Math.min(P.h, ls))
     return !(portalPathBlocked(b.posX, b.posY, P.x + s * f.tx, P.y + s * f.ty, P) < Infinity)

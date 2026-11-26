@@ -274,88 +274,64 @@
                 editorEndPlaytest()
                 return
             }
-            if (levelCompletedWindow && !playtestLevel && inEditorButton(coords))
+            if (levelCompletedWindow || drawMenu)
             {
-                TELEMETRY.ui('editor_open') // TASK-192
-                levelCompletedWindow = false
-                TELEMETRY.close()
-                editorOpen('win') // edit the level just won
-                return
-            }
-            if (levelCompletedWindow)
-            {
-                if ((playtestLevel || thisLevel + 1 < levels.length) && collisionWithRect(
-                        coords[0], coords[1], 
-                        menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, 
-                        menuCoords[1] + blocks[1], 
-                        menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0], 
-                        menuCoords[1] + blocks[1] + menuTextRect[1]))
+                // TASK-255: one layout (menuLayout, js/menu.js) for drawing and hit-testing both windows
+                const win = levelCompletedWindow
+                const id = menuButtonAt(win ? 'win' : 'pause', coords)
+                if (id === null)
+                    return
+                if (id == 'editor' && playtestLevel)
                 {
-                    if (playtestLevel)
+                    editorEndPlaytest() // play-test: back to the same working copy
+                    return
+                }
+                if (win)
+                {
+                    TELEMETRY.ui(id == 'next level' ? 'next_level' : id == 'Levels' ? 'map_open' : id == 'editor' ? 'editor_open' : id) // TASK-192
+                    levelCompletedWindow = false
+                    if (id == 'next level')
                     {
-                        editorEndPlaytest() // play-test: 'editor' instead of 'next level'
-                        return
+                        levelChoosed(++thisLevel)
+                        TELEMETRY.levelStart('next') // TASK-191 (js/telemetry.js)
                     }
-                    TELEMETRY.ui('next_level') // TASK-192
-                    levelChoosed(++thisLevel)
-                    levelCompletedWindow = false
-                    TELEMETRY.levelStart('next') // TASK-191 (js/telemetry.js)
-                }
-                else if (collisionWithRect(
-                        coords[0], coords[1],
-                        menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, 
-                        menuCoords[1] + blocks[2],
-                        menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0], 
-                        menuCoords[1] + blocks[2] + menuTextRect[1]))
-                {
-                    TELEMETRY.ui('restart') // TASK-192
-                    levelCompletedWindow = false
-                    restartKeepLines() // restart: ball back to the start, the player's lines kept
-                    TELEMETRY.restart()
-                }
-            }
-            else if (drawMenu)
-            {
-                if (inEditorButton(coords))
-                {
-                    if (playtestLevel)
-                        editorEndPlaytest() // back to the same working copy
-                    else
+                    else if (id == 'restart')
                     {
-                        TELEMETRY.ui('editor_open') // TASK-192
-                        TELEMETRY.ui('menu_close')
-                        TELEMETRY.close() // the attempt ends without an event
-                        editorOpen('menu')
+                        restartKeepLines() // restart: ball back to the start, the player's lines kept
+                        TELEMETRY.restart()
+                    }
+                    else if (id == 'editor')
+                    {
+                        TELEMETRY.close()
+                        editorOpen('win') // edit the level just won
+                    }
+                    else if (id == 'Levels')
+                    {
+                        TELEMETRY.leave() // the won attempt just ends (js/telemetry.js)
+                        mapOpen()
                     }
                     return
                 }
-                for (let i = 0; i < menuButtons.length; ++i)
+                TELEMETRY.ui(id == 'Levels' ? 'map_open' : id == 'editor' ? 'editor_open' : id) // TASK-192, then menu_close
+                TELEMETRY.ui('menu_close')
+                if (id == 'Levels')
                 {
-                    if (collisionWithRect(
-                        coords[0], coords[1], 
-                        menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, 
-                        menuCoords[1] + 300 + i * 85, 
-                        menuTextRect[0] + menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, 
-                        menuTextRect[1] + menuCoords[1] + 300 + i * 85))
-                        {
-                            if (menuButtons[i] == 'Levels')
-                            {
-                                TELEMETRY.ui('map_open') // TASK-192
-                                TELEMETRY.ui('menu_close')
-                                TELEMETRY.leave() // an unwon attempt is abandoned (js/telemetry.js)
-                                mapOpen() // full-screen route map replaces the old level grid
-                                return
-                            }
-                            TELEMETRY.ui(menuButtons[i]) // TASK-192: 'resume' / 'restart', then menu_close
-                            TELEMETRY.ui('menu_close')
-                            drawMenu = false
-                            drawMenuIcon = true
-                            if (menuButtons[i] == 'restart')
-                            {
-                                restartKeepLines() // ball back to the start, the player's lines kept
-                                TELEMETRY.restart()
-                            }
-                        }
+                    TELEMETRY.leave() // an unwon attempt is abandoned (js/telemetry.js)
+                    mapOpen() // full-screen route map replaces the old level grid
+                    return
+                }
+                if (id == 'editor')
+                {
+                    TELEMETRY.close() // the attempt ends without an event
+                    editorOpen('menu')
+                    return
+                }
+                drawMenu = false
+                drawMenuIcon = true
+                if (id == 'restart')
+                {
+                    restartKeepLines() // ball back to the start, the player's lines kept
+                    TELEMETRY.restart()
                 }
             }
             else

@@ -124,10 +124,23 @@ def open_menu(page):
     click(page, x, y)
 
 
-# TASK-181: the pause menu's 'Levels' button (i = 2, same rect expressions as the click handler) opens the route map;
+# TASK-255: centre of a pause menu / completion window button, from menuLayout(kind) (js/menu.js), the layout the
+# drawing and the click handler (menuButtonAt) both use. Throws in the page if that button is not in the layout.
+def menu_btn_js(kind, bid):
+    return ("(() => { const b = menuLayout(%s).buttons.find(b => b.id == %s); if (!b) throw new Error('no menu button %s:%s');"
+            " return [b.rect[0] + b.rect[2] / 2, b.rect[1] + b.rect[3] / 2] })()" % (json.dumps(kind), json.dumps(bid), kind, bid))
+
+
+# TASK-181: the pause menu's 'Levels' button opens the route map;
 # a level is picked by clicking the centre of its slot hit box (routeLevelPoint -> routeSlotBox, js/routemap.js).
-LEVELS_BUTTON_JS = """[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-    menuCoords[1] + 300 + 2 * 85 + menuTextRect[1] / 2]"""
+LEVELS_BUTTON_JS = menu_btn_js('pause', 'Levels')
+PAUSE_RESTART_JS = menu_btn_js('pause', 'restart')
+PAUSE_RESUME_JS = menu_btn_js('pause', 'resume')
+EDITOR_BUTTON_JS = menu_btn_js('pause', 'editor')
+WIN_NEXT_JS = menu_btn_js('win', 'next level')
+WIN_RESTART_JS = menu_btn_js('win', 'restart')
+WIN_EDITOR_JS = menu_btn_js('win', 'editor')
+WIN_LEVELS_JS = menu_btn_js('win', 'Levels')
 LEVEL_POINT_JS = "i => routeLevelPoint(levels, i)"
 
 
@@ -158,9 +171,8 @@ def sc_menu_restart(page, info):
     sc_placed(page, info)
     open_menu(page)
     info['before'] = page.evaluate("({thisLevel, linesK, drawMenu, nLines: lines.length})")
-    # Centre of the 'restart' button rect, from the same expressions the click handler uses (i = 1).
-    x, y = page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-        menuCoords[1] + 300 + 1 * 85 + menuTextRect[1] / 2]""")
+    # Centre of the 'restart' button rect, from menuLayout('pause') (the click handler's rects).
+    x, y = page.evaluate(PAUSE_RESTART_JS)
     info['click'] = [x, y]
     click(page, x, y)
 
@@ -191,11 +203,10 @@ def sc_complete(page, info):
 
 def sc_complete_next(page, info):
     # Level index 0 with the level-complete window open, then click the centre of the
-    # 'next level' rect, from the same expressions the click handler uses (blocks[1]).
+    # 'next level' rect, from menuLayout('win') (the click handler's rects).
     sc_complete(page, info)
     info['before'] = page.evaluate("({thisLevel, levelCompletedWindow})")
-    x, y = page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-        menuCoords[1] + blocks[1] + menuTextRect[1] / 2]""")
+    x, y = page.evaluate(WIN_NEXT_JS)
     info['click'] = [x, y]
     click(page, x, y)
 
@@ -212,7 +223,7 @@ def sc_next_level_order(page, info):
     # TASK-247 removed srcId 11; TASK-248).
     # Menu -> level square of srcId 2 (real click); the win is real game physics: the ball is put on the flag and
     # physics is turned on, so gameMechanics' flagCollision opens the level-complete window. Then a real click
-    # on the 'next level' rect (same expressions as the click handler, blocks[1]).
+    # on the 'next level' rect (menuLayout('win'), the click handler's rects).
     frames(page)
     i2 = page.evaluate("levelBySrc(2)")
     pick_level(page, i2)
@@ -223,8 +234,7 @@ def sc_next_level_order(page, info):
     page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
     info['won'] = page.evaluate("({levelCompletedWindow, thisLevel, unlock: levels[thisLevel].unlock})")
     frames(page)
-    x, y = page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-        menuCoords[1] + blocks[1] + menuTextRect[1] / 2]""")
+    x, y = page.evaluate(WIN_NEXT_JS)
     info['click'] = [x, y]
     click(page, x, y)
     frames(page)
@@ -405,7 +415,7 @@ def sc_editor(page, info):
     # Pause menu -> 'editor' button -> toolbar 'exit', all real clicks.
     frames(page)
     open_menu(page)
-    x, y = page.evaluate("(() => { const r = editorButtonRect(); return [r[0] + r[2] / 2, r[1] + r[3] / 2] })()")
+    x, y = page.evaluate(EDITOR_BUTTON_JS)
     click(page, x, y)
     info['opened'] = page.evaluate("({editorMode, drawMenu})")
     if info['opened']['editorMode'] is not True:
@@ -1191,8 +1201,7 @@ def sc_map_close(page, info):
     frames(page, 2)
     after = page.evaluate(MAP_UI_JS)
     # and the menu's 'resume' still works afterwards
-    click(page, *page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-        menuCoords[1] + 300 + menuTextRect[1] / 2]"""))
+    click(page, *page.evaluate(PAUSE_RESUME_JS))
     resumed = page.evaluate(MAP_UI_JS)
     d = {'onMap': onMap, 'emptyClick': {'point': empty, 'hit': emptyHit, 'after': afterEmpty}, 'menuIcon': icon,
          'after': after, 'resumed': resumed}
@@ -1468,9 +1477,8 @@ def sc_lines_passed_restore(page, info):
     page.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
     frames(page, 3)
     won = lines_state(page)
-    # completion window 'restart' (blocks[2]): ball reset, line X kept and editable
-    click(page, *page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-        menuCoords[1] + blocks[2] + menuTextRect[1] / 2]"""))
+    # completion window 'restart': ball reset, line X kept and editable
+    click(page, *page.evaluate(WIN_RESTART_JS))
     restarted = lines_state(page)
     bin_click(page)  # delete X
     deleted = lines_state(page)
@@ -1502,8 +1510,7 @@ def sc_lines_restart_keeps(page, info):
     frames(page, 20)
     running2 = lines_state(page)
     open_menu(page)
-    click(page, *page.evaluate("""[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-        menuCoords[1] + 300 + 1 * 85 + menuTextRect[1] / 2]"""))
+    click(page, *page.evaluate(PAUSE_RESTART_JS))
     menu = lines_state(page)
     def ok(s):
         return (same_lines(s['player'], drawn['player']) and s['linesK'] == drawn['linesK'] and s['ball'] == s['ballStart']
@@ -1758,7 +1765,6 @@ TELEMETRY_EXPECTED = os.path.join(ROOT, 'tests', 'visual', 'telemetry_expected_l
 TELEMETRY_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addProgressionEvent'
     || (e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('level:')))
     .map(e => e.fn == 'addProgressionEvent' ? [e.fn, e.args[0], e.args[1]] : [e.fn, e.args[0], e.args[1] ?? null])"""
-WIN_RESTART_JS = """[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2, menuCoords[1] + blocks[2] + menuTextRect[1] / 2]"""
 
 
 def telemetry_match(actual, expected):
@@ -1871,7 +1877,7 @@ def sc_telemetry_levels(page, info):
         p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
         p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
         step('win')
-        click(p, *p.evaluate(WIN_RESTART_JS))  # the completion window has no map button
+        click(p, *p.evaluate(WIN_RESTART_JS))  # completion window 'restart'
         step('winRestart')
         pick_level(p, 1)
         step('level2')
@@ -1926,10 +1932,6 @@ TELEMETRY_DOC = os.path.join(ROOT, 'docs', 'telemetry.md')
 TELEMETRY_UI_LOG_JS = """() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent' && /^(ui|lines|session):/.test(String(e.args[0])))
     .map(e => [e.fn, e.args[0], e.args[1] ?? null])"""
 MENU_ICON_JS = "[menuIconRect[0][0] + 31, menuIconRect[0][1] + 31]"
-MENU_BUTTON_JS = """i => [menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2,
-    menuCoords[1] + 300 + i * 85 + menuTextRect[1] / 2]"""
-WIN_NEXT_JS = """[menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2 + menuTextRect[0] / 2, menuCoords[1] + blocks[1] + menuTextRect[1] / 2]"""
-EDITOR_BUTTON_JS = "(() => { const r = editorButtonRect(); return [r[0] + r[2] / 2, r[1] + r[3] / 2] })()"
 REJECT_POINT = (200, 400)
 
 
@@ -2069,7 +2071,7 @@ def sc_telemetry_ui(page, info):
         if not p.evaluate("drawMenu"):
             raise RuntimeError('touch tap on the menu icon did not open the menu')
         step('touch menu_open')
-        click(p, *p.evaluate(MENU_BUTTON_JS, 0))  # resume
+        click(p, *p.evaluate(PAUSE_RESUME_JS))  # resume
         step('resume')
         open_map(p)
         click(p, *p.evaluate(MENU_ICON_JS))  # map -> back to the pause menu
@@ -2548,7 +2550,7 @@ def playtest_session(p, tb, step):
     act('run+win', win)
     step('playtest win')
     stats_win = p.evaluate(PT_STATS_JS)
-    act('back', lambda: click(p, *p.evaluate(WIN_NEXT_JS)))  # play-test: 'editor' in place of 'next level'
+    act('back', lambda: click(p, *p.evaluate(WIN_EDITOR_JS)))  # play-test: 'editor' returns to the editor
     if not p.evaluate("editorMode") or p.evaluate("!!playtestLevel"):
         raise RuntimeError('completion window editor button did not return to the editor (play-test session)')
     step('playtest back')
@@ -2635,7 +2637,7 @@ def sc_telemetry_editor(page, info):
         p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
         p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
         step('win')
-        click(p, *p.evaluate(EDITOR_BUTTON_JS))
+        click(p, *p.evaluate(WIN_EDITOR_JS))
         if not p.evaluate("editorMode"):
             raise RuntimeError('win window editor button did not open the editor')
         step('open win')
@@ -3035,7 +3037,7 @@ def f30_visitor_c(v, cdp):
     v.p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
     w = v.wait_for("levelCompletedWindow", 29000, step=16, label='win')
     v.at(f30_next(w), 'press on the completion window (not a button): other')
-    v.click(*v.p.evaluate("[menuCoords[0] + 20, menuCoords[1] + 20]"))
+    v.click(*v.p.evaluate("(() => { const P = menuLayout('win').panel; return [P[0] + 20, P[1] + 20] })()"))
     if not v.p.evaluate("levelCompletedWindow"):
         raise RuntimeError('C: the completion window closed')
     v.at(30000, 'window end')
@@ -3384,6 +3386,127 @@ def sc_telemetry_first30(page, info):
         raise RuntimeError('first30 heartbeat check failed (heartbeat.json)')
 
 
+# TASK-255: one centred menu layout (menuLayout, js/menu.js). layout.json: menuLayout('pause') (+ the 'win' layouts)
+# with centre / order / overlap checks; clicks.json: each pause menu button (and each completion window button) clicked
+# once with real input in a fresh page (own context, none telemetry backend), with the resulting state and the ui:
+# events it sent; pause.png: the pause menu.
+MENU_PAUSE_IDS = ['resume', 'restart', 'editor', 'Levels']
+MENU_WIN_IDS = ['next level', 'restart', 'editor', 'Levels']
+MENU_STATE_JS = """() => ({drawMenu, levelCompletedWindow, editorMode, drawMap, physics, levelStarted, thisLevel,
+    srcId: levels[thisLevel].srcId, playerLines: lines.filter(l => l.type == 'player').length,
+    ball: [ball.posX, ball.posY], ballStart: [curLevel().ballX, curLevel().ballY]})"""
+MENU_UI_JS = """n => ANALYTICS.debugLog.slice(n).filter(e => e.fn == 'addDesignEvent' && /^ui:/.test(String(e.args[0]))).map(e => e.args[0])"""
+
+
+def rects_overlap(a, b):
+    return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+
+def layout_check(L, want_ids):
+    P = L['panel']
+    c = [P[0] + P[2] / 2, P[1] + P[3] / 2]
+    ids = [b['id'] for b in L['buttons']]
+    rs = [b['rect'] for b in L['buttons']]
+    overlaps = [[ids[i], ids[j]] for i in range(len(rs)) for j in range(i + 1, len(rs)) if rects_overlap(rs[i], rs[j])]
+    logo = [i for i, r in zip(ids, rs) if rects_overlap(r, L['logo'])]
+    inside = all(P[0] <= r[0] and r[0] + r[2] <= P[0] + P[2] and P[1] <= r[1] and r[1] + r[3] <= P[1] + P[3] for r in rs + [L['logo']])
+    same_size = len({(r[2], r[3]) for r in rs}) == 1
+    steps = sorted({rs[i + 1][1] - rs[i][1] for i in range(len(rs) - 1)})
+    ok = (abs(c[0] - 640) <= 1 and abs(c[1] - 400) <= 1 and ids == want_ids and not overlaps and not logo and inside
+          and same_size and (len(steps) <= 1 or (len(rs) == 4 and set(steps) <= {85, 170})))
+    return {'centre': c, 'ids': ids, 'overlaps': overlaps, 'logoOverlaps': logo, 'insidePanel': inside,
+            'sameSize': same_size, 'steps': steps, 'pass': bool(ok)}
+
+
+def menu_page_setup(p, kind):
+    # srcId 1 (lineK 1): one player line (it starts the run), then pause (play box) and the menu icon; or a win
+    if p.evaluate("levels[thisLevel].srcId") != 1:
+        raise RuntimeError('boot did not open srcId 1')
+    draw_seg(p, LINE_X)
+    if kind == 'win':
+        p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
+        p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
+        frames(p)
+    else:
+        click(p, *p.evaluate(PLAY_ICON_JS))  # pause the run
+        open_menu(p)
+        if not p.evaluate("drawMenu"):
+            raise RuntimeError('pause menu did not open')
+
+
+def menu_click_ok(kind, bid, before, after, ui):
+    if kind == 'pause':
+        want_ui = {'resume': ['resume'], 'restart': ['restart'], 'editor': ['editor_open'], 'Levels': ['map_open']}[bid]
+        want_ui = ['ui:%s:L1' % u for u in want_ui] + ['ui:menu_close:L1']
+    else:
+        want_ui = ['ui:%s:L1' % {'next level': 'next_level', 'restart': 'restart', 'editor': 'editor_open', 'Levels': 'map_open'}[bid]]
+    closed = not after['drawMenu'] and not after['levelCompletedWindow']
+    if bid == 'resume':
+        st = closed and not after['editorMode'] and not after['drawMap'] and after['playerLines'] == before['playerLines']
+    elif bid == 'restart':
+        st = (closed and not after['levelStarted'] and not after['physics'] and after['playerLines'] == before['playerLines'] >= 1
+              and after['ball'] == after['ballStart'] and after['thisLevel'] == before['thisLevel'])
+    elif bid == 'editor':
+        st = closed and after['editorMode'] is True
+    elif bid == 'Levels':
+        st = closed and after['drawMap'] is True and not after['editorMode']
+    else:  # next level
+        st = closed and after['thisLevel'] == before['thisLevel'] + 1
+    return {'wantUi': want_ui, 'uiOk': ui == want_ui, 'stateOk': bool(st)}
+
+
+def sc_menu_layout(page, info):
+    frames(page)
+    open_menu(page)
+    if not page.evaluate("drawMenu"):
+        raise RuntimeError('pause menu did not open')
+    frames(page)
+    page.screenshot(path=os.path.join(OUT_DIR, 'pause.png'))
+    pause = page.evaluate("menuLayout('pause')")
+    lay = {'pause': pause, 'pauseCheck': layout_check(pause, MENU_PAUSE_IDS)}
+    page.evaluate("() => { drawMenu = false; levelCompletedWindow = true }")
+    frames(page)
+    page.screenshot(path=os.path.join(OUT_DIR, 'win.png'))
+    win = page.evaluate("menuLayout('win')")
+    lay['win'] = win
+    lay['winCheck'] = layout_check(win, MENU_WIN_IDS)
+    last = page.evaluate("() => { const t = thisLevel; thisLevel = levels.length - 1; const L = menuLayout('win'); thisLevel = t; return L }")
+    lay['winLast'] = last
+    lay['winLastCheck'] = layout_check(last, MENU_WIN_IDS[1:])
+    lay['winLastCheck']['labels'] = [t['text'] for t in last['labels']]
+    page.evaluate("() => { levelCompletedWindow = false; drawMenu = true }")
+    frames(page)
+    lay['pass'] = bool(lay['pauseCheck']['pass'] and lay['winCheck']['pass'] and lay['winLastCheck']['pass']
+                       and lay['winLastCheck']['labels'] == ['Level completed!', 'Thanks for playing!'])
+    with open(os.path.join(OUT_DIR, 'layout.json'), 'w') as f:
+        json.dump(lay, f, separators=(',', ':'))
+    clicks = {}
+    for kind, ids in (('pause', MENU_PAUSE_IDS), ('win', MENU_WIN_IDS)):
+        for bid in ids:
+            errs = []
+            with telemetry_page(page, errs) as p:
+                menu_page_setup(p, kind)
+                before = p.evaluate(MENU_STATE_JS)
+                pt = p.evaluate(menu_btn_js(kind, bid))
+                n = p.evaluate("ANALYTICS.debugLog.length")
+                click(p, *pt)
+                frames(p)
+                after = p.evaluate(MENU_STATE_JS)
+                ui = p.evaluate(MENU_UI_JS, n)
+            r = {'click': pt, 'before': before, 'after': after, 'ui': ui, 'consoleErrors': errs}
+            r.update(menu_click_ok(kind, bid, before, after, ui))
+            r['pass'] = bool(r['uiOk'] and r['stateOk'] and not errs)
+            clicks['%s:%s' % (kind, bid)] = r
+    clicks_out = {'clicks': clicks, 'pass': all(c['pass'] for c in clicks.values())}
+    with open(os.path.join(OUT_DIR, 'clicks.json'), 'w') as f:
+        json.dump(clicks_out, f, separators=(',', ':'))
+    info['menuLayout'] = {'layout': lay['pass'], 'clicks': {k: c['pass'] for k, c in clicks.items()}}
+    if not lay['pass']:
+        raise RuntimeError('menu layout check failed: %s' % {k: v for k, v in lay.items() if k.endswith('Check')})
+    if not clicks_out['pass']:
+        raise RuntimeError('menu click check failed: %s' % [k for k, c in clicks.items() if not c['pass']])
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3_open': sc_level3,  # level 3 opened, no lines (was 'level3' before TASK-202)
@@ -3460,6 +3583,7 @@ SCENARIOS = {
     'telemetry_ui': sc_telemetry_ui,
     'telemetry_editor': sc_telemetry_editor,
     'telemetry_first30': sc_telemetry_first30,
+    'menu_layout': sc_menu_layout,
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

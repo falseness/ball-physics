@@ -1,10 +1,66 @@
-let menuTextRect = [250, 50]
-let menuCoords = [GAME_W / 2, 20]
-// TASK-181: no level grid any more; the panel ends below the last button ('Levels' +470..+520 in the pause
-// menu, 'restart' +455..+505 in the level-complete window)
-let menuSize = [400, 540]
-// buttons at +300 + i * 85; 'Levels' opens the route map (js/mapdraw.js mapOpen)
-let menuButtons = ['resume', 'restart', 'Levels']
+// TASK-255: one centred layout for the pause menu and the level-complete window. menuLayout(kind) is the only
+// source of the panel and button rects: menu() / levelCompleted() draw from it and handleClick (index.html)
+// hit-tests the same rects. Panel: logo area (title + framed sketch, +0..+285), then for 'win' the
+// 'Level completed!' row, then the buttons (MENU_BTN_W x MENU_BTN_H, MENU_BTN_STEP apart) and a bottom margin;
+// the panel is centred on the logical field (GAME_W / 2, GAME_H / 2).
+const MENU_W = 400, MENU_BTN_W = 250, MENU_BTN_H = 50, MENU_BTN_STEP = 85, MENU_LOGO_H = 285, MENU_PAD = 20
+// kind 'pause': resume / restart / editor / Levels.
+// kind 'win': next level (not on the last level, not in a play-test) / restart / editor / Levels, under the
+// 'Level completed!' row; on the last level a 'Thanks for playing!' row takes the 'next level' slot.
+// In a play-test 'editor' is the way back to the editor (editorEndPlaytest).
+// Returns {panel: [x, y, w, h], logo: [x, y, w, h], buttons: [{id, rect}], labels: [{text, x, y, size, color}]}.
+function menuLayout(kind)
+{
+    const ids = kind == 'win' ? ['restart', 'editor', 'Levels'] : ['resume', 'restart', 'editor', 'Levels']
+    const rows = []  // [type, value] top to bottom below the logo
+    if (kind == 'win')
+    {
+        rows.push(['label', 'Level completed!', 38, THEME.coral])
+        if (playtestLevel)
+            ;
+        else if (thisLevel + 1 < levels.length)
+            rows.push(['button', 'next level'])
+        else
+            rows.push(['label', 'Thanks for playing!', 34, THEME.soft])
+    }
+    for (const id of ids)
+        rows.push(['button', id])
+    const h = MENU_LOGO_H + MENU_PAD / 2 + rows.length * MENU_BTN_STEP - (MENU_BTN_STEP - MENU_BTN_H) + MENU_PAD
+    const x = Math.round((GAME_W - MENU_W) / 2), y = Math.round((GAME_H - h) / 2)
+    const bx = x + (MENU_W - MENU_BTN_W) / 2
+    const out = {panel: [x, y, MENU_W, h], logo: [x + 30, y + 10, MENU_W - 60, MENU_LOGO_H - 10], buttons: [], labels: []}
+    rows.forEach((r, i) =>
+    {
+        const ry = y + MENU_LOGO_H + MENU_PAD / 2 + i * MENU_BTN_STEP
+        if (r[0] == 'button')
+            out.buttons.push({id: r[1], rect: [bx, ry, MENU_BTN_W, MENU_BTN_H]})
+        else
+            out.labels.push({text: r[1], x: x + MENU_W / 2, y: ry + MENU_BTN_H / 2, size: r[2], color: r[3]})
+    })
+    return out
+}
+// id of the menuLayout(kind) button under the logical point, or null
+function menuButtonAt(kind, coords)
+{
+    for (const b of menuLayout(kind).buttons)
+    {
+        const r = b.rect
+        if (collisionWithRect(coords[0], coords[1], r[0], r[1], r[0] + r[2], r[1] + r[3]))
+            return b.id
+    }
+    return null
+}
+// Panel, logo, labels and buttons of menuLayout(kind) (the navy overlay is drawn by the caller)
+function drawMenuLayout(kind)
+{
+    const L = menuLayout(kind)
+    glassPanel(...L.panel)
+    drawLogo(L.panel[0], L.panel[1])
+    for (const t of L.labels)
+        menuLabel(t.text, t.x, t.y, t.size, t.color)
+    for (const b of L.buttons)
+        menuButton(...b.rect, b.id)
+}
 
 // Translucent navy overlay behind the pause menu / level-complete window.
 // Leaves a centred THEME-font text state behind (levelCompleted() relies on it).
@@ -62,14 +118,7 @@ function menu()
     {
         applyViewTransform()
         eclipse()
-        glassPanel(menuCoords[0], menuCoords[1], menuSize[0], menuSize[1])
-        for (let i = 0; i < menuButtons.length; ++i)
-        {
-            menuButton(menuCoords[0] + (menuSize[0] - menuTextRect[0]) / 2, menuCoords[1] + 300 + i * 85, menuTextRect[0], menuTextRect[1], menuButtons[i])
-        }
-        drawLogo()
-        const er = editorButtonRect()  // drawn after the logo: it sits inside the logo frame
-        menuButton(er[0], er[1], er[2], er[3], 'editor')
+        drawMenuLayout('pause')
     }
 }
 function menuIcon()
@@ -195,18 +244,19 @@ function drawLinesK()
     ctx.restore()
 }
 // Logo: handwritten title over a small framed sketch (ice ball resting on a coral line)
-function drawLogo()
+// (x0, y0) = the panel's top-left corner; the logo spans +10..+285 (menuLayout().logo)
+function drawLogo(x0, y0)
 {
-    const x0 = menuCoords[0], y0 = menuCoords[1]
-    menuLabel('Ball physics', x0 + menuSize[0] / 2, y0 + 38, 52)
+    const W = MENU_W
+    menuLabel('Ball physics', x0 + W / 2, y0 + 38, 52)
     ctx.save()
     ctx.strokeStyle = 'rgba(130,210,255,0.45)'; ctx.lineWidth = 1
-    ctx.strokeRect(x0 + 30.5, y0 + 70.5, menuSize[0] - 30 * 2, 215)
+    ctx.strokeRect(x0 + 30.5, y0 + 70.5, W - 30 * 2, 215)
     // faint grid inside the frame
     ctx.strokeStyle = THEME.grid.minor
     ctx.beginPath()
-    for (let gx = x0 + 30.5 + 20; gx < x0 + menuSize[0] - 30; gx += 20) { ctx.moveTo(gx, y0 + 71); ctx.lineTo(gx, y0 + 285) }
-    for (let gy = y0 + 70.5 + 20; gy < y0 + 285; gy += 20) { ctx.moveTo(x0 + 31, gy); ctx.lineTo(x0 + menuSize[0] - 30, gy) }
+    for (let gx = x0 + 30.5 + 20; gx < x0 + W - 30; gx += 20) { ctx.moveTo(gx, y0 + 71); ctx.lineTo(gx, y0 + 285) }
+    for (let gy = y0 + 70.5 + 20; gy < y0 + 285; gy += 20) { ctx.moveTo(x0 + 31, gy); ctx.lineTo(x0 + W - 30, gy) }
     ctx.stroke()
     ctx.restore()
 

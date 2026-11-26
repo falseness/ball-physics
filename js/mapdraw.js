@@ -93,7 +93,7 @@ function mapSpring(g, o)
     g.restore()
 }
 
-// hatched solid box (floor blocks, the central wall)
+// hatched solid box (floor obstacles, the central wall)
 function mapBlock(g, x, y, w, h, gap)
 {
     g.save(); g.fillStyle = 'rgba(4,16,32,0.75)'; g.fillRect(x, y, w, h); g.restore()

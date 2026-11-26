@@ -120,23 +120,6 @@ function editorBarLoad(values)
 }
 editorBarLoad(null) // default position until boot applies the saved one
 
-// 'editor' button shared by the pause menu and the level-completed window (same rect in both):
-// top-right corner inside the logo frame (frame x +30..+370, y +70..+285), under the 'Ball physics'
-// title (bottom ~+64) and above the logo drawing (line/ball start at y +120/+150). The old spot at
-// the right end of the pause menu's 'Levels' row overlapped the win window's 'restart' button
-// (+455..+505). Independent of levels.length (levels are picked on the route map since TASK-181) and fits the 34 px 'editor' label (~65 px).
-const EDITOR_BUTTON_W = 120, EDITOR_BUTTON_H = 40
-function editorButtonRect()
-{
-    const right = menuSize[0] - 30 - 10, top = 80
-    return [menuCoords[0] + right - EDITOR_BUTTON_W, menuCoords[1] + top, EDITOR_BUTTON_W, EDITOR_BUTTON_H]
-}
-function inEditorButton(coords)
-{
-    const r = editorButtonRect()
-    return collisionWithRect(coords[0], coords[1], r[0], r[1], r[0] + r[2], r[1] + r[3])
-}
-
 function editorCloneLevel(L)
 {
     return {

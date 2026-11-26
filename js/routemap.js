@@ -77,7 +77,7 @@ const ROUTEMAP = (() =>
         // decorative bumpers (concept 760,250 / 1150,200; the first moved off M21's flag)
         { id: 'bumper_R3', kind: 'bumper', x: 720, y: 170, r: 16 },
         { id: 'bumper_R4', kind: 'bumper', x: 1150, y: 200, r: 14 },
-        // floor blocks between X1-X2, X3-X4, X5-X6, X7-X8
+        // floor obstacles between X1-X2, X3-X4, X5-X6, X7-X8
         { id: 'block_X12', kind: 'block', x: 348, y: 752, w: 22, h: 20 },
         { id: 'block_X34', kind: 'block', x: 584, y: 752, w: 22, h: 20 },
         { id: 'block_X56', kind: 'block', x: 820, y: 752, w: 22, h: 20 },
