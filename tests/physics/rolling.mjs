@@ -8,6 +8,13 @@
 //   flat_rest_max_abs_vy    largest |vy| (px/step) over the same window
 //   flat_sunk_jitter_px / flat_sunk_sink_px / flat_sunk_end_sink_px   the same ball placed 0.5 px into the floor
 //   flat_roll_jitter_px / flat_roll_sink_px   rolling at 0.02 px/step (600 px/s) along the floor for 1 s
+// TASK-270 (no energy loss or gain, the user's rule): every roll's speed is checked against the analytic speed from
+// the height dropped, sqrt(2 g dh), relative 1e-6 (fields `analytic`, `pass`; exit 1 when a row fails). A ball
+// released from rest on a 7.2 (the srcId 6 line of artifacts/energy_lost.png), 10, 20, 30 and 45 degree line is
+// sampled after 0.25, 0.5 and 1 s. dh is measured at the time the velocity belongs to: the game's integrator
+// (v += g, then x += v) is a leapfrog, the velocity after a step is the one of the step's midpoint, so the height
+// is y - vy/2 (y, vy after the step). That is the same E as tests/physics/energy.mjs: g vy/2 + g (H - y) =
+// g (H - (y - vy/2)).
 import fs from 'node:fs'
 import { execSync } from 'node:child_process'
 import * as h from './harness.mjs'
@@ -36,6 +43,28 @@ for (const deg of [10, 20, 30, 45])
     m[`slope${deg}_lift_px`] = r(lift, 6)
 }
 
+// analytic speed check
+const analytic = []
+for (const deg of [7.2, 10, 20, 30, 45])
+{
+    const a = deg * Math.PI / 180, L = 1500
+    const seg = [100, 100, 100 + L * Math.cos(a), 100 + L * Math.sin(a)]
+    const w = h.makeWorld([seg])
+    const [x, y] = h.restingOn(seg, 0.02), b = w.ball(x, y, 0, 0)
+    const y0 = y
+    let f = 0
+    for (const sec of [0.25, 0.5, 1])
+    {
+        const to = Math.round(sec * FPS)
+        h.runFrames(w, b, to - f)
+        f = to
+        const dh = (b.posY - b.speedY / 2) - y0, sp = Math.hypot(b.speedX, b.speedY), an = Math.sqrt(2 * G * dh)
+        const rel = Math.abs(sp - an) / an
+        analytic.push({ deg, t_s: sec, dh_px: r(dh, 9), speed_px_step: sp, analytic_px_step: an, rel: +rel.toPrecision(4), pass: rel <= 1e-6 })
+    }
+}
+const pass = analytic.every(a => a.pass)
+
 function flat(y0, vx, seconds, from)
 {
     const seg = [100, 300, 1200, 300], w = h.makeWorld([seg]), b = w.ball(300, y0, vx, 0)
@@ -58,7 +87,11 @@ m.flat_roll_jitter_px = r(roll.jitter); m.flat_roll_sink_px = r(roll.sink); m.fl
 
 let head = null
 try { head = execSync('git rev-parse --short HEAD', { cwd: h.ROOT }).toString().trim() } catch (e) { }
-const out = JSON.stringify({ head, g_px_s2: gPxS2, radius: R, metrics: m })
+const out = JSON.stringify({ head, g_px_s2: gPxS2, radius: R, metrics: m, analyticRel: 1e-6, pass, analytic })
 const i = process.argv.indexOf('--out')
 if (i >= 0) fs.writeFileSync(process.argv[i + 1], out + '\n')
 console.log(out)
+for (const a of analytic)
+    console.error(`${a.pass ? 'PASS' : 'FAIL'} slope ${a.deg} deg t ${a.t_s} s speed ${a.speed_px_step} analytic ${a.analytic_px_step} rel ${a.rel}`)
+console.error(pass ? 'ROLLING PASS' : 'ROLLING FAIL')
+process.exit(pass ? 0 : 1)

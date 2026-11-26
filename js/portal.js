@@ -588,9 +588,9 @@ function portalTeleport(A, B, s, d, kind)
                 ball.posY += 2 * (ball.radius - d) * fa.ny
                 record.mirror = true
             }
-            // TASK-201: like a contact of the ball's contact model, the bounce never adds energy (the reflection
-            // changes the integrator's g vy / 2 term, the mirror the height)
-            ball.limitEnergy(E0, fa.nx, fa.ny)
+            // TASK-201 / TASK-270: like a contact of the ball's contact model, the bounce neither adds nor removes
+            // energy (the reflection changes the integrator's g vy / 2 term, the mirror the height)
+            ball.setEnergy(E0, fa.nx, fa.ny)
         }
         record.after = [ball.posX, ball.posY, ball.speedX, ball.speedY]
         ++portalState.blockedExits

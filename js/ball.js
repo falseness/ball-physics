@@ -24,15 +24,12 @@ function collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r)
     return false
 }
 
-// Contact model constants (TASK-199)
-const CONTACT_ITERATIONS = 4
+// Contact model constants (TASK-199, TASK-270)
+// reflections per step: a ball in a narrow V can need several (about 180 / opening angle) to leave both walls
+const CONTACT_ITERATIONS = 16
+// position push-out passes per step
+const PUSH_ITERATIONS = 4
 const CONTACT_SLOP = 1e-9        // px: a ball touching a line (distance == radius, up to rounding) is in contact
-// px/step (~250 px/s, the normal speed of a ~17 px drop): a slower normal approach is a resting contact, not a
-// bounce (like the restitution velocity threshold of Box2D): the ball settles instead of bouncing forever in a V.
-// Rolling (normal speeds ~g) is unaffected. It sits between 0.008 (a ball sliding into the 90 degree V of
-// edge_cases v_corner reaches the other wall at ~0.0079 and must not bounce back up) and 0.0087 (the lowest
-// normal speed of edge_cases graze, d = 9, which must still reflect); see TASK-199.
-const REST_SPEED = 0.0083
 // px: line end points closer than this form a joint (a chain), = dotRadius of js/line.js, the editor's snap radius
 const CHAIN_JOIN = 5
 // contact record in the scratch buffer: nx, ny, dist, qx, qy, line index (in segs), end (0 interior, 1 start, 2 end)
@@ -78,30 +75,30 @@ class Ball extends Sprite
         }
         return false
     }
-    // Ball-line contacts (TASK-199), for every line; a wall-portal host line takes part as its solid pieces
-    // (portalHostSegs, TASK-201: host-piece contacts a portal capture covers are dropped in contacts()).
+    // Ball-line contacts (TASK-199, elastic since TASK-270), for every line; a wall-portal host line takes part as its
+    // solid pieces (portalHostSegs, TASK-201: host-piece contacts a portal capture covers are dropped in contacts()).
     // For each line the closest point q on the segment (end points included), n = (c - q)/|c - q|; a contact is
     // |c - q| < radius (+ CONTACT_SLOP, so a ball lying exactly on a line keeps its contact).
-    // 1. Velocity, from the contacts at the start of the step (normals fixed), deepest first, re-tested after each
-    //    resolution, up to CONTACT_ITERATIONS:
-    //    - approaching (v.n < -REST_SPEED): reflect v' = v - 2 (v.n) n, once per line per step;
-    //    - resting (-REST_SPEED <= v.n <= 0, or a line already reflected this step): the normal force: v.n becomes
-    //      -g.n when gravity points into the line (else 0), so after gravity() the ball neither sinks nor hops and
-    //      rolls along the line; when that pushes v back into the previously resolved line (a wedge), both are
-    //      solved at once (v' = v + a n1 + b n2, a, b >= 0);
-    //    - moving away (v.n > 0): untouched.
+    // 1. Velocity, from the contacts at the start of the step (normals fixed): every approaching contact (v.n < 0)
+    //    reflects elastically, v' = v - 2 (v.n) n (tangential part kept, normal part reversed), deepest first,
+    //    re-tested after each reflection, up to CONTACT_ITERATIONS (a V reflects off its walls in turn until the
+    //    ball leaves both). There is no resting contact: a ball on a floor bounces back to the height it fell from,
+    //    and a ball rolling on a line makes gravity-sized elastic micro-bounces (TASK-270, the user's rule: "dont
+    //    loose and dont gain the energy"). Moving away (v.n >= 0): untouched. Should the iterations run out with
+    //    the ball still approaching a wall, the approaching parts are removed (step 3 gives the energy back).
     // 2. Position: the deepest overlap is pushed out to exactly radius along its n, re-tested, up to
-    //    CONTACT_ITERATIONS times (two overlapping lines at once: both solved together, p' = p + a n1 + b n2).
+    //    PUSH_ITERATIONS times (two overlapping lines at once: both solved together, p' = p + a n1 + b n2).
     // Joints (TASK-200, ghost vertices): lines whose end points coincide within CHAIN_JOIN form chains. A contact
     // whose closest point is a joint end is ignored when its normal lies outside the cone between the outward
     // normals of the joined segments (the Box2D chain rule, https://box2d.org/posts/2020/06/ghost-collisions/),
     // i.e. when the centre projects into a joined segment that is at least as close: that segment's own contact
     // then carries the collision, so a ball sliding over a seam or into a concave joint never gets an internal normal.
-    // 3. Energy: a contact never adds energy (E = |v|^2/2 + g vy/2 - g y, the integrator's free-flight invariant):
-    //    if E grew, the outgoing normal speed along the last resolved normal is lowered until E is back at E0.
+    // 3. Energy: a contact neither adds nor removes energy (E = |v|^2/2 + g vy/2 - g y, the integrator's free-flight
+    //    invariant). A reflection changes the g vy/2 term and a push-out changes the height, so after steps 1-2 the
+    //    outgoing normal speed along the last resolved normal is set so that E equals E0 again (setEnergy).
     contactCollision(segs)
     {
-        const r = this.radius, g = gravitationalAcceleration, n = segs.length
+        const r = this.radius, n = segs.length
         const E0 = this.energy()
         // contacts at the start position: normal, distance, closest point (scratch arrays reused)
         const cn = Ball.scratch(n)
@@ -109,17 +106,17 @@ class Ball extends Sprite
         if (k === 0)
             return
         // ---- 1. velocity
-        let hitMask = 0, lnx = 0, lny = 0, last = -1
+        let lnx = 0, lny = 0, last = -1
         // the first wall-portal host piece that changes the velocity (portalState.hostHit, TASK-201)
         let hostSeg = null, hvx = 0, hvy = 0
-        for (let it = 0; it < CONTACT_ITERATIONS; ++it)
+        for (let it = 0; it <= CONTACT_ITERATIONS; ++it)
         {
             const vx = this.speedX, vy = this.speedY
             let best = -1, bd = Infinity
             for (let j = 0; j < k; ++j)
             {
                 const o = j * CS
-                if (cn[o + 2] < bd && vx * cn[o] + vy * cn[o + 1] <= 0)
+                if (cn[o + 2] < bd && vx * cn[o] + vy * cn[o + 1] < 0)
                 {
                     best = j; bd = cn[o + 2]
                 }
@@ -127,38 +124,31 @@ class Ball extends Sprite
             if (best < 0)
                 break
             const bnx = cn[best * CS], bny = cn[best * CS + 1], vn = vx * bnx + vy * bny
-            const bit = best < 30 ? (1 << best) : 0
-            if (vn < -REST_SPEED && !(hitMask & bit))
+            if (it < CONTACT_ITERATIONS)
             {
                 this.speedX = vx - 2 * vn * bnx
                 this.speedY = vy - 2 * vn * bny
-                hitMask |= bit
             }
             else
             {
-                const gn = g * bny, target = gn < 0 ? -gn : 0
-                let nvx = vx + (target - vn) * bnx, nvy = vy + (target - vn) * bny
-                if (last >= 0 && last !== best)
+                // out of reflections (a jammed wedge): drop every approaching normal part
+                for (let p = 0; p < CONTACT_ITERATIONS; ++p)
                 {
-                    const gp = g * lny, tp = gp < 0 ? -gp : 0
-                    if (nvx * lnx + nvy * lny < tp)
+                    let worst = -1, wv = 0
+                    for (let j = 0; j < k; ++j)
                     {
-                        const c = lnx * bnx + lny * bny, det = 1 - c * c
-                        const r1 = tp - (vx * lnx + vy * lny), r2 = target - vn
-                        const a = (r1 - c * r2) / det, b = (r2 - c * r1) / det
-                        if (det > 1e-9 && a >= 0 && b >= 0)
+                        const u = this.speedX * cn[j * CS] + this.speedY * cn[j * CS + 1]
+                        if (u < wv)
                         {
-                            nvx = vx + a * lnx + b * bnx
-                            nvy = vy + a * lny + b * bny
+                            worst = j; wv = u
                         }
                     }
+                    if (worst < 0)
+                        break
+                    this.speedX -= wv * cn[worst * CS]
+                    this.speedY -= wv * cn[worst * CS + 1]
                 }
-                if (nvx === vx && nvy === vy)
-                    break
-                this.speedX = nvx
-                this.speedY = nvy
             }
-            // (reached only when this iteration changed the velocity)
             const bs = segs[cn[best * CS + 5]]
             if (hostSeg === null && bs.hostList !== undefined)
             {
@@ -169,8 +159,8 @@ class Ball extends Sprite
         if (hostSeg !== null)
             portalHostHit(hostSeg, hvx, hvy)
         // ---- 2. position
-        let pi = -1
-        for (let it = 0; it < CONTACT_ITERATIONS; ++it)
+        let pi = -1, pnx = 0, pny = 0
+        for (let it = 0; it < PUSH_ITERATIONS; ++it)
         {
             k = this.contacts(segs, cn)
             let best = -1, bd = r
@@ -206,11 +196,13 @@ class Ball extends Sprite
             this.posX += dx
             this.posY += dy
             pi = seg
+            pnx = nx; pny = ny
         }
-        // ---- 3. energy (only after a velocity change: a ball moving away keeps its velocity, its push-out is a
-        // second-order sliver)
+        // ---- 3. energy: back to E0 along the last reflected normal (else the last push-out normal)
         if (last >= 0)
-            this.limitEnergy(E0, lnx, lny)
+            this.setEnergy(E0, lnx, lny)
+        else if (pi >= 0)
+            this.setEnergy(E0, pnx, pny)
     }
     // E = |v|^2/2 + g vy/2 - g y, the integrator's free-flight invariant (constant between steps without contact)
     energy()
@@ -218,23 +210,37 @@ class Ball extends Sprite
         const g = gravitationalAcceleration
         return 0.5 * (this.speedX * this.speedX + this.speedY * this.speedY) + 0.5 * g * this.speedY - g * this.posY
     }
-    // A bounce about the normal (nx, ny) never adds energy: if E grew above E0, the outgoing normal speed is lowered
-    // until E = E0 (contactCollision step 3; portalTeleport's refused-exit bounce, TASK-201)
-    limitEnergy(E0, nx, ny)
+    // E = E0 exactly (TASK-270; contactCollision step 3 and portalTeleport's refused-exit bounce, TASK-201): the normal part w of v along (nx, ny) is set to the root w >= 0 of E(vt + w n) = E0
+    // (E(w) = 0.5 w^2 + (g n_y / 2) w + C). When no such root exists (the step's push-out alone lifted the ball
+    // above E0 even with w = 0, e.g. a ball started inside a line), w is 0 and, if that is still above E0, the whole
+    // velocity is scaled down towards 0 (the start state was not a reachable one); when the ball holds no
+    // velocity to give, E stays where the push-out put it.
+    setEnergy(E0, nx, ny)
     {
         const g = gravitationalAcceleration
         const vx = this.speedX, vy = this.speedY, vn = vx * nx + vy * ny
-        if (this.energy() > E0 && vn > 0)
+        const tx = vx - vn * nx, ty = vy - vn * ny, b = 0.5 * g * ny
+        const C = 0.5 * (tx * tx + ty * ty) + 0.5 * g * ty - g * this.posY - E0
+        const D = b * b - 2 * C
+        if (D >= 0 && -b + Math.sqrt(D) >= 0)
         {
-            // E(w) for v = vt + w n: 0.5 w^2 + b w + C, b = g n_y / 2
-            const tx = vx - vn * nx, ty = vy - vn * ny, b = 0.5 * g * ny
-            const C = 0.5 * (tx * tx + ty * ty) + 0.5 * g * ty - g * this.posY - E0
-            const D = b * b - 2 * C
-            let w = D > 0 ? -b + Math.sqrt(D) : 0
-            if (!(w < vn)) w = vn
-            if (w < 0) w = 0
+            const w = -b + Math.sqrt(D)
             this.speedX = tx + w * nx
             this.speedY = ty + w * ny
+            return
+        }
+        this.speedX = tx
+        this.speedY = ty
+        // 0.5 s^2 |t|^2 + 0.5 g s t_y - g y - E0 = 0, the largest root s in [0, 1]
+        const A = 0.5 * (tx * tx + ty * ty), B = 0.5 * g * ty, C2 = -g * this.posY - E0
+        if (A > 0)
+        {
+            const D2 = B * B - 4 * A * C2
+            let s = D2 >= 0 ? (-B + Math.sqrt(D2)) / (2 * A) : 0
+            if (!(s >= 0)) s = 0
+            if (s > 1) s = 1
+            this.speedX = s * tx
+            this.speedY = s * ty
         }
     }
     // Contacts with segs at the current position, ghost joint contacts removed (see contactCollision); returns
@@ -384,4 +390,4 @@ class Ball extends Sprite
     {
         return !(this.posX > GAME_W || this.posX < 0 || this.posY > GAME_H || this.posY < 0)
     }
-}
+}

@@ -7,6 +7,7 @@
 import fs from 'node:fs'
 import { execSync } from 'node:child_process'
 import * as h from './harness.mjs'
+import { makeChecker as stuckChecker } from './stuck.mjs'
 
 const { R, G, FPS, STEPS_PER_FRAME, STEPS_PER_SECOND } = h
 const r6 = h.round
@@ -151,7 +152,11 @@ const CASES = {
     // direction) <= 1e-12 px/step on every step. An end-point contact at the joint (normal (c - V)/|c - V|, outside
     // the joint's cone) would be a tangential kick. Slopes of 8, 20 and 40 degrees, both line orders and one line
     // reversed; balls dropped 15 / 40 px above the slope 2 / 4 / 8 px either side of the joint, and one released
-    // 60 px up the slope; each runs until it leaves x 120..680 (max 4 s) and must end below-left of the joint.
+    // 60 px up the slope; each runs until its centre projects past an outer free end of the slope (|s| >= 250 px
+    // from the joint along the slope, max 4 s) and must end below-left of the joint. TASK-270: the run used to end at
+    // x 120..680, past the outer ends; with elastic contacts a dropped ball keeps bouncing down the slope instead of
+    // settling into a roll, so it can land on the free outer end (152, 335) itself, a real corner whose end-point
+    // normal is meant to kick (edge_cases graze / spike); this case is about the joint, so it stops at the ends.
     slope_seam()
     {
         const sub = []
@@ -181,9 +186,10 @@ const CASES = {
                         const jt = Math.abs((b.speedX - vx0) * c - (b.speedY - vy0 - G) * sn)
                         if (jt > maxJt) maxJt = jt
                         if (jt > 1e-12) { ++kicks; if (!first) first = { start: st.map(v => r6(v, 3)), step: s, jt, at: [r6(b.posX, 4), r6(b.posY, 4)] } }
-                        if (b.posX < 120 || b.posX > 680) break
+                        if (Math.abs((b.posX - V[0]) * c - (b.posY - V[1]) * sn) >= 250) break
                     }
-                    if (!(b.posX < V[0] && b.posY > V[1])) rolledDown = false
+                    // downhill of the joint along the slope (a bouncing ball may be above the joint's height there)
+                    if (!((b.posX - V[0]) * c - (b.posY - V[1]) * sn < 0)) rolledDown = false
                 }
                 worst = Math.max(worst, maxJt)
                 sub.push({ deg, order, starts: starts.length, maxTangentialJ: maxJt, kickSteps: kicks, first, rolledDown, pass: maxJt <= 1e-12 && rolledDown })
@@ -191,26 +197,46 @@ const CASES = {
         }
         return { pass: sub.every(s => s.pass), limit: 1e-12, maxTangentialJ: worst, failingSub: sub.filter(s => !s.pass).map(s => `${s.deg}deg/${s.order}`), sub }
     },
-    // Dropped into the V (300,200)-(500,400)-(700,200): at rest (inside a 2 px box for 0.5 s, within 3 px of the
-    // analytic rest point (500, 400 - R*sqrt2)) starting at some t <= 2 s.
+    // Dropped into the V (300,200)-(500,400)-(700,200) (TASK-270, the user's rule replaces TASK-197's 'comes to rest
+    // within 2 s'): "lets fix the physcis so we dont loose and dont gain the energy (without portals)", answered
+    // "Yes, bounce forever (Recommended)" (with no loss a ball never comes to rest: it bounces back to the same height
+    // on a floor and rocks in a V forever). Over 10 s the ball rocks in the V: it never leaves it (centre inside the
+    // V's walls, below the arms' top y = 200, |x - 500| < 200), keeps E within the TASK-266 (tests/physics/energy.mjs)
+    // tolerance (every step |dE| <= 1e-9 E_ref, end drift <= 1e-7 E_ref, E = |v|^2/2 + g vy/2 + g (800 - y)) and is
+    // never stuck (tests/physics/stuck.mjs checks a-d: depth, tunnelling, livelock, freeze), and it keeps moving
+    // (each 1 s window spans more than 1 px).
     v_corner()
     {
-        const w = h.makeWorld([[300, 200, 500, 400], [500, 400, 700, 200]])
-        const b = w.ball(495, 360, 0, 0)
-        const fr = h.runFrames(w, b, Math.round(2.5 * FPS))
-        const rest = [500, 400 - R * Math.SQRT2], win = FPS / 2
-        let restFrame = null, best = Infinity
-        for (let i = 0; i + win <= fr.length && i <= 2 * FPS; ++i)
+        const segs = [[300, 200, 500, 400], [500, 400, 700, 200]]
+        const E = (y, vx, vy) => 0.5 * (vx * vx + vy * vy) + 0.5 * G * vy + G * (800 - y)
+        const w2 = h.makeWorld(segs), b2 = w2.ball(495, 360, 0, 0), frames = []
+        const st = stuckChecker(segs, b2.posX, b2.posY)
+        const Estart = E(b2.posY, b2.speedX, b2.speedY)
+        let maxKE = 0, maxStepDE = 0, left = 0, x0, y0, vx0, vy0
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+        for (let s = 0; s < 10 * STEPS_PER_SECOND; ++s)
         {
-            let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
-            for (let k = i; k < i + win; ++k) { const f = fr[k]; x0 = Math.min(x0, f.minX); x1 = Math.max(x1, f.maxX); y0 = Math.min(y0, f.minY); y1 = Math.max(y1, f.maxY) }
-            const box = Math.max(x1 - x0, y1 - y0), off = Math.hypot((x0 + x1) / 2 - rest[0], (y0 + y1) / 2 - rest[1])
-            best = Math.min(best, box)
-            if (box < 2 && off < 3) { restFrame = i; break }
+            x0 = b2.posX; y0 = b2.posY; vx0 = b2.speedX; vy0 = b2.speedY
+            w2.step(b2)
+            const ke = 0.5 * (b2.speedX * b2.speedX + b2.speedY * b2.speedY)
+            if (ke > maxKE) maxKE = ke
+            maxStepDE = Math.max(maxStepDE, Math.abs(E(b2.posY, b2.speedX, b2.speedY) - E(y0, vx0, vy0)))
+            st.step(x0, y0, b2.posX, b2.posY, b2.speedX, b2.speedY)
+            // inside the V: the centre stays above both walls (y < 400 - |x - 500|), between the arms' tops
+            if (!(b2.posY > 200 - R && b2.posY < 400 - Math.abs(b2.posX - 500) + 1e-6 && Math.abs(b2.posX - 500) < 200)) ++left
+            minX = Math.min(minX, b2.posX); maxX = Math.max(maxX, b2.posX); minY = Math.min(minY, b2.posY); maxY = Math.max(maxY, b2.posY)
+            if ((s + 1) % STEPS_PER_SECOND === 0)
+            {
+                frames.push(Math.max(maxX - minX, maxY - minY))
+                minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity
+            }
         }
-        const ys = fr.slice(-win)
-        return { pass: restFrame !== null && restFrame <= 2 * FPS, restAtFrame: restFrame, smallestHalfSecondBox: r6(best, 3),
-            lastHalfSecondYRange: r6(Math.max(...ys.map(f => f.maxY)) - Math.min(...ys.map(f => f.minY)), 3), restPoint: rest.map(v => r6(v, 3)), end: { x: r6(b.posX, 3), y: r6(b.posY, 3) } }
+        const Eref = G * 800 + maxKE, drift = E(b2.posY, b2.speedX, b2.speedY) - Estart
+        const sr = st.result(), moving = frames.every(f => f > 1)
+        const pass = left === 0 && maxStepDE <= 1e-9 * Eref && Math.abs(drift) <= 1e-7 * Eref && sr.pass && moving
+        return { pass, seconds: 10, stepsOutsideV: left, maxStepDERel: r6(maxStepDE / Eref, 15), endDriftRel: r6(drift / Eref, 15),
+            tol: { step: 1e-9, scene: 1e-7 }, stuck: { pass: sr.pass, counts: sr.counts, maxDepth: sr.maxDepth },
+            spanPerSecondPx: frames.map(f => r6(f, 3)), moving, end: { x: r6(b2.posX, 3), y: r6(b2.posY, 3) } }
     },
     // The srcId-10 pocket from artifacts/edges_bug.png (level 10 lines, ball launched up at ~967 px/s under the
     // shelf end (200,200) as in the screenshot): 10 s with no livelock window (1 s inside a 2 px box at >= 60 px/s).
