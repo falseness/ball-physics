@@ -19,6 +19,11 @@ Predicates (PREDICATES below, chosen by srcId; documented in artifacts/TASK-250/
      ball rolls/slides (a contact run on that line: consecutive contact frames, gaps <= 2 frames merged, of at least
      30 frames or 60 px of travel) and whose run raises the ball's speed (speed at the run's last contact frame minus
      speed at its first >= 2 px/frame), ending before the decisive entry into A (the last A teleport before the win).
+  32 'round trip' (TASK-252, artifacts/TASK-252/predicate.md) the designed route of TASK-159, from the teleport log
+     alone: the last teleport before the win is B -> A entering B's UPPER half (s < 0) and leaving A on the flag-shaft
+     side (exitS > 0, right of the wall x 560), and the teleport right before it is A -> B entering A's LEFT half
+     (s < 0, the start side) and leaving B through its LOWER half (exitS > 0). s / exitS are offsets along each
+     portal's own tangent t: A t = +x (s < 0 left of the wall), B t = +y (s < 0 above B's centre y 650).
 
 Output (stdout, and --out FILE): compact JSON {win, frame, proper, reasons, end, level, lines, teleports, runs}.
   win: bool, frame: win frame or -1, proper: predicate result (false when not won), reasons: list of strings.
@@ -182,7 +187,31 @@ def pred24(row):
     return ok, reasons, runs
 
 
-PREDICATES = {24: pred24}
+def pred32(row):
+    """srcId 32 'round trip' (artifacts/TASK-252/predicate.md): A-left -> B-lower, then B-upper -> A-shaft, then win."""
+    if row['win'] <= 0:
+        return False, ['not won (end %s)' % row['end']], []
+    tps = [t for t in teleports(row['trace']) if t['frame'] <= row['win']]
+    seq = ','.join('%s%s' % (t['from'], t['to']) for t in tps)
+    reasons = ['teleports before the win: %d [%s]' % (len(tps), seq)]
+    if not tps:
+        return False, reasons + ['no teleport before the win'], []
+    last = tps[-1]
+    ok2 = last['from'] == 'B' and last['to'] == 'A' and last['s'] < 0 and last['exitS'] > 0
+    reasons.append('last teleport (frame %d) %s->%s s %.1f exitS %.1f: %s' % (
+        last['frame'], last['from'], last['to'], last['s'], last['exitS'],
+        'B upper -> A shaft side' if ok2 else 'NOT B upper -> A shaft side'))
+    if len(tps) < 2:
+        return False, reasons + ['no A -> B teleport before the B -> A return (ball reached B without going through A)'], []
+    prev = tps[-2]
+    ok1 = prev['from'] == 'A' and prev['to'] == 'B' and prev['s'] < 0 and prev['exitS'] > 0
+    reasons.append('teleport before it (frame %d) %s->%s s %.1f exitS %.1f: %s' % (
+        prev['frame'], prev['from'], prev['to'], prev['s'], prev['exitS'],
+        'A left -> B lower' if ok1 else 'NOT A left -> B lower'))
+    return ok1 and ok2, reasons, []
+
+
+PREDICATES = {24: pred24, 32: pred32}
 
 
 def check(rows, src):
