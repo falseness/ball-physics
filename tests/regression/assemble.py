@@ -56,6 +56,9 @@ for n in ('rimtrap', 'embed'):
 sec('node tests/physics/edge_cases.mjs')
 out += ['  ' + l for l in lines('edge') if l.startswith(('PASS', 'FAIL', 'ALL'))]
 chk(ok0('edge') and 'ALL PASS' in lines('edge'), f'edge_cases {ex("edge")}')
+sec('tests/physics/run_fast.sh (energy, stuck, portal_fast, edge_cases)')
+out += ['  ' + l for l in lines('run_fast') if re.match(r'^(energy|stuck|portal_fast|edge_cases|wall|RUN_FAST)', l)]
+chk(ok0('run_fast') and 'RUN_FAST PASS' in lines('run_fast'), f'run_fast {ex("run_fast")}')
 sec('invariants: --fuzz 1-5 --chains 1-5 (headless), --levels, --browser --portal-fuzz 1-3')
 for n in ('inv_fuzz_chains', 'inv_levels', 'inv_portal'):
     t = [l for l in lines(n) if 'total:' in l or l.startswith('TOTAL')]; out += [f'  {n}: ' + l for l in t]

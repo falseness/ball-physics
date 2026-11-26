@@ -91,6 +91,18 @@ depth.
 
 ## Running the suites
 
+**Fast physics checks: run before every physics commit.**
+
+```
+tests/physics/run_fast.sh [outdir]      # ~1 min on 8 cores, node only, exit 0 = all four suites pass
+```
+
+It runs tests/physics/energy.mjs (two-sided energy on every step, no portals), stuck.mjs (not stuck in
+textures: depth, tunnelling, livelock, freeze), portal_fast.mjs (stuck / rule T / energy around portals) and
+edge_cases.mjs, and prints one summary line per suite (`<suite> PASS|FAIL exit=N seconds=S <verdict>`, failing
+scenes listed under it), then `RUN_FAST PASS` or `RUN_FAST FAIL: <suites>`. Per-suite logs and JSON are kept
+in `outdir` when given. tests/regression/run_checks.sh runs it in both preview and full mode.
+
 ```
 node tests/physics/edge_cases.mjs [--out FILE] [--only graze,spike,...]     # ~15 s, exit 0 = all pass
 node tests/physics/rolling.mjs --out FILE                                    # deterministic metrics, 1 line JSON

@@ -25,8 +25,9 @@ run() { local n=$1; shift; { echo "$H"; echo "\$ $*"; local t=$(date +%s); "$@";
 TB=$D/tsbase; rm -rf "$TB"; mkdir -p "$TB"; git archive 7bf1d25 | tar -x -C "$TB"; cp -r fonts img "$TB/"; cp js/ball.js js/portal.js js/levels.js "$TB/js/"
 # group A: shoot shards (browser heavy); --task/--out given as absolute paths so nothing goes to ./artifacts
 for i in 0 1 2 3; do eval "S=\$SH$i"; run shoot_s$i python3 -u tests/visual/shoot.py --task "$D/shoot_s$i" --scenarios "$S" & done
-# group B: headless node
+# group B: headless node (run_fast.sh = energy/stuck/portal_fast/edge_cases fast physics checks, TASK-272; both modes)
 ( run edge node tests/physics/edge_cases.mjs --out "$D/edge.json"
+  run run_fast tests/physics/run_fast.sh "$D/run_fast"
   for r in 1 2 3; do run rolling_$r node tests/physics/rolling.mjs --out "$D/rolling_$r.json"; done
   run rolling_compare python3 tests/physics/rolling_compare.py --out "$D/rolling.json" "$D/rolling_1.json" "$D/rolling_2.json" "$D/rolling_3.json"
   run inv_fuzz_chains node tests/physics/invariants.mjs --fuzz 1-5 --chains 1-5 $IS --out "$D/invariants_fuzz_chains.json" ) &
