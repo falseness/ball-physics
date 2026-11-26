@@ -24,6 +24,10 @@ same decisions in both trees (same counters) and refused a teleport there, with 
 velocities that differ only along a portal normal with no more energy ('blocked-bounce-energy-cap': TASK-201 caps the
 refused-exit bounce with the contact model's energy rule, Ball.limitEnergy). Everything else is listed as unexplained
 (exit 1, and it is never written to the allowlist). --recheck REPORT replays only REPORT's unexplained cases.
+TASK-271 (--task271, --head-root = the TASK-270 tree 3bcf7b3, --base = tests/portal/baselines/*_head_3bcf7b3.json): a
+'physics' divergence at a host line is 'capture-zone-predict'; 'portal' divergences may also be 'rim-pushout' (rim_pushout)
+or 'blocked-bounce-step-start' (blocked_step_start), each recomputed from the replayed states. --only-gated (embed) skips
+the mirrored cases embed.py exempts.
 """
 import argparse, json, os, sys, hashlib
 from multiprocessing import Pool
@@ -50,7 +54,8 @@ JS = r"""(o) => {
       if (o.frame === f) {
         const s0 = S(), nr = near(), c0 = C()
         ball.physics(); ball.move(); const mid = S()
-        portalStep(); out.push([i, s0, mid, S(), C(), nr, c0, P.map(p => { const f = portalFrame(p); return [f.nx, f.ny] }), gravitationalAcceleration])
+        portalStep(); out.push([i, s0, mid, S(), C(), nr, c0, P.map(p => { const f = portalFrame(p); return [f.nx, f.ny] }), gravitationalAcceleration,
+          P.filter(p => typeof p.line == 'number').map(p => portalRims(p)), R])
       } else gamePhysics()
       if (!ball.onMap()) { if (!o.frame) out.push(S().concat(C())); return {out, offmap: f} }
     }
@@ -85,6 +90,75 @@ def energy_cap(x, y):
     along = any(abs(dvx * n[1] - dvy * n[0]) <= 1e-12 * sp for n in x[7])
     return along and E(y[3]) <= E(x[3])
 
+def rim_pushout(x, y):
+    """TASK-271: step records x (pre-change tree) and y (this tree) with the same state before the step and after the
+    move ('mid'): True when portalStep() made the same decisions in both (counters before and after equal), the
+    pre-change tree's centre after portalStep() (after the move, or a teleport's mapped exit) overlapped a wall portal's
+    rim (distance below the radius) in a teleport step and this tree's centre is that rim's push-out: on the rim's normal
+    through it, at exactly the radius (1e-9) from the rim, with the velocity unchanged (rule T). Nothing else changed: the
+    exit's rim pushes an overlapping ball out instead of leaving it inside the host line's piece."""
+    if x[6] != y[6] or x[4] != y[4] or x[2] != y[2] or len(x) < 11:
+        return False
+    g, R = x[8], x[10]
+    px, py = x[3][0], x[3][1]
+    ax, ay = y[3][0], y[3][1]
+    tele = x[4][0] != x[6][0]
+    for rims in x[9]:
+        for rx, ry in rims:
+            dp = ((px - rx) ** 2 + (py - ry) ** 2) ** 0.5
+            if not (0 < dp < R):
+                continue
+            da = ((ax - rx) ** 2 + (ay - ry) ** 2) ** 0.5
+            ex, ey = rx + R * (px - rx) / dp, ry + R * (py - ry) / dp
+            if abs(da - R) > 1e-9 or abs(ax - ex) > 1e-9 or abs(ay - ey) > 1e-9:
+                continue
+            if tele and y[3][2:] == x[3][2:]:
+                return True
+    return False
+
+def set_energy(st, E0, nx, ny, g):
+    """js/ball.js Ball.setEnergy on st = [x, y, vx, vy] (same operations)."""
+    import math
+    x, y, vx, vy = st
+    vn = vx * nx + vy * ny
+    tx, ty, b = vx - vn * nx, vy - vn * ny, 0.5 * g * ny
+    C = 0.5 * (tx * tx + ty * ty) + 0.5 * g * ty - g * y - E0
+    D = b * b - 2 * C
+    if D >= 0 and -b + math.sqrt(D) >= 0:
+        w = -b + math.sqrt(D)
+        return [x, y, tx + w * nx, ty + w * ny]
+    return None
+
+def blocked_step_start(x, y):
+    """TASK-271: step records x (pre-change tree) and y (this tree) with the same state before the step and after the
+    move ('mid'): True when portalStep() refused a teleport in both trees with the same counters (blockedExits + 1) and
+    this tree's state after it is the refused-exit bounce resolved at the step's start: from mid (p1, v1), p0 = p1 - v1,
+    u = v1 - (0, g); u's normal part along a portal normal n (u.n < 0) reflected, E(p0, u) restored along n
+    (Ball.setEnergy), then gravity and the move (1e-9 px / 1e-12 px/step)."""
+    if x[6] != y[6] or x[4] != y[4] or x[4][3] != x[6][3] + 1 or x[2] != y[2]:
+        return False
+    g = x[8]
+    px, py, vx, vy = y[2]
+    E = lambda st: 0.5 * (st[2] ** 2 + st[3] ** 2) + 0.5 * g * st[3] - g * st[1]
+    for nx, ny in x[7]:
+        if not (vx * nx + vy * ny < 0):
+            continue
+        ux, uy = vx, vy - g
+        un = ux * nx + uy * ny
+        if not (un < 0):
+            continue
+        p0 = [px - vx, py - vy, ux, uy]
+        E1 = E(p0)
+        st = set_energy([p0[0], p0[1], ux - 2 * un * nx, uy - 2 * un * ny], E1, nx, ny, g)
+        if st is None:
+            continue
+        st[3] += g
+        st[0] += st[2]; st[1] += st[3]
+        a = y[3]
+        if abs(a[0] - st[0]) <= 1e-9 and abs(a[1] - st[1]) <= 1e-9 and abs(a[2] - st[2]) <= 1e-12 and abs(a[3] - st[3]) <= 1e-12:
+            return True
+    return False
+
 def worker(job):
     suite, keys, head_root = job
     from playwright.sync_api import sync_playwright
@@ -110,7 +184,8 @@ def worker(job):
                     x, y = sh[k], sn[k]
                     r.update(step=x[0], same_before=x[1] == y[1], phase='physics' if x[2] != y[2] else 'portal',
                              hostDist=x[5][0], lineDist=x[5][1], counters=[x[4], y[4]], before=x[1], mid=[x[2], y[2]], after=[x[3], y[3]],
-                             energyCap=energy_cap(x, y))
+                             energyCap=energy_cap(x, y), rimPushout=rim_pushout(x, y),
+                             blockedStart=blocked_step_start(x, y))
             res.append(r)
         bh.close(); bn.close()
     return res
@@ -129,7 +204,23 @@ def write_allowlist(a, cases, sha):
                       'host-contact-physics': 'first divergent step: same state before it, ball.physics()/move() differ '
                       '(portalStep() not involved), the ball within its radius of a wall-portal host line: the host line '
                       'is resolved by the ball contact model (TASK-199 rules) instead of the old reflect-on-overlap '
-                      'portalHostCollision'},
+                      'portalHostCollision',
+                      'capture-zone-predict': 'TASK-271, first divergent step: same state before it, ball.physics()/move() '
+                      'differ (portalStep() not involved), the ball within its radius of a wall-portal host line: TASK-271 contact '
+                      'rules there, mainly the capture zone: a host-piece contact in a portal capture zone is skipped only when '
+                      'the ball flying freely will touch the opening (portalWillTouch); a ball whose path passes the rim at more '
+                      'than the radius now bounces off the piece instead of sinking into it and leaving it again without a '
+                      'teleport (stuck in textures); also the ball.js push-out rules for invariants I2 (an overlap the step\'s '
+                      'own move clears is not pushed out, a downward push-out is cut so the normal speed stays within |v0.n|)',
+                      'rim-pushout': 'TASK-271, first divergent step: same state before it and after the move, portalStep() '
+                      'made the same decisions (same counters), the centre after the move overlapped a wall-portal rim and is now '
+                      'pushed out along the rim normal to exactly the radius in the teleport step (velocity kept, rule T): the exit rim is solid for an overlapping ball moving away from it (elastic contact model) instead of '
+                      'leaving it inside the host piece (stuck in textures)',
+                      'blocked-bounce-step-start': 'TASK-271, first divergent step: same state before it and after the move, '
+                      'portalStep() refused a teleport in both trees with the same counters, and this tree resolves that bounce '
+                      'as an elastic contact at the step start (back to the position before the move and the velocity before '
+                      'gravity, normal part reflected, energy restored along the portal normal, then gravity and the move): '
+                      'exact energy with the impulse along the normal (invariants I2 vn_grow, src blockedA)'},
               'cases': {k: [baseline_allow.outcome_hash(e['base']), baseline_allow.outcome_hash(e['new']), e['why'],
                             e['frame'], e['step']] for k, e in sorted(cases.items()) if e['why'] != 'UNEXPLAINED'}}
         os.makedirs(os.path.dirname(os.path.abspath(a.allowlist_out)), exist_ok=True)
@@ -148,6 +239,10 @@ def main():
     ap = argparse.ArgumentParser()
     for x in ('--suite', '--base', '--new', '--head-root', '--out'): ap.add_argument(x, required=True)
     ap.add_argument('--jobs', type=int, default=8); ap.add_argument('--allowlist-out', default=None)
+    ap.add_argument('--only-gated', action='store_true', help='embed: skip changed cases that --new marks mirrored '
+                    '(embed.py exempts them from the gate, TASK-176)')
+    ap.add_argument('--task271', action='store_true', help='TASK-271 classes: rim-pushout, capture-zone-predict (instead of '
+                    'host-contact-physics); --head-root is then the TASK-270 tree 3bcf7b3')
     ap.add_argument('--recheck', default=None, help='a REPORT.json of the same --base / --new: replay only its UNEXPLAINED '
                     'cases (the others keep their class) and write the merged report to --out')
     ap.add_argument('--from-report', default=None, help='reuse a REPORT.json of the same --base / --new (sha256 checked) instead of replaying'); ap.add_argument('--limit', type=int, default=0)
@@ -160,6 +255,9 @@ def main():
         B, N = outcomes(a.suite, a.base), outcomes(a.suite, a.new)
         ks = lambda k: '|'.join(map(str, k)) if a.suite == 'rimtrap' else k
         changed = {ks(k): (B[k], N[k]) for k in N if k in B and B[k] != N[k]}
+        if a.only_gated and a.suite == 'embed':
+            mir = set(json.load(open(a.new)).get('mirrored', []))
+            changed = {k: v for k, v in changed.items() if k not in mir}
         bad = [k for k in set(changed) | set(doc['cases']) if k not in changed or k not in doc['cases'] or
                [doc['cases'][k]['base'], doc['cases'][k]['new']] != list(changed[k])]
         if doc['suite'] != a.suite or bad:
@@ -170,6 +268,9 @@ def main():
         return 1 if doc['classes'].get('UNEXPLAINED') else 0
     B, N = outcomes(a.suite, a.base), outcomes(a.suite, a.new)
     keys = [k for k in N if k in B and B[k] != N[k]]
+    if a.only_gated and a.suite == 'embed':
+        mir = set(json.load(open(a.new)).get('mirrored', []))
+        keys = [k for k in keys if k not in mir]
     prev = None
     if a.recheck:
         prev = json.load(open(a.recheck))
@@ -194,8 +295,14 @@ def main():
         repro = r['end'][0] == rb and r['end'][1] == rn
         hc = repro and r.get('phase') == 'physics' and r.get('same_before') and r['hostDist'] <= 1e-6
         ec = repro and r.get('phase') == 'portal' and r.get('same_before') and r.get('energyCap')
-        ok = hc or ec
-        why = 'host-contact-physics' if hc else 'blocked-bounce-energy-cap' if ec else 'UNEXPLAINED'
+        rp = a.task271 and repro and r.get('phase') == 'portal' and r.get('same_before') and r.get('rimPushout')
+        bs = a.task271 and repro and r.get('phase') == 'portal' and r.get('same_before') and r.get('blockedStart')
+        # TASK-271: with --task271 a 'physics' divergence in contact with a host line is the capture-zone prediction
+        # (portalWillTouch: a host-piece contact in the capture zone is only skipped for a ball that will touch the opening)
+        hc271 = a.task271 and hc
+        ok = hc or ec or rp or bs
+        why = ('capture-zone-predict' if hc271 else 'host-contact-physics') if hc else 'blocked-bounce-energy-cap' if ec \
+            else 'rim-pushout' if rp else 'blocked-bounce-step-start' if bs else 'UNEXPLAINED'
         phases[why] = phases.get(why, 0) + 1
         ent = {'base': b, 'new': n, 'frame': r['frame'], 'step': r.get('step'), 'phase': r.get('phase'), 'hostDist': r.get('hostDist'),
                'lineDist': r.get('lineDist'), 'why': why}

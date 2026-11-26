@@ -99,7 +99,7 @@ class Ball extends Sprite
     contactCollision(segs)
     {
         const r = this.radius, n = segs.length
-        const E0 = this.energy()
+        const E0 = this.energy(), v0x = this.speedX, v0y = this.speedY
         // contacts at the start position: normal, distance, closest point (scratch arrays reused)
         const cn = Ball.scratch(n)
         let k = this.contacts(segs, cn)
@@ -165,7 +165,12 @@ class Ball extends Sprite
             k = this.contacts(segs, cn)
             let best = -1, bd = r
             for (let j = 0; j < k; ++j)
-                if (cn[j * CS + 2] < bd)
+                // TASK-271: a contact the ball was not approaching at the step start (v0.n >= 0) whose overlap this
+                // step's own move clears (clearedByMove) is not pushed out: a ball grazing past a line end
+                // overlaps it by ~1e-4 px while the normal turns within the step, and the push-out (with the energy
+                // restored along n) changed the velocity of a ball moving away from the line (tests/physics/
+                // invariants.mjs I2 away_changed, portal fuzz p2#795)
+                if (cn[j * CS + 2] < bd && !(v0x * cn[j * CS] + v0y * cn[j * CS + 1] >= 0 && this.clearedByMove(cn, j)))
                 {
                     best = j; bd = cn[j * CS + 2]
                 }
@@ -200,9 +205,38 @@ class Ball extends Sprite
         }
         // ---- 3. energy: back to E0 along the last reflected normal (else the last push-out normal)
         if (last >= 0)
+        {
             this.setEnergy(E0, lnx, lny)
+            // TASK-271: a push-out that moved the ball down (n_y > 0) lowered E, so setEnergy raised the outgoing normal
+            // speed w. At a line end the ball can sink deeper than its normal speed per step (the normal turns during the
+            // step), and w then exceeded what one contact plus gravity can explain, |v0.n| + |g n_y| after gravity
+            // (tests/physics/invariants.mjs I2 vn_grow, a few 1e-9 px/step, e.g. portal fuzz p1#809). Then the ball is
+            // pushed out a little less (back along -n, at most the push-out step's depth) so that w = |v0.n| keeps E0:
+            // a remaining overlap of ~1e-4 px that this step's move (w + g n_y away from the line) clears.
+            const g = gravitationalAcceleration, gn = g * lny, wMax = Math.abs(v0x * lnx + v0y * lny)
+            const w = this.speedX * lnx + this.speedY * lny
+            if (gn > 0 && w > wMax)
+            {
+                const back = (0.5 * (w * w - wMax * wMax) + 0.5 * gn * (w - wMax)) / gn
+                if (back > 0 && back < r && back < wMax)
+                {
+                    this.posX -= back * lnx
+                    this.posY -= back * lny
+                    this.setEnergy(E0, lnx, lny)
+                }
+            }
+        }
         else if (pi >= 0)
             this.setEnergy(E0, pnx, pny)
+    }
+    // TASK-271: true when this step's move (gravity, then p += v) takes the centre to at least the radius from contact j:
+    // for a line end the distance to that point after the move, for the inside of a line v.n + g n_y >= r - dist
+    clearedByMove(cn, j)
+    {
+        const o = j * CS, vx = this.speedX, vy = this.speedY + gravitationalAcceleration
+        if (cn[o + 6] === 0)
+            return vx * cn[o] + vy * cn[o + 1] >= this.radius - cn[o + 2]
+        return Math.hypot(this.posX + vx - cn[o + 3], this.posY + vy - cn[o + 4]) >= this.radius
     }
     // E = |v|^2/2 + g vy/2 - g y, the integrator's free-flight invariant (constant between steps without contact)
     energy()

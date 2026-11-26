@@ -62,7 +62,8 @@ LOOP_JS = r"""window.__invRun = (label, maxSteps, flag) => {
     // TASK-201: the portal capture zone (TASK-074 / TASK-173 rule, from the portal geometry): a ball in front of wall
     // portal P (d > 0) moving toward it (v.n < 0) whose closest point q on P's host line lies within h + r of P's
     // centre along t (q a host line end: the centre within h + r / 2) is being captured, unless the touch exit is
-    // refused (portalTouchExitBlocked, a line at the exit spot). That host line is not a contact for it (zone).
+    // refused (portalTouchExitBlocked, a line at the exit spot), and (TASK-271) its free flight touches the opening
+    // (portalWillTouch). That host line is not a contact for it (zone).
     const R = ball.radius, hostOf = P.map(p => typeof p.line == 'number' ? p.line : -1)
     // I1 (post-step state, post = true) also skips host line k for a ball in front of a portal on it moving away from
     // that front, unless its closest solid point is a real end of the line: the portal's exit placement (local
@@ -89,6 +90,8 @@ LOOP_JS = r"""window.__invRun = (label, maxSteps, flag) => {
             if (Math.abs((c[0] - p.x) * f.tx + (c[1] - p.y) * f.ty) > p.h + R) continue
             if (end && Math.abs((x - p.x) * f.tx + (y - p.y) * f.ty) > p.h + 0.5 * R) continue
             if (portalTouchExitBlocked(p, { posX: x, posY: y, speedX: vx, speedY: vy, radius: R }, f)) continue
+            // TASK-271: and only a ball whose free flight touches the opening (portalWillTouch, js/portal.js)
+            if (typeof portalWillTouch == 'function' && !portalWillTouch(p, { posX: x, posY: y, speedX: vx, speedY: vy, radius: R }, f)) continue
             (out = out || []).push(k)
         }
         return out

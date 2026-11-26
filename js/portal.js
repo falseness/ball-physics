@@ -20,8 +20,10 @@
 // opening while the ball centre is in front of the portal (d > 0), only at the host line's own ends while the
 // ball moves away from that front, and as the whole line from behind. A ball being captured (front, v·n < 0)
 // ignores a piece / line end whose contact point is within h + ball.radius of the portal centre along t
-// (portalCaptureZone, unchanged); other contacts are resolved like any line (closest point, deepest first,
-// push-out, no energy gain).
+// (portalCaptureZone) when its free flight is going to touch the opening (TASK-271, portalWillTouch); other
+// contacts are resolved like any line (closest point, deepest first, push-out, energy kept).
+// TASK-271: in a teleport step an exit next to a rim (entry depth d < r) is pushed out of that rim to the radius
+// (portalStep's rim loop, velocity kept), and a refused teleport bounces like a contact at the step start (portalTeleport).
 // Other lines may cross an opening (TASK-104) and stay solid: no capture through such a line
 // (portalTouches), and a teleport whose exit centre would be on the far side of a line other than
 // the exit's host line is refused, the ball bounces off the entry plane instead (portalTeleport).
@@ -339,10 +341,58 @@ function portalCaptureZone(b, list, qx, qy, end)
         if ((b.posX - P.x) * f.nx + (b.posY - P.y) * f.ny <= 0 || b.speedX * f.nx + b.speedY * f.ny >= 0)
             continue
         if (Math.abs((qx - P.x) * f.tx + (qy - P.y) * f.ty) <= P.h + b.radius &&
-            (!end || Math.abs((b.posX - P.x) * f.tx + (b.posY - P.y) * f.ty) <= P.h + 0.5 * b.radius) && !portalTouchExitBlocked(P, b, f))
+            (!end || Math.abs((b.posX - P.x) * f.tx + (b.posY - P.y) * f.ty) <= P.h + 0.5 * b.radius) && !portalTouchExitBlocked(P, b, f) &&
+            portalWillTouch(P, b, f))
             return true
     }
     return false
+}
+
+// TASK-271: true when ball b, flying freely from its current state (the game's integrator: v += g, then p += v), touches
+// P's opening as portalStep's touch capture sees it (centre in front, d > 0, moving into the front, v.n < 0, centre within
+// the radius of the opening segment) within PORTAL_PREDICT_STEPS steps. The capture zone lets a ball sink into the host
+// piece beside the opening only when it is going to be captured: a ball beside a rim whose path passes the rim at more
+// than the radius (it moves outwards along the line faster than it sinks) used to sink up to several px into the piece
+// and leave it again without a teleport, 'stuck in textures' for hundreds of steps (tests/physics/portal_fast.mjs e.a,
+// srcId 21 / 25 level scenes); such a ball now bounces off the piece like off any line. The portal the ball last came
+// out of (grace) never captures by touch. One result is kept per ball state (contacts() runs several times per step).
+const PORTAL_PREDICT_STEPS = 6000
+const portalPredictMemo = { P: null, x: NaN, y: NaN, vx: NaN, vy: NaN, g: NaN, r: false }
+function portalWillTouch(P, b, f)
+{
+    const memo = portalPredictMemo, g = gravitationalAcceleration
+    if (memo.P === P && memo.x === b.posX && memo.y === b.posY && memo.vx === b.speedX && memo.vy === b.speedY && memo.g === g)
+        return memo.r
+    let res = false
+    if (portalState.grace !== P)
+    {
+        const r = b.radius, h = P.h
+        const s0 = (b.posX - P.x) * f.tx + (b.posY - P.y) * f.ty, d0 = (b.posX - P.x) * f.nx + (b.posY - P.y) * f.ny
+        const vs = b.speedX * f.tx + b.speedY * f.ty, vd = b.speedX * f.nx + b.speedY * f.ny, gs = g * f.ty, gd = g * f.ny
+        let s = s0, d = d0, ws = vs, wd = vd
+        for (let m = 0; m < PORTAL_PREDICT_STEPS; ++m)
+        {
+            ws += gs; wd += gd
+            s += ws; d += wd
+            if (!(d > 0))
+                break
+            if (wd >= 0)
+            {
+                // moving away from the front: with constant gravity v.n only keeps growing when gd >= 0
+                if (gd >= 0)
+                    break
+                continue
+            }
+            const e = Math.abs(s) - h
+            if (e <= 0 ? d <= r : e * e + d * d <= r * r)
+            {
+                res = true
+                break
+            }
+        }
+    }
+    memo.P = P; memo.x = b.posX; memo.y = b.posY; memo.vx = b.speedX; memo.vy = b.speedY; memo.g = g; memo.r = res
+    return res
 }
 
 // TASK-124: the last portalTouchExitBlocked result while portalFrozen (cleared by portalFreeze). Its inputs
@@ -568,28 +618,45 @@ function portalTeleport(A, B, s, d, kind)
         const fa = portalFrame(A), vn = vx * fa.nx + vy * fa.ny, E0 = ball.energy()
         record.blocked = true
         record.reason = reason
-        if (kind === 'cross')
+        // TASK-271: the bounce is resolved like a contact of the elastic contact model at the start of this step
+        // (portalStep runs after ball.physics() and ball.move()): back to the step's start state (position before the
+        // move, velocity before gravity), the normal part of the velocity along A's normal reflected, the energy E0 of
+        // that state restored along the normal (Ball.setEnergy), then gravity and the move again. The ball thus leaves A's
+        // plane from where it started the step instead of keeping its inward step (TASK-176 mirrored a 'touch' about d = r,
+        // a 'cross' about d = 0, record.mirror is still set for those touches), and the step keeps the energy exactly with
+        // the impulse along the normal: a bounce applied after gravity had to make |v.n| grow by about g to keep E
+        // (the g vy / 2 term), which tests/physics/invariants.mjs I2 (vn_grow) rejected (src blockedA).
+        const g = gravitationalAcceleration, ux = vx, uy = vy - g, un = ux * fa.nx + uy * fa.ny
+        if (vn < 0 && kind === 'touch' && Math.abs(s) <= A.h && d < ball.radius)
+            record.mirror = true
+        if (vn < 0 && un < 0)
         {
-            ball.posX -= 2 * d * fa.nx
-            ball.posY -= 2 * d * fa.ny
+            ball.posX -= vx
+            ball.posY -= vy
+            ball.speedX = ux
+            ball.speedY = uy
+            const E1 = ball.energy()
+            ball.speedX = ux - 2 * un * fa.nx
+            ball.speedY = uy - 2 * un * fa.ny
+            ball.setEnergy(E1, fa.nx, fa.ny)
+            ball.gravity()
+            ball.move()
         }
-        if (vn < 0)
+        else if (vn < 0)
         {
+            // gravity alone turned the step's velocity into A's plane (rare): the old bounce (TASK-176 mirror)
+            if (kind === 'cross')
+            {
+                ball.posX -= 2 * d * fa.nx
+                ball.posY -= 2 * d * fa.ny
+            }
             ball.speedX = vx - 2 * vn * fa.nx
             ball.speedY = vy - 2 * vn * fa.ny
-            // TASK-176: a blocked 'touch' on the opening face (|s| <= h, so 0 < d <= radius) is a wall contact at
-            // d = radius; mirror the centre back about it (like 'cross' about d = 0). portalStep runs after the move,
-            // so without this the ball keeps the inward step it made before the bounce. Wedged between that spot and a
-            // line end it overlaps (collisionWithDot flips v every step), it then crept 1 inward step per 2 steps into
-            // A's plane and stayed there (fuzz --crossing --seed 2 case 1298, embedded).
             if (kind === 'touch' && Math.abs(s) <= A.h && d < ball.radius)
             {
                 ball.posX += 2 * (ball.radius - d) * fa.nx
                 ball.posY += 2 * (ball.radius - d) * fa.ny
-                record.mirror = true
             }
-            // TASK-201 / TASK-270: like a contact of the ball's contact model, the bounce neither adds nor removes
-            // energy (the reflection changes the integrator's g vy / 2 term, the mirror the height)
             ball.setEnergy(E0, fa.nx, fa.ny)
         }
         record.after = [ball.posX, ball.posY, ball.speedX, ball.speedY]
@@ -630,6 +697,7 @@ function portalStep()
     if (!P)
         return
     ++portalState.steps
+    let teleported = false
     // exit grace: ends once the ball centre is farther than the radius from that portal's opening
     const G = portalState.grace
     if (G !== null)
@@ -652,7 +720,10 @@ function portalStep()
         if (kind)
         {
             if (portalTeleport(P[i], P[i ^ 1], Ls, Ld, kind))
+            {
                 portalState.grace = P[i ^ 1]
+                teleported = true
+            }
             // at most one teleport (or blocked-exit bounce, TASK-104) per step; every stored side
             // (the exit's included) becomes the ball's new side, so the exit cannot re-trigger next step
             for (let k = 0; k < P.length; ++k)
@@ -685,7 +756,20 @@ function portalStep()
             const nx = dx / dist, ny = dy / dist
             const vn = ball.speedX * nx + ball.speedY * ny
             if (vn >= 0)
+            {
+                // TASK-271: a teleport's exit next to a wall portal's rim keeps the entry depth d < r, which left the ball
+                // inside the host line's piece beside the opening (the rim is that piece's end) for hundreds of steps while
+                // it moved away, 'stuck in textures' (tests/physics/portal_fast.mjs e.a). In the teleport step the rim
+                // pushes it out to the radius along the rim normal, keeping the velocity (rule T: a teleport keeps |v|;
+                // the teleport step changes the height anyway; the teleport record keeps the mapped exit state). Outside
+                // a teleport step a ball moving away from a rim is left alone, as before.
+                if (teleported && typeof Q.line == 'number')
+                {
+                    ball.posX = rx + ball.radius * nx
+                    ball.posY = ry + ball.radius * ny
+                }
                 continue
+            }
             const before = [ball.speedX, ball.speedY]
             ball.speedX -= 2 * vn * nx
             ball.speedY -= 2 * vn * ny
