@@ -16,7 +16,8 @@ Checks (each recorded under "ok", written as compact JSON to --out):
     newest and linear (+-1e-9).
   C visible trail: after play on sc_placed (~0.8 s, then paused), trail-attributable cyan pixels
     (r<170, g>170, b>220, minus the same frame with trailDraw as a no-op) >= 50.
-  D teleport split: level 11 with its reference solution line (shoot.LEVEL11_LINE, real mouse input),
+  D teleport split: level 12 with its reference solution line (shoot.LEVEL12_LINE, real mouse input; TASK-248: was
+    srcId 11, removed by TASK-247; srcId 12 is the next portal level, one B -> A teleport),
     stepped until one teleport plus 5 frames (before the win panel): 2 trail segments and 0 attributable cyan pixels
     on the straight line between the two segment ends (middle 40 %, 3 px discs).
 Exit 1 if any check fails or the page logs an error.
@@ -157,10 +158,10 @@ def check_c(browser, url, errors):
 
 def check_d(browser, url, errors):
     page = new_page(browser, url, errors)
-    # level 11 by source id (TASK-177; a --root tree without levelBySrc is in definition order)
-    page.evaluate("() => { thisLevel = typeof levelBySrc === 'function' ? levelBySrc(11) : 10; levelChoosed(thisLevel) }")
+    # level 12 by source id (TASK-177; a --root tree without levelBySrc is in definition order)
+    page.evaluate("() => { thisLevel = typeof levelBySrc === 'function' ? levelBySrc(12) : 11; levelChoosed(thisLevel) }")
     shoot.frames(page)
-    (x1, y1), (x2, y2) = shoot.LEVEL11_LINE
+    (x1, y1), (x2, y2) = shoot.LEVEL12_LINE
     shoot.click(page, x1, y1)
     shoot.move(page, x2, y2)
     shoot.frames(page)

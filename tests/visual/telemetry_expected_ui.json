@@ -1,4 +1,4 @@
-{"_doc":"TASK-192 telemetry_ui (tests/visual/shoot.py): ui:/lines:/session: design events of ANALYTICS.debugLog in order, as [fn, id, value] (null = no value). Script on level 1 (srcId 1, lineK 1): line X (auto run) -> play box pause -> speed box twice -> play box run -> HUD restart -> field click over the limit -> drag a line end -> bin -> line X again (auto run) -> TOUCH tap on the menu icon -> 'resume' -> menu icon + 'Levels' -> map menu icon (back) -> 'Levels' -> level 2 slot (select) -> card play -> play box (level 2, no lines) -> win -> 'next level' -> play-order level 3 (srcId 11): play-time milestones via TELEMETRY.tick -> visibilitychange hidden -> menu icon + editor button -> pagehide.",
+{"_doc":"TASK-192 telemetry_ui (tests/visual/shoot.py): ui:/lines:/session: design events of ANALYTICS.debugLog in order, as [fn, id, value] (null = no value). Script on level 1 (srcId 1, lineK 1): line X (auto run) -> play box pause -> speed box twice -> play box run -> HUD restart -> field click over the limit -> drag a line end -> bin -> line X again (auto run) -> TOUCH tap on the menu icon -> 'resume' -> menu icon + 'Levels' -> map menu icon (back) -> 'Levels' -> level 2 slot (select) -> card play -> play box (level 2, no lines) -> win -> 'next level' -> play-order level 3 (srcId 12; srcId 11 until TASK-247 removed it, TASK-248): play-time milestones via TELEMETRY.tick -> visibilitychange hidden -> menu icon + editor button -> pagehide.",
 "events":[
 ["addDesignEvent","lines:1:place",1],["addDesignEvent","lines:1:used",1],
 ["addDesignEvent","ui:pause:L1",null],
@@ -20,6 +20,6 @@
 ["addDesignEvent","ui:next_level:L2",null],
 ["addDesignEvent","session:play_seconds",30],["addDesignEvent","session:play_seconds",60],["addDesignEvent","session:play_seconds",120],["addDesignEvent","session:play_seconds",300],["addDesignEvent","session:play_seconds",600],
 ["addDesignEvent","session:hide",null],
-["addDesignEvent","ui:menu_open:L11",null],["addDesignEvent","ui:editor_open:L11",null],["addDesignEvent","ui:menu_close:L11",null],
+["addDesignEvent","ui:menu_open:L12",null],["addDesignEvent","ui:editor_open:L12",null],["addDesignEvent","ui:menu_close:L12",null],
 ["addDesignEvent","session:levels_seen",3]
 ]}

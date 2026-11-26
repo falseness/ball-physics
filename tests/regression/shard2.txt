@@ -1,1 +1,1 @@
-drawing,complete,complete_last,trail,level3,level7,level11,level15,level19,level23,level27,level31,progress_reload,map_progress,map_close,card_play,lines_restart_keeps,speed_off,speed_reload,telemetry_editor
+drawing,complete,complete_last,trail,level3,level7,level15,level19,level23,level31,progress_reload,map_progress,map_close,card_play,lines_restart_keeps,speed_off,speed_reload,telemetry_editor

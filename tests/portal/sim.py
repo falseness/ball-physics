@@ -9,7 +9,7 @@
          compare against a pre-portal checkout.
   python3 tests/portal/sim.py --compare BASE.json CUR.json --out OUT.json
   python3 tests/portal/sim.py --trajectory OUT.json --levels 10
-      -> only levels 1..10 (the pre-portal ones); each entry also carries a sha256 of its x/y list.
+      -> only srcId 1..10 (the pre-portal ones; srcId 8 removed by TASK-247); each entry also carries a sha256 of its x/y list.
 
 S1-S4, S6-S14 (TASK-065) run with wall portals too: wcfg() cuts every scenario portal
 {x, y, angle} into its own host line (300 px along the portal's tangent, u = 0.5, side -1) and
@@ -1185,8 +1185,9 @@ SCENARIOS = {'S1': s1, 'S2': s2, 'S3': s3, 'S4': s4, 'S6': s6, 'S7': s7, 'S8': s
 
 TRAJ_JS = """([frames, nLevels]) => { const out = []
   // levels in source-id order (TASK-177: play order != definition order), so --levels N and --compare
-  // address the first N definition levels
-  for (let n = 1; n <= Math.min(levels.length, nLevels || levels.length); ++n) {
+  // address the definition levels with srcId <= N (TASK-248: srcIds TASK-247 removed are skipped; --compare pairs by srcId)
+  const ids = levels.map(l => l.srcId).sort((a, b) => a - b).filter(n => !nLevels || n <= nLevels)
+  for (const n of ids) {
     const i = levelBySrc(n)
     thisLevel = i; levelChoosed(i)
     const xs = [], ys = []
@@ -1197,6 +1198,10 @@ TRAJ_JS = """([frames, nLevels]) => { const out = []
     out.push({level: n, nLines: lines.length, x: xs, y: ys})
   }
   return out }"""
+
+
+# srcIds removed from the game by TASK-247 (TASK-248: --compare tolerates their absence)
+REMOVED_SRC = {8, 11, 14, 27, 29}
 
 
 def main():
@@ -1216,7 +1221,14 @@ def main():
     if a.compare:
         base, cur = (json.load(open(f)) for f in a.compare)
         levels, total = [], 0
-        for b, c in zip(base, cur):
+        # TASK-248: entries are paired by srcId ('level'); a base level removed from the game (TASK-247: srcId 8 of
+        # the 10 pre-portal ones) has no current entry and is listed in removedLevels
+        cmap = {c['level']: c for c in cur}
+        removed = [b['level'] for b in base if b['level'] not in cmap]
+        for b in base:
+            if b['level'] not in cmap:
+                continue
+            c = cmap[b['level']]
             mism = sum(1 for i in range(len(b['x']))
                        if i >= len(c['x']) or b['x'][i] != c['x'][i] or b['y'][i] != c['y'][i])
             mism += max(0, len(c['x']) - len(b['x']))
@@ -1226,8 +1238,9 @@ def main():
         # the 10 original levels must match bit for bit; levels appended later (11+, portal
         # levels) have no baseline and are only counted
         res = {'levels': levels, 'levelCount': len(levels), 'sameLevelCount': len(base) == len(cur) == 10,
-               'baseLevels': len(base), 'curLevels': len(cur), 'addedLevels': len(cur) - len(base),
-               'totalMismatchingFrames': total, 'pass': total == 0 and len(base) == 10 and len(cur) >= len(base)}
+               'baseLevels': len(base), 'curLevels': len(cur), 'addedLevels': len(cur) - len(base) + len(removed),
+               'removedLevels': removed, 'totalMismatchingFrames': total,
+               'pass': total == 0 and len(base) == 10 and set(removed) <= REMOVED_SRC}
         with open(a.out, 'w') as f:
             json.dump(res, f, separators=(',', ':'))
         print('noportal: levels=%d mismatching=%d pass=%s' % (len(levels), total, res['pass']))

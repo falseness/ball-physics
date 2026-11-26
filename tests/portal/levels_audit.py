@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portal level audit (TASK-174, part 4 of TASK-171..176): every portal level 11-32 (source ids, levelBySrc).
+"""Portal level audit (TASK-174, part 4 of TASK-171..176): every portal level 12-32 still in the game (source ids, levelBySrc; TASK-248: not 11, 14, 27, 29).
 
   python3 tests/portal/levels_audit.py --task TASK-NNN --risk [--out risk.json]
       (1) static scan: every non-host level line within r + 2 px of a portal opening (segment c +- h t),
@@ -36,7 +36,10 @@ from sim import open_page  # noqa: E402
 from embed import install as install_embed  # noqa: E402
 from rimtrap import install as install_trap  # noqa: E402
 
-LEVELS = list(range(11, 33))   # level source ids 11..32 (TASK-177: levelBySrc maps them to play-order indices)
+# level source ids 11..32 (TASK-177: levelBySrc maps them to play-order indices) without the portal levels TASK-247 removed
+# (srcId 11, 14, 27, 29; TASK-248)
+REMOVED = (11, 14, 27, 29)
+LEVELS = [s for s in range(11, 33) if s not in REMOVED]
 ANGLES = [-60, -30, 0, 30, 60]
 SPEED = 10                     # px/frame (medium)
 GAP = 3.0
@@ -192,6 +195,8 @@ def out_path(task, out):
 def sweep(a):
     t0 = time.time()
     idxs = [int(x) for x in a.levels.split(',')] if a.levels else LEVELS
+    if any(x in REMOVED for x in idxs):
+        raise SystemExit('--levels: srcId %s removed from the game (TASK-247)' % [x for x in idxs if x in REMOVED])
     info, errors = level_info(a.root, idxs)
     allc = cases_for(info, a.s_step)
     run = [c for c in allc if not c['skip']]
@@ -248,7 +253,7 @@ def main():
     ap.add_argument('--out', default=None)
     ap.add_argument('--root', default=ROOT)
     ap.add_argument('--risk', action='store_true')
-    ap.add_argument('--levels', default='', help='comma separated level numbers (1-based), default 11..32')
+    ap.add_argument('--levels', default='', help='comma separated level numbers (1-based), default 12..32 without 14, 27, 29')
     ap.add_argument('--s-step', type=int, default=1)
     ap.add_argument('--jobs', type=int, default=max(1, min(7, (os.cpu_count() or 2) - 1)))
     a = ap.parse_args()

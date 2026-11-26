@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Browser mode of the invariant checker (TASK-198, TASK-201): ball runs inside the game, every step checked.
 
-  python3 tests/physics/invariants_browser.py [--levels 11,12,...] [--frames N]
+  python3 tests/physics/invariants_browser.py [--levels 12,13,...] [--frames N]
   python3 tests/physics/invariants_browser.py --portal-fuzz SEED [--cases N] [--frames F]
 
 Loads index.html (file://, Playwright chromium) and injects tests/physics/invariants_core.js. The shared run

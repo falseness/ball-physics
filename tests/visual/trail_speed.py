@@ -16,10 +16,10 @@ Both trees are loaded (file://, 1280x800, headless Chromium) and run the same pa
            Only the levels both trees have are compared (TASK-129: levels appended after the baseline, e.g.
            level 18, are listed as informational extraLevels); the shared levels keep the strict comparison.
   timing   (informational, never fails): median of --runs calcSyncIdle() per level, pages interleaved.
-  fill     (informational per level; gate over portal levels 10..16): after levelChoosed(i), the number
+  fill     (informational per level; gate over 7 portal levels, PORTAL_LEVELS): after levelChoosed(i), the number
            of requestAnimationFrame frames of the real game loop until
            !bounce.busy && bounce.positions.length == bounce.curCount() (median of --fills loads).
-           Gate: sum of work fill frames over levels 10..16 < sum of base fill frames.
+           Gate: sum of work fill frames over PORTAL_LEVELS < sum of base fill frames.
 Prints PASS/FAIL lines, writes one compact JSON. Exit 1 on any identity mismatch, page error or
 failed fill gate.
 """
@@ -34,10 +34,14 @@ from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-PORTAL_LEVELS = range(10, 17)
-# TASK-177: 'level' numbers here are DEFINITION indices (srcId - 1), in both trees; a tree with levelBySrc maps them
-# to its play-order index, an older tree (definition order) uses them as is.
-SRC_FN = """const SRC = d => typeof levelBySrc === 'function' ? levelBySrc(d + 1) : d"""
+# TASK-177: 'level' numbers here are DEFINITION positions, in both trees; a tree with levelBySrc maps them to its
+# play-order index, an older tree (definition order) uses them as is. TASK-248: since TASK-247 removed srcId 8, 11, 14,
+# 27, 29 a position d is the d-th REMAINING level in srcId order (srcId 1..7 -> 0..6, 9 -> 7, 10 -> 8, 12 -> 9, ...),
+# so levelBySrc never gets a removed srcId; rows also carry the srcId.
+SRC_FN = """const SRC = d => typeof levelBySrc === 'function' ? levelBySrc(levels.map(l => l.srcId).sort((a, b) => a - b)[d]) : d"""
+# fill gate positions: 7 portal levels. Was range(10, 17) = srcId 11..17; TASK-248: srcId 11 and 14 are gone, positions
+# 9..15 = srcId 12, 13, 15, 16, 17, 18, 19 (the first 7 remaining portal levels)
+PORTAL_LEVELS = range(9, 16)
 
 IDENTITY = """() => {
     const CANDS = [[[200, 400], [500, 450]], [[600, 600], [900, 550]], [[300, 650], [700, 700]], [[150, 300], [450, 350]],
@@ -49,7 +53,7 @@ IDENTITY = """() => {
     """ + SRC_FN + """
     for (let d = 0; d < levels.length; ++d) {
         const i = SRC(d)
-        const rec = {level: d, pairs: [], calc: [], play: []}
+        const rec = {level: d, srcId: levels[i].srcId, pairs: [], calc: [], play: []}
         thisLevel = i; levelChoosed(i); bounce.cancel()
         rec.idle = pts(bounce.calcSyncIdle())
         for (const [a, b] of CANDS) {
@@ -183,7 +187,7 @@ def main():
                 for p, acc in ((fpb, fb), (fpk, fw)):
                     p.evaluate(FILL, [(i + 1) % n, a.limit])
                     acc.append(p.evaluate(FILL, [i, a.limit]))
-            rows.append({'level': i, 'baseMs': round(statistics.median(tb), 2), 'newMs': round(statistics.median(tw), 2),
+            rows.append({'level': i, 'srcId': W[i].get('srcId'), 'baseMs': round(statistics.median(tb), 2), 'newMs': round(statistics.median(tw), 2),
                          'baseFill': statistics.median(f['frames'] for f in fb),
                          'newFill': statistics.median(f['frames'] for f in fw),
                          'count': fw[0]['count'], 'fillTimeout': any(f.get('timeout') for f in fb + fw)})

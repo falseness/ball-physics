@@ -8,7 +8,7 @@ helpers come from this script's own directory. Input is real page.mouse clicks /
 state, records the last bounce.request coords (pass-through wrapper) and calls the test-only
 calcSyncIdle() / calcSync().
 
-Per level (source id 1: no portals, expected 100 points; source id 11: portal pair, expected 300; TASK-177:
+Per level (source id 1: no portals, expected 100 points; source id 12: portal pair, expected 300 (TASK-248: was srcId 11, removed by TASK-247); TASK-177:
 addressed by srcId through levelBySrc, a --root tree without it is in definition order):
   a idle:      right after load, no click: !bounce.busy, positions.length == curCount() == expected,
                every point == calcSyncIdle() within 1e-9.
@@ -32,7 +32,7 @@ sys.path.insert(0, HERE)
 import shoot  # noqa: E402
 
 EPS = 1e-9
-LEVELS = {1: 100, 11: 300}   # level source id -> expected preview points
+LEVELS = {1: 100, 12: 300}   # level source id -> expected preview points
 SRC_JS = "n => typeof levelBySrc === 'function' ? levelBySrc(n) : n - 1"
 
 SETUP = """() => { if (window.__wrapped) return; window.__wrapped = true;

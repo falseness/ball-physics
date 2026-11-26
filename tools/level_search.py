@@ -26,7 +26,8 @@ live game loop (requestAnimationFrame) and evaluates candidate player-line sets 
 Level input: --level INDEX (0-based DEFINITION index = srcId - 1: --level 16 is level 17, the 17th level defined in
 js/levels.js; TASK-177 reordered the play order, the page index is levelBySrc(INDEX + 1)), optionally with
 --level-json FILE, an editor export ({version 2, ballX, ballY, flagX, flagY, flagRotate, lineK, lines, portals})
-injected in-page in that level's place (test only, js/levels.js is not touched; INDEX == levels.length appends).
+injected in-page in that level's place (test only, js/levels.js is not touched; an INDEX past the last srcId appends;
+TASK-248: a removed srcId, e.g. --level 10 = srcId 11, is an error).
 levelSha256 hashes JSON.stringify(level) without srcId, so it equals the hashes of runs before TASK-177.
 
 Modes (--lines k = player lines per candidate):
@@ -136,8 +137,12 @@ editorMode = false; playtestLevel = null; physics = false; levelStarted = false;
 fresh(idx)
 return out }"""
 
-# --level (definition index, srcId - 1) -> play-order index; not found (e.g. INDEX == levels.length): INDEX itself
-RESOLVE_JS = "(n) => { const i = typeof levelBySrc === 'function' ? levelBySrc(n + 1) : n; return i >= 0 ? i : n }"
+# --level (definition index, srcId - 1) -> play-order index. TASK-248: an INDEX past the last srcId appends
+# (levels.length); a srcId removed from the game (TASK-247: 8, 11, 14, 27, 29) gives -1 (error). A tree without
+# levelBySrc is in definition order: INDEX itself.
+RESOLVE_JS = """(n) => { if (typeof levelBySrc !== 'function') return n
+    const i = levelBySrc(n + 1); if (i >= 0) return i
+    return n + 1 > Math.max(...levels.map(l => l.srcId)) ? levels.length : -1 }"""
 
 INJECT_JS = r"""([idx, d, src]) => {
 const L = editorLevelFromData(d)
@@ -168,6 +173,8 @@ def open_page(pw, args):
     install_trap(pg)  # window.__rimtrap (shared rim-trap detector, tests/portal/rimtrap.py)
     install_embed(pg)  # window.__embed (shared embedded-ball detector, tests/portal/embed.py)
     idx = pg.evaluate(RESOLVE_JS, args['level'])
+    if idx < 0:
+        raise RuntimeError('--level %d: srcId %d was removed from the game (TASK-247)' % (args['level'], args['level'] + 1))
     if args['level_json']:
         res = pg.evaluate(INJECT_JS, [idx, args['level_json'], args['level'] + 1])
         if res != 'ok':

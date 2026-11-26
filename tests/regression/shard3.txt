@@ -1,1 +1,1 @@
-placed,menu_restart,next_level_order,touch_line,level4,level8,level12,level16,level20,level24,level28,level32,progress_storage_blocked,map_open,map_card_portal,lines_draft_restore,lines_sha_mismatch,speed_on,telemetry_levels,telemetry_first30
+placed,menu_restart,next_level_order,touch_line,level4,level12,level16,level20,level24,level28,level32,progress_storage_blocked,map_open,map_card_portal,lines_draft_restore,lines_sha_mismatch,speed_on,telemetry_levels,telemetry_first30

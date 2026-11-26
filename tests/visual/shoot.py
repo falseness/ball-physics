@@ -208,7 +208,8 @@ def sc_complete_last(page, info):
 
 
 def sc_next_level_order(page, info):
-    # TASK-177 play order: win level 2 (srcId 2), then click 'next level' -> the first portal level (srcId 11).
+    # TASK-177 play order: win level 2 (srcId 2), then click 'next level' -> the first portal level (srcId 12 since
+    # TASK-247 removed srcId 11; TASK-248).
     # Menu -> level square of srcId 2 (real click); the win is real game physics: the ball is put on the flag and
     # physics is turned on, so gameMechanics' flagCollision opens the level-complete window. Then a real click
     # on the 'next level' rect (same expressions as the click handler, blocks[1]).
@@ -230,7 +231,7 @@ def sc_next_level_order(page, info):
     a = page.evaluate("""({thisLevel, srcId: levels[thisLevel].srcId, srcAt2: levels[2].srcId,
         levelCompletedWindow, portals: (curLevel().portals || []).length})""")
     info['after'] = a
-    if not (a['thisLevel'] == 2 and a['srcAt2'] == 11 and a['srcId'] == 11 and not a['levelCompletedWindow']):
+    if not (a['thisLevel'] == 2 and a['srcAt2'] == 12 and a['srcId'] == 12 and not a['levelCompletedWindow']):
         raise RuntimeError('next level order wrong: %s' % a)
 
 
@@ -472,11 +473,7 @@ def sc_touch_line(page, info):
         raise RuntimeError('tap-tap did not place one line: %s' % info['touch'])
 
 
-# Level 11 reference solution (TASK-068): one player line from LEVEL11_LINE[0] to [1]. The ball
-# rolls off its lower end onto portal A (floor y = 600, front up), leaves B (wall x = 1040, front +x)
-# into the flag pocket. Searched headlessly; 80 of 81 lines with each end moved by -4/0/+4 px also win.
-LEVEL11_LINE = ((100, 180), (580, 450))
-LEVEL11_MAX_FRAMES = 3000
+# TASK-248: the srcId 11 reference solution was removed with the level (TASK-247).
 
 # Level 12 'understanding portals' reference solution (TASK-073): one player line (lineK 1), a
 # deflector above pad A (raised to y = 310 by TASK-073). The ball drops into portal B (pad y = 510),
@@ -492,13 +489,7 @@ LEVEL12_MAX_FRAMES = 3000
 LEVEL13_LINES = (((381, 679), (696, 744)), ((589, 381), (712, 393)))
 LEVEL13_MAX_FRAMES = 3000
 
-# Level 14 (srcId 14) solution: one long ramp under the ball. The ball rolls down it into portal A, comes out of B
-# 152 px higher still moving right, lands on the ramp again, and after the second A -> B teleport it has enough
-# speed to clear wall A and hit the flag. TASK-204 (contact physics): the TASK-077 ramp (183,580)-(779,608) had only
-# 2 of 8 winning +-2 px variants; its right end moved 8 px left, (183,580)-(771,608), is robust (re-found with
-# tools/level_search.py, artifacts/TASK-204/gates_14.json).
-LEVEL14_LINE = ((183, 580), (771, 608))
-LEVEL14_MAX_FRAMES = 3000
+# TASK-248: the srcId 14 reference solution was removed with the level (TASK-247).
 
 # Level 15 (srcId 15) solution (layout from artifacts/new_level15.json, TASK-113): one long line under the ball
 # rising to the right and crossing the wall x=633. The ball lands on it, rolls down-left into portal B (the floor pad
@@ -650,14 +641,7 @@ LEVEL25_MAX_FRAMES = 1500
 # +-2 px variants (artifacts/TASK-210/runs/g3_l26.json).
 LEVEL26_LINES = [((230, 286), (90, 300)), ((10, 450), (700, 620)), ((860, 550), (868, 765)), ((15, 240), (15, 390))]
 LEVEL26_MAX_FRAMES = 1500
-# Level 27 ('side door', TASK-149, lineK 3; reference solution): line 1 is a tilted kicker inside the well, below
-# portal A. The ball bouncing straight up and down bounces off it sideways and, on its way up, drifts into the left
-# wall at A's depth, so A takes it. Out of B (floating pad, facing down) it heads down and to the right, line 2 lifts it
-# up-right through the gap right of the flag pocket's floor, and line 3 at the right edge turns it back left into the pocket
-# (won on physics frame 193 on the TASK-150 layout, one teleport A->B). Lines 2 and 3 were re-searched in TASK-150 for the
-# reworked walls (artifacts/TASK-150/iterations.md, reference R3); keep these exact integer coordinates.
-LEVEL27_LINES = [((530, 720), (630, 740)), ((1000, 660), (1213, 603)), ((1265, 290), (1265, 370))]
-LEVEL27_MAX_FRAMES = 1500
+# TASK-248: the srcId 27 reference solution was removed with the level (TASK-247).
 # Level 28 ('wrap-around', TASK-151, lineK 2; reference solution): line 1 is a long ramp from the ball's pad down to
 # the left edge; the bouncing ball lands on it, rolls down-left and flies off the left edge into portal A. A and B
 # face each other across the whole field at the same height, so the ball comes back in through B on the right edge
@@ -671,15 +655,7 @@ LEVEL27_MAX_FRAMES = 1500
 # upper end up-right into the pocket (win frame 145, A->B, 15/15 +-2 px variants win).
 LEVEL28_LINES = [((550, 255), (40, 570)), ((950, 640), (1070, 790))]
 LEVEL28_MAX_FRAMES = 1500
-# Level 29 ('echo', TASK-153, lineK 3; reference solution): line 1 knocks the ball, which bounces in place on its pad,
-# to the left over tower A's top (through the flag's shadow). Line 2 left of tower A turns it back to the right into
-# portal A. A and B face the same way, so the ball comes out of B replaying its path backwards, moved by (560, -200).
-# Line 3 is line 2 moved by (560, -200) (its twin): the replayed path bounces off it and flies over tower B's top
-# into the flag. Found by a three-stage scan (artifacts/TASK-153/search/probe.py: 8 kicks x 2806 turn-around lines,
-# 937 runs reach A; then each with the exact twin, 487/921 win; then +-10 px twin offsets, 9/9 win for this one;
-# artifacts/TASK-153/search_ref.json); keep these exact integer coordinates.
-LEVEL29_LINES = [((520, 400), (600, 340)), ((180, 560), (300, 720)), ((740, 360), (860, 520))]
-LEVEL29_MAX_FRAMES = 1500
+# TASK-248: the srcId 29 reference solution was removed with the level (TASK-247).
 # Level 30 ('sky is lava', TASK-155, lineK 2; reference solution): line 1 knocks the ball, which bounces in place on its
 # pad, right over the shaft wall so it drops into floor portal A. A -> B lifts it 520 px, more energy than the field
 # holds: B's exit stream would fly off the top edge, so line 2 is a roof under the sky that turns the rising ball down
@@ -737,8 +713,7 @@ LEVEL6_LINES = [((100, 200), (700, 300)), ((414, 763), (983, 626)), ((83, 604), 
 LEVEL6_MAX_FRAMES = 1500
 LEVEL7_LINES = [((964, 269), (393, 350))]
 LEVEL7_MAX_FRAMES = 1500
-LEVEL8_LINES = [((453, 480), (0, 565))]
-LEVEL8_MAX_FRAMES = 1500
+# TASK-248: the srcId 8 reference solution was removed with the level (TASK-247).
 # TASK-244: level 9 is back on its pre-TASK-203 layout (TASK-243) and the TASK-203 line (476,208)-(188,259) loses on it
 # (off the map); re-found by tools/level_search.py (sample 3000: 1 win, then a local scan around the old line and that
 # win, ranked by +-2 px robustness): the old line with its left end 32 px further left wins on frame 138, 6/8 variants.
@@ -748,7 +723,7 @@ LEVEL10_LINES = [((0, 460), (120, 580)), ((837, 355), (495, 687))]
 LEVEL10_MAX_FRAMES = 1500
 
 # Counts game frames that run physics and remembers the frame on which the level was completed.
-LEVEL11_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
+SOLUTION_COUNTER_JS = """() => { window.__l11Frames = 0; window.__l11Win = null;
     const g = gameMechanics;
     gameMechanics = function() { const on = physics && !editorMode; const r = g();
         if (on) { ++window.__l11Frames;
@@ -796,7 +771,7 @@ def place_and_start(page, info, src, segments, key, before_draw_js=None, portals
     n0 = page.evaluate("lines.length")
     # installed before drawing: physics is off until the start (or the last allowed line), so the
     # counter starts with the first physics frame either way
-    page.evaluate(LEVEL11_COUNTER_JS)
+    page.evaluate(SOLUTION_COUNTER_JS)
     if before_draw_js:
         page.evaluate(before_draw_js)
     for (x1, y1), (x2, y2) in segments:
@@ -806,7 +781,7 @@ def place_and_start(page, info, src, segments, key, before_draw_js=None, portals
         click(page, x2, y2)
     drawn = page.evaluate("""n0 => ({added: lines.length - n0, linesK, lineK: curLevel().lineK, pending: !!line,
         physics, lines: lines.slice(n0).map(l => [l.posX, l.posY, l.posX2, l.posY2])})""", n0)
-    if len(segments) == 1:  # level 11 record shape (TASK-068)
+    if len(segments) == 1:  # single-line record shape (TASK-068)
         drawn['line'] = drawn['lines'][0]
     info['drawn'] = drawn
     want = [[x1, y1, x2, y2] for (x1, y1), (x2, y2) in segments]
@@ -852,9 +827,6 @@ def sc_level7(page, info):
     play_solution(page, info, 7, LEVEL7_LINES, LEVEL7_MAX_FRAMES, 'level7', via=None, portals=0)
 
 
-def sc_level8(page, info):
-    play_solution(page, info, 8, LEVEL8_LINES, LEVEL8_MAX_FRAMES, 'level8', via=None, portals=0)
-
 
 def sc_level9(page, info):
     play_solution(page, info, 9, LEVEL9_LINES, LEVEL9_MAX_FRAMES, 'level9', via=None, portals=0)
@@ -864,9 +836,6 @@ def sc_level10(page, info):
     play_solution(page, info, 10, LEVEL10_LINES, LEVEL10_MAX_FRAMES, 'level10', via=None, portals=0)
 
 
-def sc_level11(page, info):
-    play_solution(page, info, 11, [LEVEL11_LINE], LEVEL11_MAX_FRAMES, 'level11')
-
 
 def sc_level12(page, info):
     play_solution(page, info, 12, [LEVEL12_LINE], LEVEL12_MAX_FRAMES, 'level12', via=('B', 'A'))
@@ -875,9 +844,6 @@ def sc_level12(page, info):
 def sc_level13(page, info):
     play_solution(page, info, 13, LEVEL13_LINES, LEVEL13_MAX_FRAMES, 'level13')
 
-
-def sc_level14(page, info):
-    play_solution(page, info, 14, [LEVEL14_LINE], LEVEL14_MAX_FRAMES, 'level14')
 
 
 def sc_level15(page, info):
@@ -928,16 +894,10 @@ def sc_level26(page, info):
     play_solution(page, info, 26, LEVEL26_LINES, LEVEL26_MAX_FRAMES, 'level26')
 
 
-def sc_level27(page, info):
-    play_solution(page, info, 27, LEVEL27_LINES, LEVEL27_MAX_FRAMES, 'level27')
-
 
 def sc_level28(page, info):
     play_solution(page, info, 28, LEVEL28_LINES, LEVEL28_MAX_FRAMES, 'level28')
 
-
-def sc_level29(page, info):
-    play_solution(page, info, 29, LEVEL29_LINES, LEVEL29_MAX_FRAMES, 'level29')
 
 
 def sc_level30(page, info):
@@ -1121,9 +1081,9 @@ MAP_UI_JS = """() => ({drawMap, drawMenu, drawMenuIcon, levelCompletedWindow, ph
 # counts the real DOM input events reaching the page (capture phase, before the game's handlers)
 INPUT_COUNTER_JS = """() => { window.__inputs = {click: 0, mousedown: 0, touchstart: 0, touchend: 0};
     for (const t in window.__inputs) document.addEventListener(t, () => ++window.__inputs[t], true) }"""
-# play-order index 7 = new level 8 (srcId 16 at TASK-177's order)
+# play-order index 7 = level 8 (srcId 16 at TASK-177's order; srcId 18 since TASK-247 removed srcId 11 and 14, TASK-248)
 MAP_PLAY_INDEX = 7
-MAP_PLAY_SRC = 16
+MAP_PLAY_SRC = 18
 
 
 def slot_info(page, i):
@@ -2115,8 +2075,8 @@ def sc_telemetry_ui(page, info):
         p.evaluate("() => { const L = curLevel(); ball.posX = L.flagX + (flag[2][0] + flag[3][0]) / 2; ball.posY = L.flagY + (flag[2][1] + flag[3][1]) / 2; ball.speedX = ball.speedY = 0 }")
         p.wait_for_function("levelCompletedWindow", timeout=30000, polling=50)
         click(p, *p.evaluate(WIN_NEXT_JS))
-        if p.evaluate("thisLevel") != 2 or p.evaluate("levels[thisLevel].srcId") != 11:
-            raise RuntimeError('next level did not open play-order level 3 (srcId 11)')
+        if p.evaluate("thisLevel") != 2 or p.evaluate("levels[thisLevel].srcId") != 12:
+            raise RuntimeError('next level did not open play-order level 3 (srcId 12)')
         step('next_level')
         before = p.evaluate("TELEMETRY.playSeconds()")
         if before >= 25:
@@ -3433,13 +3393,10 @@ SCENARIOS = {
     'level5': sc_level5,
     'level6': sc_level6,
     'level7': sc_level7,
-    'level8': sc_level8,
     'level9': sc_level9,
     'level10': sc_level10,
-    'level11': sc_level11,
     'level12': sc_level12,
     'level13': sc_level13,
-    'level14': sc_level14,
     'level15': sc_level15,
     'level16': sc_level16,
     'level17': sc_level17,
@@ -3452,9 +3409,7 @@ SCENARIOS = {
     'level24': sc_level24,
     'level25': sc_level25,
     'level26': sc_level26,
-    'level27': sc_level27,
     'level28': sc_level28,
-    'level29': sc_level29,
     'level30': sc_level30,
     'level31': sc_level31,
     'level32': sc_level32,
