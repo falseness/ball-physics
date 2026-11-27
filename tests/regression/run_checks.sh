@@ -2,7 +2,7 @@
 # Full physics/visual regression (ported from the TASK-213 tools). Usage:
 #   tests/regression/run_checks.sh <preview|full> <outdir>
 # preview (~3.5 min): a subset of every check. full (~17 min): 78 shoot scenarios (shard0..3.txt; TASK-276: + font_fit (also in preview SH0), removed_levels_saved, every tests/visual/shoot.py SCENARIOS key is in one shard, checked by assemble.py row 'shoot coverage'; TASK-248: 79 before srcId 8, 11, 14, 27, 29 were removed; TASK-257: + menu_layout; TASK-258: + map_editor, also in preview SH1 since TASK-259), 24 sim
-# scenarios, 12 portal fuzz runs, full invariants/rimtrap/embed. Everything is written under <outdir> (logs/*.log,
+# scenarios, 12 portal fuzz runs, full invariants/rimtrap/embed, portal_parity (TASK-278; preview --per-kind 10 --math 5000). Everything is written under <outdir> (logs/*.log,
 # per-check JSON, shoot PNGs); <outdir>/regression.log is assembled at the end (tests/regression/assemble.py) and
 # ends with '# SUMMARY', 'failed rows: N [...]' and 'ALL PASS' when N = 0. Exit 0 = ALL PASS, 1 otherwise.
 set -u
@@ -14,9 +14,9 @@ D=$(realpath -m "$OUT"); L=$D/logs; mkdir -p "$L"
 H="head=$(git rev-parse HEAD) dirty=$(git status --porcelain | grep -v '^?? artifacts' | tr '\n' ' ') ball.js=$(sha256sum js/ball.js | cut -c1-16) portal.js=$(sha256sum js/portal.js | cut -c1-16) levels.js=$(sha256sum js/levels.js | cut -c1-16) date=$(date -Is)"
 echo "$H" > "$L/head.txt"
 T0=$(date +%s)
-if [ "$M" = preview ]; then FC="--cases 40"; SC=S1,W1; RP=--preview; IS="--scenes 50"; PC="--portal-cases 50"; TS="--runs 1 --fills 1"; SEEDS=1
+if [ "$M" = preview ]; then FC="--cases 40"; SC=S1,W1; RP=--preview; IS="--scenes 50"; PC="--portal-cases 50"; TS="--runs 1 --fills 1"; SEEDS=1; PP="--per-kind 10 --math 5000"
   SH0=level1,level16,map,speed_on,font_fit; SH1=level32,telemetry_levels,map_editor; SH2=telemetry_ui,progress_reload,telemetry_editor,menu_layout; SH3=l19_rim_backside,next_level_order,lines_passed_restore,lines_storage_blocked,telemetry_first30
-else FC=""; SC=S1,S2,S3,S4,S6,S7,S8,S9,S10,S11,S12,S13,S14,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11; RP=""; IS=""; PC=""; TS=""; SEEDS="1 2 3"
+else FC=""; SC=S1,S2,S3,S4,S6,S7,S8,S9,S10,S11,S12,S13,S14,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11; RP=""; IS=""; PC=""; TS=""; SEEDS="1 2 3"; PP=""
   SH0=$(cat "$TL/shard0.txt"); SH1=$(cat "$TL/shard1.txt"); SH2=$(cat "$TL/shard2.txt"); SH3=$(cat "$TL/shard3.txt"); fi
 # what this run checks, read by assemble.py
 printf '{"mode":"%s","shards":["%s","%s","%s","%s"],"sim":"%s","seeds":"%s"}\n' "$M" "$SH0" "$SH1" "$SH2" "$SH3" "$SC" "$SEEDS" > "$L/plan.json"
@@ -49,6 +49,8 @@ wait
 wait
 run rimtrap python3 tests/portal/rimtrap.py --task "$D/rimtrap" --jobs 8 $RP
 run embed python3 tests/portal/embed.py --task "$D/embed" --jobs 8 $RP
+# TASK-278: node harness vs browser bit-for-bit parity (incl. the glibc sin/cos port), run alone so it is not CPU-starved
+run portal_parity node tests/physics/portal_parity.mjs $PP --out "$D/portal_parity.json"
 rm -rf "$TB"
 echo "elapsed_s=$(( $(date +%s) - T0 ))" > "$L/run_checks.done"
 python3 "$TL/assemble.py" "$D" "$D/regression.log"

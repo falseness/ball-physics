@@ -64,6 +64,13 @@ for n in ('rimtrap', 'embed'):
     sec(f'tests/portal/{n}.py (committed baseline in tests/portal/baselines + hash-pinned allowlist)')
     out += ['  ' + l for l in lines(n) if re.match(r'^(front_diff|repro\.|baseline=|EXIT)', l)]
     chk(ok0(n) and 'EXIT 0' in lines(n), f'{n} {ex(n)}')
+sec('node tests/physics/portal_parity.mjs (TASK-278: node harness vs browser, bit for bit, incl. the glibc sin/cos port)')
+pl = lines('portal_parity'); out += ['  ' + l[:400] for l in pl if l.startswith(('math check:', 'portal parity:', 'fresh-scope', 'MISSING'))]
+pp = [l for l in pl if re.match(r'^portal parity: scenes \d+, .*mismatching scenes 0,.* pass true$', l)]
+mc = [l for l in pl if l.startswith('math check: ')]
+try: mok = bool(mc) and json.loads(mc[-1][len('math check: '):]).get('ok') is True
+except ValueError: mok = False
+chk(ok0('portal_parity') and bool(pp) and mok, f'portal_parity mismatching scenes 0 pass true {bool(pp)}, math ok {mok}, {ex("portal_parity")}')
 sec('node tests/physics/edge_cases.mjs')
 out += ['  ' + l for l in lines('edge') if l.startswith(('PASS', 'FAIL', 'ALL'))]
 chk(ok0('edge') and 'ALL PASS' in lines('edge'), f'edge_cases {ex("edge")}')

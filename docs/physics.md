@@ -146,6 +146,14 @@ node tests/physics/invariants.mjs --browser --portal-fuzz 1-3 [--portal-cases N]
 - The full regression (shoot, portal sim/fuzz/rimtrap/embed, preview/trail/speed/map checks, telemetry
   sequences, incl. telemetry_first30 since TASK-242) is `tests/regression/run_checks.sh <preview|full> <outdir>` (preview ~3.5 min, full ~17 min). It writes
   <outdir>/regression.log, ending with `failed rows: N [...]` and `ALL PASS` when N = 0 (exit 1 otherwise).
+- **portal_parity** (`node tests/physics/portal_parity.mjs [--per-kind N] [--math N] [--out FILE]`, ~75 s idle):
+  the only check that the tests/physics/harness.mjs copy of the game physics (used by run_fast and the node suites
+  above) matches the browser bit for bit. It runs 4 × 50 fuzz.py portal scenes in node and in the game page and
+  compares every frame, teleport and portalState counter, and checks the harness's glibc sin/cos port
+  (tests/physics/glibc_sincos.js; node's Math.sin/cos differ from Chromium's in the last bit) against the page's
+  Math. Exit 0 = every scene matches and the math check is ok. tests/regression/run_checks.sh runs it in both modes
+  (preview `--per-kind 10 --math 5000`) and assemble.py's `portal_parity` row needs exit 0, `mismatching scenes 0
+  ... pass true` and a math check with `"ok":true`.
 - rimtrap.py and embed.py gate against pre-TASK-201 baselines plus the hash-pinned allowlists in
   tests/portal/allow/. After a physics change, never re-record a baseline from the tree under test.
   Instead, replay the changed cases with tests/portal/baseline_diverge.py against the pre-change tree.
