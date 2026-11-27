@@ -18,7 +18,7 @@ import argparse, glob, json, os, re, statistics, sys
 
 BP_KEY = '6254c0dd9e9a91ef0e680ee697f8c1a8'
 DAY = r'(\d{4}-\d{2}-\d{2})'
-LEVEL_RE = re.compile(r'^level:(\d+):(attempt|win|win_attempt|first_win|fail:offmap|restart|abandon)$')
+LEVEL_RE = re.compile(r'^level:(\d+):(attempt|win|win_attempt|first_win|fail:offmap|restart|abandon|skip)$')
 LINES_RE = re.compile(r'^lines:(\d+):(place|delete|drag|reject_limit|used)$')
 UI_RE = re.compile(r'^ui:([a-z_]+):(L\d+|map)$')
 SESSION_RE = re.compile(r'^session:(play_seconds|hide|levels_seen)$')
@@ -70,7 +70,7 @@ def tap_files(root, key, since, until):
 
 def new_level():
     return {'attempts': 0, 'max_attempt': 0, 'wins': 0, 'first_win_attempt': None, 'first_win_events': 0,
-            'win_seconds': [], 'restarts': 0, 'abandons': 0, 'offmap': 0,
+            'win_seconds': [], 'restarts': 0, 'abandons': 0, 'skips': 0, 'offmap': 0,
             'progression': {'Start': 0, 'Complete': 0, 'Fail': 0},
             'lines': {'place': 0, 'delete': 0, 'drag': 0, 'drag_rejected': 0, 'reject_limit': 0,
                       'runs': 0, 'used_max': 0}}
@@ -330,6 +330,8 @@ def build_report(root, key, since=None, until=None, include_test=False):
                             lv['restarts'] += 1
                         elif kind == 'abandon':
                             lv['abandons'] += 1
+                        elif kind == 'skip':  # TASK-261: pause-menu 'skip level' (TASK-260)
+                            lv['skips'] += 1
                         continue
                     m = LINES_RE.match(eid)
                     if m:
@@ -385,18 +387,20 @@ def build_report(root, key, since=None, until=None, include_test=False):
         u['levels_tried'] = [int(k) for k, lv in u['levels'].items() if lv['attempts'] > 0]
         u['buttons'] = dict(sorted(u['buttons'].items()))
         u['button_ctx'] = {b: dict(sorted(c.items())) for b, c in sorted(u['button_ctx'].items())}
-        t = {k: 0 for k in ('attempts', 'wins', 'restarts', 'abandons', 'offmap', 'lines_place', 'lines_delete',
+        t = {k: 0 for k in ('attempts', 'wins', 'restarts', 'abandons', 'skips', 'offmap', 'lines_place', 'lines_delete',
                             'lines_drag', 'lines_drag_rejected', 'lines_reject_limit', 'buttons')}
         for k, lv in u['levels'].items():
-            for f in ('attempts', 'wins', 'restarts', 'abandons', 'offmap'):
+            for f in ('attempts', 'wins', 'restarts', 'abandons', 'skips', 'offmap'):
                 t[f] += lv[f]
             for f in ('place', 'delete', 'drag', 'drag_rejected', 'reject_limit'):
                 t['lines_' + f] += lv['lines'][f]
             agg = levels.setdefault(k, {'users_tried': 0, 'users_won': 0, 'attempts': 0, 'wins': 0, 'restarts': 0,
-                                        'abandons': 0, 'offmap': 0, 'lines_place': 0, '_first': []})
+                                        'abandons': 0, 'skips': 0, 'users_skipped': 0, 'offmap': 0, 'lines_place': 0,
+                                        '_first': []})
             agg['users_tried'] += lv['attempts'] > 0
             agg['users_won'] += lv['wins'] > 0
-            for f in ('attempts', 'wins', 'restarts', 'abandons', 'offmap'):
+            agg['users_skipped'] += lv['skips'] > 0
+            for f in ('attempts', 'wins', 'restarts', 'abandons', 'skips', 'offmap'):
                 agg[f] += lv[f]
             agg['lines_place'] += lv['lines']['place']
             if lv['first_win_attempt'] is not None:
@@ -597,10 +601,10 @@ def markdown(rep):
     if rep['unknown_events']:
         o += ['Unknown events: ' + ', '.join(f'`{k}` {v}' for k, v in rep['unknown_events'].items()), '']
     o += ['## Levels', '', '| srcId | users tried | users won | attempts | wins | win rate | median attempts to first win '
-          '| restarts | abandons | off-map | lines placed |', '|' + '---|' * 11]
+          '| restarts | abandons | skips | users skipped | off-map | lines placed |', '|' + '---|' * 13]
     for k, a in rep['levels'].items():
         o.append(f"| {k} | {a['users_tried']} | {a['users_won']} | {a['attempts']} | {a['wins']} | {a['win_rate']} | "
-                 f"{a['median_attempts_to_first_win']} | {a['restarts']} | {a['abandons']} | {a['offmap']} | {a['lines_place']} |")
+                 f"{a['median_attempts_to_first_win']} | {a['restarts']} | {a['abandons']} | {a['skips']} | {a['users_skipped']} | {a['offmap']} | {a['lines_place']} |")
     o += ['', f"## Users ({len(rep['users'])})", '']
     for uid, u in rep['users'].items():
         t = u['totals']
@@ -609,7 +613,7 @@ def markdown(rep):
               f"sessions {u['sessions']}, play seconds {u['play_seconds']} (milestones), session seconds "
               f"{u['session_seconds']}, hides {u['hides']}, levels seen max {u['levels_seen_max']}", '',
               f"levels tried {u['levels_tried']}; attempts {t['attempts']}, wins {t['wins']}, restarts {t['restarts']}, "
-              f"abandons {t['abandons']}, off-map {t['offmap']}; lines placed {t['lines_place']}, deleted "
+              f"abandons {t['abandons']}, skips {t['skips']}, off-map {t['offmap']}; lines placed {t['lines_place']}, deleted "
               f"{t['lines_delete']}, dragged {t['lines_drag']} (+{t['lines_drag_rejected']} rejected), over limit "
               f"{t['lines_reject_limit']}; button clicks {t['buttons']}", '']
         if u['session_list']:
@@ -617,13 +621,13 @@ def markdown(rep):
             o += [f"| `{s['session_id']}` | {s['build']} | {s['first_ts']} | {s['events']} | {s['play_seconds']} | {s['length']} |"
                   for s in u['session_list']] + ['']
         if u['levels']:
-            o += ['| srcId | attempts | max attempt # | wins | first win attempt | win s | restarts | abandons | off-map '
+            o += ['| srcId | attempts | max attempt # | wins | first win attempt | win s | restarts | abandons | skips | off-map '
                   '| Start/Complete/Fail | placed | deleted | dragged | drag rejected | over limit | runs | max used |',
-                  '|' + '---|' * 17]
+                  '|' + '---|' * 18]
             for k, lv in u['levels'].items():
                 p, ln = lv['progression'], lv['lines']
                 o.append(f"| {k} | {lv['attempts']} | {lv['max_attempt']} | {lv['wins']} | {lv['first_win_attempt']} | "
-                         f"{lv['win_seconds']} | {lv['restarts']} | {lv['abandons']} | {lv['offmap']} | "
+                         f"{lv['win_seconds']} | {lv['restarts']} | {lv['abandons']} | {lv['skips']} | {lv['offmap']} | "
                          f"{p['Start']}/{p['Complete']}/{p['Fail']} | {ln['place']} | {ln['delete']} | {ln['drag']} | "
                          f"{ln['drag_rejected']} | {ln['reject_limit']} | {ln['runs']} | {ln['used_max']} |")
             o.append('')

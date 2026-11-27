@@ -353,10 +353,13 @@ bodiless GET / OPTIONS records are counted as `no_body_records`; design ids not 
 Writes `DIR/report.json` and `DIR/report.md`:
 - per user (GA `user_id`): first/last seen, builds, inits, sessions (id, build, events, play-time milestone,
   `session_end` length), levels tried, per level attempts / highest attempt number / wins / first-win attempt /
-  win seconds / restarts / abandons / off-map / progression Start-Complete-Fail / lines placed, deleted, dragged,
+  win seconds / restarts / abandons / skips (`level:<srcId>:skip`, pause-menu 'skip level', TASK-261) / off-map /
+  progression Start-Complete-Fail / lines placed, deleted, dragged,
   drag rejected, over the limit, runs, max lines used; button counts by name (and by `<ctx>`), play seconds (sum of
   the highest `session:play_seconds` milestone per session), hides, totals;
-- per level: users tried / won, attempts, wins, win rate (wins / attempts), median attempt number of the first win.
+- per level: users tried / won, attempts, wins, win rate (wins / attempts), median attempt number of the first win,
+  restarts, abandons, skips and users who skipped it (`users_skipped`, TASK-261), off-map, lines placed; user totals
+  include `skips`.
 - `editor` (TASK-236), from the `editor:` / `edit:` rows of the catalogue (`<ctx>` = `L<srcId>` the editor was opened on, or `new` for a route-map session,
   `<h>` = 8-hex FNV-1a of `editorLevelToJSON`, see "Editor events"):
   - `editor.users[<user>]` (users with any editor / play-test event): editor sessions (`open`) by source (`menu` / `win`; `map` once seen, TASK-258),
@@ -401,7 +404,8 @@ Check: `python3 tools/stats_report.py --root tests/stats/fixture --out DIR && py
 DIR/report.json` (fixture written by `tests/stats/make_fixture.py`, expected report hand-written in
 `tests/stats/fixture_expected.json`; since TASK-236 the fixture has editor and play-test events for user-a and user-b
 and one malformed `edit:` id; since TASK-241 five first-30 sessions of users d, e, f (new + ret) and h: one win, two
-leaves, one malformed `f30:` id).
+leaves, one malformed `f30:` id; since TASK-261 user-b skips L2 by pause-menu 'skip level' in sb2: `ui:skip_level:L2`,
+`level:2:skip`, `Fail:L2`, then L3 starts, so level 2 has skips 1 / users_skipped 1 and user-b totals skips 1).
 
 Typical use on the relay host: `python3 tools/stats_report.py --since 2026-11-25 --out /tmp/bp-stats` and read
 `report.md` (per user: levels tried, attempts, wins, restarts, buttons, lines, play time; per level totals).

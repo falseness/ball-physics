@@ -6,7 +6,7 @@ across UTC midnight, split over the 2026-11-20 and 2026-11-21 per-key files), 3 
 wins, restarts, off-map, abandon, all 15 buttons, every line event; TASK-236: editor + play-test events for user-a
 (2 editor sessions: L3 from the menu with every object / toolbar event and 2 play-tested hashes, L1 from the win window
 abandoned) and user-b (1 session on L1 from the win window, 1 play-tested hash, one malformed edit: id); one test record, one unparsable line,
-one bodiless OPTIONS record and one other-game record in an old combined file, one other-game per-key file.
+TASK-261: user-b skips L2 (level:2:skip, ui:skip_level) -> L3; one bodiless OPTIONS record and one other-game record in an old combined file, one other-game per-key file.
 TASK-241: first-30 sessions (load: / ctx: / f30: rows only) on 2026-11-21, after the cut line: user-d sd1 (new, mouse,
 wins at 9 s, next level, ends at 30 s), user-e se1 (new, touch, iframe, onload -1, opens the menu, leaves at 12.5 s),
 user-f sf1 (new, one point, idle to the end) + sf2 (ret, reload, places a line, off-map, reject_limit, restart),
@@ -139,6 +139,10 @@ h30 = H1(boot30([-1, -1, -1, 90, 100, 110, 130, 150, 0, 0], 'back_forward', 'tou
          + [('f30:press:field:20_10', 1000), ('f30:ret:first_press', 1000), ('f30:ret:bogus', 1500),
             ('f30:press:field:20_10', 2500), ('f30:ret:leave', 3000), 'f30:ret:leave_step:first_press',
             ('f30:ret:hidden', 3000)])
+# TASK-261: user-b sb2 after the L1 win: L2 attempt 1, pause menu 'skip level' (TASK-260) -> L3 starts (reason skip).
+# Built last so every earlier event keeps its uuid / client_ts.
+b4 = B2(['Start:L2', ('level:2:attempt', 1), 'ui:pause:L2', 'ui:menu_open:L2', 'ui:skip_level:L2', 'ui:menu_close:L2',
+         'level:2:skip', 'Fail:L2', 'Start:L3', ('level:3:attempt', 1)])
 
 files = {
     'events-2026-11-19.jsonl': [  # old combined file: only lines whose path holds KEY count
@@ -155,6 +159,7 @@ files = {
         rec('2026-11-20T12:00:00.000Z', EV, b1),
         rec('2026-11-20T12:30:00.000Z', EV, b3),
         rec('2026-11-20T13:00:00.000Z', EV, b2),
+        rec('2026-11-20T13:10:00.000Z', EV, b4),  # TASK-261: skip level
         rec('2026-11-20T23:59:30.000Z', EV, c1)],
     f'events-{KEY}-2026-11-21.jsonl': [
         rec('2026-11-21T00:00:40.000Z', EV, c2),

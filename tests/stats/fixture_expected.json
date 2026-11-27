@@ -9,8 +9,8 @@
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-20.jsonl",
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-21.jsonl"
  ],
- "lines": 20,
- "records": 17,
+ "lines": 21,
+ "records": 18,
  "other_key_records": 1,
  "no_body_records": 1,
  "excluded_test_records": 1,
@@ -18,7 +18,7 @@
  "unparsed_lines": [
   "events-6254c0dd9e9a91ef0e680ee697f8c1a8-2026-11-21.jsonl:3"
  ],
- "events": 403,
+ "events": 413,
  "duplicate_events": 8,
  "unknown_events": {
   "edit:zzzz:attempt": 1,
@@ -74,7 +74,8 @@
       "reject_limit": 1,
       "runs": 2,
       "used_max": 2
-     }
+     },
+     "skips": 0
     },
     "2": {
      "attempts": 2,
@@ -99,7 +100,8 @@
       "reject_limit": 0,
       "runs": 0,
       "used_max": 0
-     }
+     },
+     "skips": 0
     },
     "3": {
      "attempts": 1,
@@ -124,7 +126,8 @@
       "reject_limit": 0,
       "runs": 0,
       "used_max": 0
-     }
+     },
+     "skips": 0
     }
    },
    "buttons": {
@@ -208,12 +211,13 @@
     "lines_drag": 1,
     "lines_drag_rejected": 1,
     "lines_reject_limit": 1,
-    "buttons": 20
+    "buttons": 20,
+    "skips": 0
    }
   },
   "user-b": {
    "first_seen": "2026-11-20T09:00:00.000Z",
-   "last_seen": "2026-11-20T13:00:00.000Z",
+   "last_seen": "2026-11-20T13:10:00.000Z",
    "inits": 1,
    "builds": [
     "1.0.0",
@@ -233,13 +237,15 @@
      "session_id": "sb2",
      "build": "1.0.1",
      "first_ts": "2026-11-20T13:00:00.000Z",
-     "events": 13,
+     "events": 23,
      "play_seconds": 120,
      "length": 130
     }
    ],
    "levels_tried": [
-    1
+    1,
+    2,
+    3
    ],
    "levels": {
     "1": {
@@ -268,19 +274,88 @@
       "reject_limit": 0,
       "runs": 2,
       "used_max": 1
+     },
+     "skips": 0
+    },
+    "2": {
+     "attempts": 1,
+     "max_attempt": 1,
+     "wins": 0,
+     "first_win_attempt": null,
+     "first_win_events": 0,
+     "win_seconds": [],
+     "restarts": 0,
+     "abandons": 0,
+     "skips": 1,
+     "offmap": 0,
+     "progression": {
+      "Start": 1,
+      "Complete": 0,
+      "Fail": 1
+     },
+     "lines": {
+      "delete": 0,
+      "drag": 0,
+      "drag_rejected": 0,
+      "place": 0,
+      "reject_limit": 0,
+      "runs": 0,
+      "used_max": 0
+     }
+    },
+    "3": {
+     "attempts": 1,
+     "max_attempt": 1,
+     "wins": 0,
+     "first_win_attempt": null,
+     "first_win_events": 0,
+     "win_seconds": [],
+     "restarts": 0,
+     "abandons": 0,
+     "skips": 0,
+     "offmap": 0,
+     "progression": {
+      "Start": 1,
+      "Complete": 0,
+      "Fail": 0
+     },
+     "lines": {
+      "delete": 0,
+      "drag": 0,
+      "drag_rejected": 0,
+      "place": 0,
+      "reject_limit": 0,
+      "runs": 0,
+      "used_max": 0
      }
     }
    },
    "buttons": {
+    "menu_close": 1,
+    "menu_open": 1,
+    "pause": 1,
     "restart": 2,
-    "run": 2
+    "run": 2,
+    "skip_level": 1
    },
    "button_ctx": {
+    "menu_close": {
+     "L2": 1
+    },
+    "menu_open": {
+     "L2": 1
+    },
+    "pause": {
+     "L2": 1
+    },
     "restart": {
      "L1": 2
     },
     "run": {
      "L1": 2
+    },
+    "skip_level": {
+     "L2": 1
     }
    },
    "play_seconds": 150,
@@ -288,7 +363,7 @@
    "hides": 0,
    "levels_seen_max": 0,
    "totals": {
-    "attempts": 4,
+    "attempts": 6,
     "wins": 2,
     "restarts": 2,
     "abandons": 0,
@@ -298,7 +373,8 @@
     "lines_drag": 0,
     "lines_drag_rejected": 0,
     "lines_reject_limit": 0,
-    "buttons": 4
+    "buttons": 8,
+    "skips": 1
    }
   },
   "user-c": {
@@ -348,7 +424,8 @@
       "reject_limit": 0,
       "runs": 0,
       "used_max": 0
-     }
+     },
+     "skips": 0
     }
    },
    "buttons": {},
@@ -368,7 +445,8 @@
     "lines_drag": 0,
     "lines_drag_rejected": 0,
     "lines_reject_limit": 0,
-    "buttons": 0
+    "buttons": 0,
+    "skips": 0
    }
   },
   "user-d": {
@@ -408,7 +486,8 @@
     "lines_drag": 0,
     "lines_drag_rejected": 0,
     "lines_reject_limit": 0,
-    "buttons": 0
+    "buttons": 0,
+    "skips": 0
    }
   },
   "user-e": {
@@ -448,7 +527,8 @@
     "lines_drag": 0,
     "lines_drag_rejected": 0,
     "lines_reject_limit": 0,
-    "buttons": 0
+    "buttons": 0,
+    "skips": 0
    }
   },
   "user-f": {
@@ -496,7 +576,8 @@
     "lines_drag": 0,
     "lines_drag_rejected": 0,
     "lines_reject_limit": 0,
-    "buttons": 0
+    "buttons": 0,
+    "skips": 0
    }
   },
   "user-h": {
@@ -536,7 +617,8 @@
     "lines_drag": 0,
     "lines_drag_rejected": 0,
     "lines_reject_limit": 0,
-    "buttons": 0
+    "buttons": 0,
+    "skips": 0
    }
   }
  },
@@ -551,31 +633,37 @@
    "offmap": 0,
    "lines_place": 5,
    "win_rate": 0.5714,
-   "median_attempts_to_first_win": 2
+   "median_attempts_to_first_win": 2,
+   "skips": 0,
+   "users_skipped": 0
   },
   "2": {
-   "users_tried": 1,
+   "users_tried": 2,
    "users_won": 0,
-   "attempts": 2,
+   "attempts": 3,
    "wins": 0,
    "restarts": 0,
    "abandons": 1,
    "offmap": 1,
    "lines_place": 0,
    "win_rate": 0.0,
-   "median_attempts_to_first_win": null
+   "median_attempts_to_first_win": null,
+   "skips": 1,
+   "users_skipped": 1
   },
   "3": {
-   "users_tried": 1,
+   "users_tried": 2,
    "users_won": 0,
-   "attempts": 1,
+   "attempts": 2,
    "wins": 0,
    "restarts": 0,
    "abandons": 0,
    "offmap": 0,
    "lines_place": 0,
    "win_rate": 0.0,
-   "median_attempts_to_first_win": null
+   "median_attempts_to_first_win": null,
+   "skips": 0,
+   "users_skipped": 0
   }
  },
  "editor": {
