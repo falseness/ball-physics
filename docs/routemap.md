@@ -14,6 +14,9 @@ level count. A click or tap sends `ui:map_editor:map` and opens the editor on a 
 usual, and `exit` returns to the map without writing anything into `levels[]` or changing `thisLevel`. Preview cards
 avoid the button (`mapCardLayout`), and map_check fails when the button leaves the 30..1250 area or overlaps a used
 flag / platform, an obstacle, a preview card or the menu icon.
+Regression (TASK-259): the shoot scenario `map_editor` (tests/visual/shoot.py: click the button, blank editor, exit
+back to the map, `levels[]` sha256 unchanged) runs in `tests/regression/run_checks.sh` preview (SH1) and full
+(tests/regression/shard1.txt); map_check (both modes) checks the button position and overlaps.
 
 Files:
 
