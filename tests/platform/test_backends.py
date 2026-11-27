@@ -12,7 +12,7 @@ page or console error. No portal SDK is loaded (offline): every stub runs on
 its no-SDK path.
 
 Usage: python3 tests/platform/test_backends.py --out DIR
-Writes DIR/backends.json (default artifacts/TASK-184):
+Writes DIR/backends.json:
 [{backend, platformId, storageRoundTrip, pageErrors, consoleErrors, fallbacks, methodsCalled, pass}].
 Exit 0 only when every backend passes.
 """

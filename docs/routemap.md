@@ -125,9 +125,9 @@ portal build add the portal SDK tag (if any) and the portal backend tag right af
 ```
 
 The SDK tags and backend ids (`local`, `itch`, `gamepix`, `y8`, `playgama`) are listed in
-docs/platform-sdk.md ("Selecting a backend"). `python3 tests/platform/test_backends.py --out <json>`
-does this tag swap in a Playwright route for all five backends and checks a storage round trip and
-zero page errors.
+docs/platform-sdk.md ("Selecting a backend"). `python3 tests/platform/test_backends.py --out DIR`
+(it writes DIR/backends.json) does this tag swap in a Playwright route for all five backends and
+checks a storage round trip and zero page errors.
 
 ## Saved lines
 
