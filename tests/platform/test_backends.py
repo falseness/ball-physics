@@ -11,7 +11,7 @@ PLATFORM.storage.setMany/getMany and calls every facade method once with no
 page or console error. No portal SDK is loaded (offline): every stub runs on
 its no-SDK path.
 
-Usage: python3 tests/platform/test_backends.py [--out DIR]
+Usage: python3 tests/platform/test_backends.py --out DIR
 Writes DIR/backends.json (default artifacts/TASK-184):
 [{backend, platformId, storageRoundTrip, pageErrors, consoleErrors, fallbacks, methodsCalled, pass}].
 Exit 0 only when every backend passes.
@@ -152,7 +152,7 @@ def check(browser, url, backend):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', default=os.path.join(ROOT, 'artifacts', 'TASK-184'))
+    ap.add_argument('--out', required=True, help='directory for backends.json (required, TASK-280)')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 

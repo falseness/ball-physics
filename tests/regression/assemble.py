@@ -71,6 +71,17 @@ mc = [l for l in pl if l.startswith('math check: ')]
 try: mok = bool(mc) and json.loads(mc[-1][len('math check: '):]).get('ok') is True
 except ValueError: mok = False
 chk(ok0('portal_parity') and bool(pp) and mok, f'portal_parity mismatching scenes 0 pass true {bool(pp)}, math ok {mok}, {ex("portal_parity")}')
+sec('tests/platform/test_backends.py, test_analytics.py --backend none, stats_report.py fixture (TASK-280)')
+bl = lines('backends'); out += ['  backends: ' + l[:200] for l in bl if re.match(r'^(\w+\s+platformId=|index:|OK:|FAILED|MISSING)', l)]
+chk(ok0('backends') and 'OK: 5 backends' in bl, f'backends OK: 5 backends {"OK: 5 backends" in bl}, {ex("backends")}')
+al = lines('analytics'); out += ['  analytics: ' + l[:200] for l in al if re.match(r'^(none\s|OK$|FAILED|MISSING)', l)]
+anone = any(re.match(r'^none\s.*\sPASS$', l) for l in al); afin = [l for l in al if not l.startswith('exit=')]
+chk(ok0('analytics') and anone and bool(afin) and afin[-1] == 'OK', f'analytics none PASS {anone}, final OK {bool(afin) and afin[-1] == "OK"}, {ex("analytics")}')
+sl = lines('stats_fixture'); sj = [l for l in sl if l.startswith('{"equal":')]
+try: seq = bool(sj) and json.loads(sj[-1]).get('equal') is True
+except ValueError: seq = False
+out += ['  stats_fixture: ' + l[:200] for l in sj or [l for l in sl if l.startswith('MISSING')]]
+chk(ok0('stats_fixture') and seq, f'stats_fixture check_fixture "equal":true {seq}, {ex("stats_fixture")}')
 sec('node tests/physics/edge_cases.mjs')
 out += ['  ' + l for l in lines('edge') if l.startswith(('PASS', 'FAIL', 'ALL'))]
 chk(ok0('edge') and 'ALL PASS' in lines('edge'), f'edge_cases {ex("edge")}')

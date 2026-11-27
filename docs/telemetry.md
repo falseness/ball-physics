@@ -314,7 +314,7 @@ blocked storage keeps them in memory only.
   telemetry_editor rewrites `coverage.json` over every catalogue row, `editor:` / `edit:` included (`<h>`, `<from>`,
   `<code>` and `<a\|b>` alternatives as patterns), against all three full debug logs (`scope`: `all rows,
   levels+ui+editor logs`); `uncovered` must be `[]`.
-- `python3 tests/platform/test_analytics.py`: facade boot with both backends (TASK-190).
+- `python3 tests/platform/test_analytics.py --out DIR`: facade boot with both backends (TASK-190).
 - `python3 tests/platform/live_check.py --out DIR` (TASK-193): live delivery through the relay. Plays the
   telemetry_ui script with the committed gameanalytics backend and build `test-live-<YYYYMMDD>` (buildinfo stamped
   `live-<day>`; a preview should pass `--build livepre-<day>` so it stays out of that count), waits 9 s at two

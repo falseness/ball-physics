@@ -154,6 +154,12 @@ node tests/physics/invariants.mjs --browser --portal-fuzz 1-3 [--portal-cases N]
   Math. Exit 0 = every scene matches and the math check is ok. tests/regression/run_checks.sh runs it in both modes
   (preview `--per-kind 10 --math 5000`) and assemble.py's `portal_parity` row needs exit 0, `mismatching scenes 0
   ... pass true` and a math check with `"ok":true`.
+- Platform / analytics / stats rows (TASK-280, both run_checks.sh modes): `backends`
+  (`tests/platform/test_backends.py --out DIR`, exit 0 and `OK: 5 backends`), `analytics`
+  (`tests/platform/test_analytics.py --backend none --out DIR`, no network: exit 0, a `none ... PASS` line and a
+  final `OK`) and `stats_fixture` (`tools/stats_report.py --root tests/stats/fixture` then
+  `tests/stats/check_fixture.py`, exit 0 and `"equal":true`). Both platform tests require `--out` (no default into
+  ./artifacts); the runner writes everything under <outdir>.
 - rimtrap.py and embed.py gate against pre-TASK-201 baselines plus the hash-pinned allowlists in
   tests/portal/allow/. After a physics change, never re-record a baseline from the tree under test.
   Instead, replay the changed cases with tests/portal/baseline_diverge.py against the pre-change tree.

@@ -2,7 +2,7 @@
 # Full physics/visual regression (ported from the TASK-213 tools). Usage:
 #   tests/regression/run_checks.sh <preview|full> <outdir>
 # preview (~3.5 min): a subset of every check. full (~17 min): 78 shoot scenarios (shard0..3.txt; TASK-276: + font_fit (also in preview SH0), removed_levels_saved, every tests/visual/shoot.py SCENARIOS key is in one shard, checked by assemble.py row 'shoot coverage'; TASK-248: 79 before srcId 8, 11, 14, 27, 29 were removed; TASK-257: + menu_layout; TASK-258: + map_editor, also in preview SH1 since TASK-259), 24 sim
-# scenarios, 12 portal fuzz runs, full invariants/rimtrap/embed, portal_parity (TASK-278; preview --per-kind 10 --math 5000). Everything is written under <outdir> (logs/*.log,
+# scenarios, 12 portal fuzz runs, full invariants/rimtrap/embed, portal_parity (TASK-278; preview --per-kind 10 --math 5000), and in both modes (TASK-280) tests/platform/test_backends.py, test_analytics.py --backend none and the tools/stats_report.py fixture check (rows backends, analytics, stats_fixture). Everything is written under <outdir> (logs/*.log,
 # per-check JSON, shoot PNGs); <outdir>/regression.log is assembled at the end (tests/regression/assemble.py) and
 # ends with '# SUMMARY', 'failed rows: N [...]' and 'ALL PASS' when N = 0. Exit 0 = ALL PASS, 1 otherwise.
 set -u
@@ -51,6 +51,10 @@ run rimtrap python3 tests/portal/rimtrap.py --task "$D/rimtrap" --jobs 8 $RP
 run embed python3 tests/portal/embed.py --task "$D/embed" --jobs 8 $RP
 # TASK-278: node harness vs browser bit-for-bit parity (incl. the glibc sin/cos port), run alone so it is not CPU-starved
 run portal_parity node tests/physics/portal_parity.mjs $PP --out "$D/portal_parity.json"
+# TASK-280: platform backends, analytics facade (none backend only: no network/relay/credentials), stats fixture
+run backends python3 tests/platform/test_backends.py --out "$D/backends"
+run analytics python3 tests/platform/test_analytics.py --backend none --out "$D/analytics"
+run stats_fixture sh -c 'python3 tools/stats_report.py --root tests/stats/fixture --out "$1" && python3 tests/stats/check_fixture.py "$1/report.json"' sh "$D/stats_fixture"
 rm -rf "$TB"
 echo "elapsed_s=$(( $(date +%s) - T0 ))" > "$L/run_checks.done"
 python3 "$TL/assemble.py" "$D" "$D/regression.log"

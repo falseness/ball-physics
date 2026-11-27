@@ -12,7 +12,7 @@ script tag in the served index.html). js/buildinfo.js is served stamped by tools
                  request goes to stats.playdiplomacy.online (none to *gameanalytics.com), the SDK's init
                  request (relay path /r/i) answers 200 or 201, the SDK build is 'test-<build id>'.
 
-Usage: python3 tests/platform/test_analytics.py [--out DIR] [--backend none|gameanalytics]
+Usage: python3 tests/platform/test_analytics.py --out DIR [--backend none|gameanalytics]
 Writes DIR/boot.json (none) and DIR/boot_ga.json (gameanalytics), compact JSON. Exit 0 only when all pass.
 """
 import argparse
@@ -137,7 +137,7 @@ def check(browser, url, backend, build):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', default=os.path.join(ROOT, 'artifacts', 'TASK-190'))
+    ap.add_argument('--out', required=True, help='directory for boot.json / boot_ga.json (required, TASK-280)')
     ap.add_argument('--backend', choices=['none', 'gameanalytics'], action='append')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
