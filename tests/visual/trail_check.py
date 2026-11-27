@@ -14,7 +14,8 @@ Checks (each recorded under "ok", written as compact JSON to --out):
     already kept arrow; label = round(|H[i] - H[i-1]| * 60). Count, labels and anchors must match exactly.
   B fade: trailAlphas() of the newest segment at length 60 is 0 at the oldest point, 0.85 at the
     newest and linear (+-1e-9).
-  C visible trail: after play on sc_placed (~0.8 s, then paused), trail-attributable cyan pixels
+  C visible trail: sc_placed, then C_FRAMES = 48 gameMechanics() steps in-page (800 ms at 60 fps; TASK-275: was
+    0.8 s of real time after a play click), then paused, trail-attributable cyan pixels
     (r<170, g>170, b>220, minus the same frame with trailDraw as a no-op) >= 50.
   D teleport split: level 12 with its reference solution line (shoot.LEVEL12_LINE, real mouse input; TASK-248: was
     srcId 11, removed by TASK-247; srcId 12 is the next portal level, one B -> A teleport),
@@ -41,6 +42,7 @@ LENGTHS = [3, 4, 8, 9, 15, 16, 22, 30, 43, 44, 50, 51, 58, 60, 75]
 ARROW_STEP, ARROW_MAX, ARROW_GAP = 7, 7, 24
 FADE_MAX = 0.85
 C_MIN = 50
+C_FRAMES = 48  # TASK-275: 800 ms at 60 fps
 
 
 def new_page(browser, url, errors):
@@ -96,10 +98,6 @@ def reference_arrows(H):
     return kept
 
 
-def play_xy(page):
-    return page.evaluate("[menuIconRect[0][0] - 73 + 31, menuIconRect[0][1] + 31]")
-
-
 STEP_JS = """k => { physics = true; levelStarted = true
     for (let i = 0; i < k; ++i) { gameMechanics(); if (!physics) break }
     const ph = physics; physics = false
@@ -146,11 +144,13 @@ def check_a_b(browser, url, errors):
 def check_c(browser, url, errors):
     page = new_page(browser, url, errors)
     shoot.sc_placed(page, {})
-    shoot.click(page, *play_xy(page))
-    page.wait_for_timeout(800)
-    page.evaluate("() => { physics = false }")
+    # TASK-275: a fixed number of physics frames (was 800 ms of wall clock, flaky under CPU load), stepped
+    # synchronously in-page like check_d; stop on win/off-map, then paused and 2 frames drawn before the mask
+    n = page.evaluate("""k => { selectionClear(); physics = true; levelStarted = true
+        for (let i = 0; i < k; ++i) { gameMechanics(); if (!physics) break }
+        physics = false
+        return trailSamples().length }""", C_FRAMES)
     shoot.frames(page, 2)
-    n = page.evaluate("trailSamples().length")
     px = int(trail_mask(page).sum())
     page.close()
     return {'samples': n, 'trailCyanPixels': px}, px >= C_MIN
