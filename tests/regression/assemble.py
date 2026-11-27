@@ -35,6 +35,17 @@ for i in range(4):
         if m and lv:
             last = list(lv)[-1]; lv[last].update(won=m.group(1) == 'True', frame=m.group(2))
     chk(ok0(f'shoot_s{i}') and any(l.startswith('OK:') for l in ls), f'shoot shard {i} {ex(f"shoot_s{i}")}')
+if mode == 'full':  # TASK-276: every shoot.py SCENARIOS key is in exactly the shard files, and the run ran them all
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, 'tests/visual/shoot.py')).read())
+    known = next([k.value for k in n.value.keys] for n in tree.body if isinstance(n, ast.Assign)
+                 and any(getattr(t, 'id', None) == 'SCENARIOS' for t in n.targets))
+    files = [s for i in range(4) for s in open(f'{HERE}/shard{i}.txt').read().strip().split(',') if s]
+    ran = [s for sh in shard_sc for s in sh if s]
+    miss = [s for s in known if s not in files]; unk = sorted(set(files) - set(known))
+    dup = sorted({s for s in files if files.count(s) > 1}); not_run = [s for s in known if s not in ran]
+    out.append(f'  SCENARIOS {len(known)} in shard files {len(files)} not_in_any_shard {miss} unknown {unk} duplicates {dup} not_run {not_run}')
+    chk(not miss and not unk and not dup and not not_run, f'shoot coverage: {len(known)} SCENARIOS, not_in_any_shard {miss}, unknown {unk}, duplicates {dup}, not_run {not_run}')
 wins = sorted([k for k, v in lv.items() if v.get('won') and v['errors'] == 0], key=lambda s: int(s[5:]))
 out.append('  levelNN wins: ' + ' '.join(f'{k}@{lv[k]["frame"]}' for k in wins))
 chk(sorted(wins) == sorted(levels) and len(lv) == len(levels), f'every levelNN wins: {len(wins)}/{len(levels)} (scenarios seen {len(lv)})')
