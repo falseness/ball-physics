@@ -16,8 +16,7 @@
             padding:0;
             touch-action:none;
         }
-        @font-face { font-family: 'Caveat'; src: url('fonts/caveat-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
-        @font-face { font-family: 'Caveat'; src: url('fonts/caveat-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+        @font-face { font-family: 'Finger Paint'; src: url('fonts/finger-paint-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
         html, body
         {
             padding:0;
@@ -701,10 +700,7 @@
         // Start drawing only once the handwriting font is ready (falls back to
         // starting anyway if the font cannot be loaded).
         let fontsReady = document.fonts
-            ? Promise.all([
-                document.fonts.load('24px ' + THEME.font),
-                document.fonts.load('bold 24px ' + THEME.font)
-            ]).catch(function() {})
+            ? document.fonts.load('24px ' + THEME.fontStack).catch(function() {})
             : Promise.resolve()
         // Boot (TASK-184): platform init, then the saved progress and editor toolbar position are read
         // through the platform facade, all before the first frame. bootComplete marks the end.

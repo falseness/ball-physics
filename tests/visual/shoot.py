@@ -2184,8 +2184,8 @@ def ga_design_id_ok(eid):
 
 
 # TASK-233: an editor session from the pause menu that clicks every toolbar button: select, snap on / off, ⟳ on the
-# flag, new, lines − twice (the second clamped at 0), lines +, two level lines, a portal pair, ⟲ on the selected portal,
-# size − / size + / size + (refused: portal B's line is too short for h 60), ⟳ on the selected line, the delete tool by a
+# flag, new, lines - twice (the second clamped at 0), lines +, two level lines, a portal pair, ⟲ on the selected portal,
+# size - / size + / size + (refused: portal B's line is too short for h 60), ⟳ on the selected line, the delete tool by a
 # touch tap, a toolbar drag, export, import of the exported file / a non-JSON file / a version 1 file with portals, exit.
 EDITOR_TB_LINE_A = ((150, 300), (650, 300))
 EDITOR_IMPORT_WAIT_JS = """n => ANALYTICS.debugLog.slice(n).some(e => e.fn == 'addDesignEvent' && String(e.args[0]).startsWith('editor:import:'))"""

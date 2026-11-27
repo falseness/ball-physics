@@ -17,8 +17,8 @@ const THEME = Object.freeze({
     soft: '#9fc6e6',                                   // secondary ink: hints, annotations
     cyan: 'rgba(130,210,255,0.9)',                     // HUD outlines, path preview
     physicsOn: '#59f0a0',                              // start triangle while physics runs
-    font: 'Caveat',                                    // handwriting font family
-    fontStack: '"Caveat", cursive'
+    font: 'Finger Paint',                              // game font family (single 400 weight, no bold)
+    fontStack: '"Finger Paint", cursive'
 })
 window.THEME = THEME
 // Page background behind the canvas (fills the letterbox bars around the scaled canvas).

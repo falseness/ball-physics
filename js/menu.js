@@ -193,7 +193,7 @@ function drawRestartIcon()
     ctx.fill()
     ctx.restore()
 }
-// '3x speed' box (concept 14): a double play arrow centred on the box on both axes and a Caveat '3x' label
+// '3x speed' box (concept 14): a double play arrow centred on the box on both axes and a THEME-font '3x' label
 // (23 px, centre at x+48, y+49). Off: ink on the cyan hudBox; on (speedMul 3): green on a coral box.
 function drawSpeedIcon()
 {
@@ -298,10 +298,10 @@ function guide()
         for (const blur of [16, 0])
         {
             ctx.shadowBlur = blur
-            ctx.font = '700 34px ' + THEME.fontStack
+            ctx.font = '34px ' + THEME.fontStack
             ctx.fillText('Click here', 800, 156)
             ctx.fillText('and here', 262, 482)
-            ctx.font = '700 30px ' + THEME.fontStack
+            ctx.font = '30px ' + THEME.fontStack
             ctx.fillText('to draw a line', 262, 514)
         }
         guideArrow(R, 808, 168, 794, 192, col, 2.6, 10)

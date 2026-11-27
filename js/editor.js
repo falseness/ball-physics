@@ -25,8 +25,8 @@ const EDITOR_LINE_SEL_PAD = 10        // select tool: dashed capsule distance ar
 const EDITOR_FLAG_STEP = Math.PI / 12 // 'flag ⟲' / 'flag ⟳' rotation step
 const EDITOR_MAX_LINEK = 5
 const EDITOR_PORTAL_LINE_DIST = 20       // portal tool: max distance from the click to a level line
-const EDITOR_PORTAL_H = PORTAL_DEFAULT_H   // h of a newly placed portal; 'size −' / 'size +' change it afterwards
-const EDITOR_PORTAL_H_STEP = 15           // 'size −' / 'size +' step of h (both portals of the pair)
+const EDITOR_PORTAL_H = PORTAL_DEFAULT_H   // h of a newly placed portal; 'size -' / 'size +' change it afterwards
+const EDITOR_PORTAL_H_STEP = 15           // 'size -' / 'size +' step of h (both portals of the pair)
 const EDITOR_PORTAL_H_MIN = 30
 const EDITOR_PORTAL_H_MAX = 135
 const EDITOR_ERROR_MS = 2000             // how long the handwritten error text stays
@@ -41,8 +41,8 @@ const EDITOR_BUTTONS = (function()
     const spec = [
         ['select', 'tool', 'select', 70], ['line', 'tool', 'line', 56], ['snap', 'toggle', 'snap', 56], ['portal', 'tool', 'portal', 70],
         ['delete', 'tool', 'delete', 70], ['flagCCW', 'action', 'flag', 70], ['flagCW', 'action', 'flag', 70],
-        ['portalSmaller', 'action', 'size −', 62], ['portalBigger', 'action', 'size +', 62],
-        ['linesDec', 'action', 'lines −', 66], ['lineK', 'value', '', 36], ['linesInc', 'action', 'lines +', 66],
+        ['portalSmaller', 'action', 'size -', 62], ['portalBigger', 'action', 'size +', 62],
+        ['linesDec', 'action', 'lines -', 66], ['lineK', 'value', '', 36], ['linesInc', 'action', 'lines +', 66],
         ['play', 'action', 'play', 56], ['export', 'action', 'export', 70], ['import', 'action', 'import', 70],
         ['new', 'action', 'new', 50], ['exit', 'action', 'exit', 50]
     ]
@@ -730,7 +730,7 @@ function editorRotatePortal(P, da)
     P.angle += da
 }
 
-// 'size −' / 'size +' with a selected portal: h of BOTH portals of the pair (one shared size) changes
+// 'size -' / 'size +' with a selected portal: h of BOTH portals of the pair (one shared size) changes
 // by dh, limited to EDITOR_PORTAL_H_MIN..EDITOR_PORTAL_H_MAX (at a limit nothing changes, no error).
 // A wall portal's u is re-clamped to the new h first; the change is refused (h and u of both kept,
 // 'portal does not fit') when an opening plus ball.radius no longer fits on its host line or the pair
@@ -837,7 +837,7 @@ function editorDrawError()
     }
     const p = EDITOR_ERROR_POS
     ctx.save()
-    ctx.font = '700 ' + p.size + 'px ' + THEME.fontStack
+    ctx.font = p.size + 'px ' + THEME.fontStack
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
     ctx.fillStyle = THEME.coral; ctx.shadowColor = 'rgba(255,106,85,.9)'; ctx.shadowBlur = 10
     ctx.fillText(e.text, p.x, p.y)

@@ -297,7 +297,7 @@ function drawDragHint()
     }
     const h = dragHint
     ctx.save()
-    ctx.font = '700 26px ' + THEME.fontStack
+    ctx.font = '26px ' + THEME.fontStack
     ctx.textBaseline = 'alphabetic'
     const w = ctx.measureText(h.text).width
     // right of the end, flipped left / below to stay on the canvas
@@ -316,7 +316,7 @@ function drawDragHint()
 // press within END_HIT of a player line end) shows a plain handwritten hint at the pointer that
 // fades out linearly over LOCK_HINT_MS. Nothing is selected, moved or deleted.
 const LOCK_HINT_MS = 1500
-const LOCK_HINT_TEXT = 'locked after run · menu → restart to edit'
+const LOCK_HINT_TEXT = 'locked after run · menu -> restart to edit'
 let lockHint = null          // {x, y, t0}
 
 function lockedState()

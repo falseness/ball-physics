@@ -117,8 +117,8 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `editor:tool:<ctx>:<select\|line\|portal\|delete>` | a tool button | - | TASK-233 |
 | `editor:snap:<ctx>:<on\|off>` | the `snap` toggle (state after the click) | - | TASK-233 |
 | `editor:rotate:<ctx>:<cw\|ccw>:<flag\|portal\|line>` | ⟳ / ⟲; the last part is what the button rotated (selected portal, selected line, else the flag) | - | TASK-233 |
-| `editor:portal_size:<ctx>:<bigger\|smaller>` | `size +` / `size −` | new opening h; 0 = refused or no change (no portal selected, limit, does not fit) | TASK-233 |
-| `editor:linek:<ctx>:<inc\|dec>` | `lines +` / `lines −` | `lineK` after the click (also when clamped at 0 / 5) | TASK-233 |
+| `editor:portal_size:<ctx>:<bigger\|smaller>` | `size +` / `size -` | new opening h; 0 = refused or no change (no portal selected, limit, does not fit) | TASK-233 |
+| `editor:linek:<ctx>:<inc\|dec>` | `lines +` / `lines -` | `lineK` after the click (also when clamped at 0 / 5) | TASK-233 |
 | `editor:btn:<ctx>:<new\|play\|export\|import\|exit>` | an action button, before its action (so before the `sum` rows of `play` / `export` / `exit`) | - | TASK-233 |
 | `editor:import:<ctx>:<ok\|invalid\|old_format>` | `editorImportText` finished (after the picked file was read) | - | TASK-233 |
 | `editor:bar_move:<ctx>` | a toolbar drag that moved the panel (mouseup / touchend) | - | TASK-233 |
