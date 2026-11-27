@@ -4,14 +4,16 @@
 // 'Level completed!' row, then the buttons (MENU_BTN_W x MENU_BTN_H, MENU_BTN_STEP apart) and a bottom margin;
 // the panel is centred on the logical field (GAME_W / 2, GAME_H / 2).
 const MENU_W = 400, MENU_BTN_W = 250, MENU_BTN_H = 50, MENU_BTN_STEP = 85, MENU_LOGO_H = 285, MENU_PAD = 20
-// kind 'pause': resume / restart / editor / Levels.
+// kind 'pause': resume / restart / skip level / Levels / editor (TASK-260; 'skip level' only when a next level
+// exists in play order and not in a play-test, otherwise the row is dropped and the panel shrinks).
 // kind 'win': next level (not on the last level, not in a play-test) / restart / editor / Levels, under the
 // 'Level completed!' row; on the last level a 'Thanks for playing!' row takes the 'next level' slot.
 // In a play-test 'editor' is the way back to the editor (editorEndPlaytest).
 // Returns {panel: [x, y, w, h], logo: [x, y, w, h], buttons: [{id, rect}], labels: [{text, x, y, size, color}]}.
 function menuLayout(kind)
 {
-    const ids = kind == 'win' ? ['restart', 'editor', 'Levels'] : ['resume', 'restart', 'editor', 'Levels']
+    const ids = kind == 'win' ? ['restart', 'editor', 'Levels']
+        : menuSkipVisible() ? ['resume', 'restart', 'skip level', 'Levels', 'editor'] : ['resume', 'restart', 'Levels', 'editor']
     const rows = []  // [type, value] top to bottom below the logo
     if (kind == 'win')
     {
@@ -38,6 +40,11 @@ function menuLayout(kind)
             out.labels.push({text: r[1], x: x + MENU_W / 2, y: ry + MENU_BTN_H / 2, size: r[2], color: r[3]})
     })
     return out
+}
+// TASK-260: the pause menu's 'skip level' row: a next level in play order, not in a play-test
+function menuSkipVisible()
+{
+    return !playtestLevel && thisLevel + 1 < levels.length
 }
 // id of the menuLayout(kind) button under the logical point, or null
 function menuButtonAt(kind, coords)

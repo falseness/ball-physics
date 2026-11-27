@@ -53,13 +53,14 @@ never by play-order index. An attempt starts when:
 | `boot`    | the page opens the current level (`boot()` in `index.html`)               |
 | `map`     | a level is picked on the route map (`levelPick`, `js/levelsRects.js`)     |
 | `next`    | 'next level' on the completion window                                     |
+| `skip`    | 'skip level' in the pause menu (TASK-260)                                 |
 | `restart` | a restart button: HUD restart box, pause menu 'restart', completion window 'restart' |
 | `offmap`  | the automatic restart after the ball left the map                         |
 | `resume`  | a run starts and no attempt is open (back from the editor, map closed back to the level, bfcache restore) |
 
 An attempt ends once: a win (`Complete`), off-map / restart / abandon (`Fail`), or silently when the editor
 is opened from the level. Leaving an unwon attempt by opening the map, by 'next level' or by page hide sends
-`abandon`. Play-tests and the editor send no level events and count nothing (editor events: TASK-232 section below).
+`abandon`; leaving it by pause-menu 'skip level' sends `skip` instead (TASK-260). Play-tests and the editor send no level events and count nothing (editor events: TASK-232 section below).
 
 ## Event catalogue
 
@@ -77,14 +78,16 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `level:<srcId>:fail:offmap` | the ball left the map (automatic restart follows) | - | TASK-191 |
 | `level:<srcId>:restart` | the player pressed a restart button (HUD, pause menu, completion window) | - | TASK-191 |
 | `level:<srcId>:abandon` | an unwon attempt was left: map opened, next level, page hide | - | TASK-191 |
+| `level:<srcId>:skip` | pause menu 'skip level' on an unwon attempt, sent in place of `abandon` (then progression `Fail`, then the next level's `Start` / `attempt` with reason `skip`); counts in `skips` of `bp.stats.v1`; the level stays unsolved | - | TASK-260 |
 | facade `startSession` | the page boots (`analyticsStart()`), and a page restored from the back/forward cache | - | TASK-190 |
 | facade `endSession` | `pagehide` (after `flush`) | - | TASK-190 |
 | `ui:run:<ctx>` | the HUD play box starts or resumes the run | - | TASK-192 |
 | `ui:pause:<ctx>` | the HUD play box pauses the run | - | TASK-192 |
 | `ui:restart:<ctx>` | a restart button: HUD restart box, pause menu 'restart', completion window 'restart' (before the `level:` events) | - | TASK-192 |
-| `ui:menu_open:<ctx>` | the HUD menu icon opens the pause menu (buttons top to bottom: resume / restart / editor / Levels, TASK-255) | - | TASK-192 |
+| `ui:menu_open:<ctx>` | the HUD menu icon opens the pause menu (buttons top to bottom: resume / restart / skip level / Levels / editor, TASK-260; no 'skip level' on the last level in play order or in a play-test) | - | TASK-192 |
 | `ui:menu_close:<ctx>` | the pause menu closes by any of its buttons, right after that button's event | - | TASK-192 |
 | `ui:resume:<ctx>` | pause menu 'resume' | - | TASK-192 |
+| `ui:skip_level:<ctx>` | pause menu 'skip level' (`<ctx>` = `L<srcId>` of the skipped level): then `menu_close`, `level:<srcId>:skip` (no `abandon`), `Fail`, and the next level in play order starts | - | TASK-260 |
 | `ui:map_open:<ctx>` | pause menu or completion window 'Levels' opens the route map (TASK-255: the completion window has no `menu_close`; TASK-256: after a win it sends no `abandon`, the won attempt is already closed; a play-test's completion window sends no `ui:` event) | - | TASK-192 |
 | `ui:map_close:<ctx>` | the map closes: its menu icon (back to the pause menu) or a level starts from it | - | TASK-192 |
 | `ui:map_level:<ctx>` | a click / tap on a level slot on the map (selects it, or starts the selected one) | srcId of that level | TASK-192 |
@@ -149,8 +152,8 @@ sent outside the editor and outside play-tests (the map counts even when it was 
 events are sent for real levels only. Nothing is sampled, rate-limited or deduplicated; touch taps and drags go
 through the same handlers as mouse clicks (`handleClick`, `dragDrop`), so they send the same events.
 
-Order of a pause menu button (menu order resume / restart / editor / Levels): the button (`resume`, `restart`, `editor_open`, `map_open`), then `menu_close`, then
-the level events it causes (`restart` / `Fail` / `Start`, `abandon`). A level started from the map:
+Order of a pause menu button (menu order resume / restart / skip level / Levels / editor, TASK-260): the button (`resume`, `restart`, `skip_level`, `map_open`, `editor_open`), then `menu_close`, then
+the level events it causes (`restart` / `Fail` / `Start`, `abandon`, `skip`). A level started from the map:
 `map_level` or `preview_play`, `map_close`, then `Start` + `attempt`.
 
 Active play (`session:play_seconds`) counts game-loop frame time (at most 1 s per frame) while a level is shown
@@ -234,7 +237,7 @@ values: shoot.py `telemetry_first30` (visitors A-E under a paused `page.clock`),
 | `f30:<k>:win` | funnel step 12 (play): the ball reached the flag; once, first time inside the window | ms since t0 | TASK-239 |
 | `f30:<k>:menu_open` | funnel step 13 (navigation): the HUD menu icon opens the pause menu; once, first time inside the window | ms since t0 | TASK-239 |
 | `f30:<k>:map_open` | funnel step 14 (navigation): the route map opens; once, first time inside the window | ms since t0 | TASK-239 |
-| `f30:<k>:level_change` | funnel step 15 (navigation): a level started from the map or by 'next level'; once, first time inside the window | ms since t0 | TASK-239 |
+| `f30:<k>:level_change` | funnel step 15 (navigation): a level started from the map, by 'next level' or by pause-menu 'skip level' (TASK-260); once, first time inside the window | ms since t0 | TASK-239 |
 | `f30:<k>:hidden` | funnel step 16 (tab): `visibilitychange` to hidden (after `leave`); once, first time inside the window | ms since t0 | TASK-239 |
 | `f30:<k>:end` | t0+30 s, if the page is still open (no `pagehide` before) | furthest funnel index reached (0 = none) | TASK-239 |
 | `f30:<k>:leave` | `visibilitychange` hidden or `pagehide` inside the window, once | ms since t0 | TASK-239 |
@@ -289,7 +292,7 @@ scenario the other three keep their old scopes (first-30 rows left out).
 other keys (`getMany`) and passed to `TELEMETRY.load`:
 
 ```
-{"<srcId>": {"attempts": n, "wins": n, "restarts": n, "offmap": n, "abandons": n, "seconds": s}}
+{"<srcId>": {"attempts": n, "wins": n, "restarts": n, "offmap": n, "abandons": n, "skips": n, "seconds": s}}
 ```
 
 `seconds` is the wall-clock time spent inside attempts (attempt start to end). Counters survive reloads; a

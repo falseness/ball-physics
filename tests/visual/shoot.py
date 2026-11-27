@@ -2117,6 +2117,12 @@ def sc_telemetry_ui(page, info):
                    " delete document.visibilityState; delete document.hidden;"
                    " document.dispatchEvent(new Event('visibilitychange')) }")
         step('hide')
+        open_menu(p)  # TASK-260: pause-menu 'skip level' (srcId 12 -> play-order level 4, no abandon)
+        skip_from = p.evaluate("thisLevel")
+        click(p, *p.evaluate(menu_btn_js('pause', 'skip level')))
+        if p.evaluate("thisLevel") != skip_from + 1 or p.evaluate("drawMenu"):
+            raise RuntimeError('skip level did not open the next play-order level')
+        step('skip_level')
         open_menu(p)
         click(p, *p.evaluate(EDITOR_BUTTON_JS))
         if not p.evaluate("editorMode"):
@@ -3402,13 +3408,18 @@ def sc_telemetry_first30(page, info):
 # button of each variant clicked once with real input from a fresh win in a fresh page (own context, none telemetry
 # backend), with the resulting state, the ui: events and every analytics event after the click (a won attempt is
 # closed: no abandon / Fail after it). pause.png, win.png, win_last.png, win_playtest.png: the four windows.
-MENU_IDS = {'pause': ['resume', 'restart', 'editor', 'Levels'],
+# TASK-260: pause order resume / restart / skip level / Levels / editor; pauseLast (the last level in play order) and
+# pausePlaytest (a play-test of srcId 1) drop the skip row (layout only, pause_last.png / pause_playtest.png); skip.json:
+# 'skip level' from srcId 1 with one placed line (next level, not solved, draft kept, map lamp, skip telemetry).
+MENU_IDS = {'pause': ['resume', 'restart', 'skip level', 'Levels', 'editor'],
+            'pauseLast': ['resume', 'restart', 'Levels', 'editor'],
+            'pausePlaytest': ['resume', 'restart', 'Levels', 'editor'],
             'win': ['next level', 'restart', 'editor', 'Levels'],
             'winLast': ['restart', 'editor', 'Levels'],  # 'Thanks for playing!' takes the next-level slot
             'winPlaytest': ['restart', 'editor', 'Levels']}  # 'editor' = back to the editor (editorEndPlaytest)
-MENU_LABELS = {'pause': [], 'win': ['Level completed!'], 'winLast': ['Level completed!', 'Thanks for playing!'],
+MENU_LABELS = {'pause': [], 'pauseLast': [], 'pausePlaytest': [], 'win': ['Level completed!'], 'winLast': ['Level completed!', 'Thanks for playing!'],
                'winPlaytest': ['Level completed!']}
-MENU_PNG = {'win': 'win.png', 'winLast': 'win_last.png', 'winPlaytest': 'win_playtest.png'}
+MENU_PNG = {'pauseLast': 'pause_last.png', 'pausePlaytest': 'pause_playtest.png', 'win': 'win.png', 'winLast': 'win_last.png', 'winPlaytest': 'win_playtest.png'}
 MENU_STATE_JS = """() => ({drawMenu, levelCompletedWindow, editorMode, drawMap, physics, levelStarted, thisLevel,
     srcId: levels[thisLevel].srcId, playtest: !!playtestLevel, playerLines: lines.filter(l => l.type == 'player').length,
     ball: [ball.posX, ball.posY], ballStart: [curLevel().ballX, curLevel().ballY]})"""
@@ -3451,12 +3462,29 @@ def menu_page_setup(p, kind):
     # toolbar 'play' (a play-test of srcId 1), one line (starts the run), a win
     if p.evaluate("levels[thisLevel].srcId") != 1:
         raise RuntimeError('boot did not open srcId 1')
-    if kind == 'pause':
+    if kind in ('pause', 'pauseLast', 'pausePlaytest'):
+        if kind == 'pauseLast':
+            last = p.evaluate("levels.length - 1")
+            pick_level(p, last)
+            if p.evaluate("thisLevel") != last or p.evaluate("drawMap"):
+                raise RuntimeError('last level not started from the map')
+        elif kind == 'pausePlaytest':
+            open_menu(p)
+            click(p, *p.evaluate(EDITOR_BUTTON_JS))
+            if not p.evaluate("editorMode"):
+                raise RuntimeError('pause menu editor button did not open the editor')
+            editor_tool(p, 'play')
+            if p.evaluate("editorMode") or not p.evaluate("!!playtestLevel"):
+                raise RuntimeError('toolbar play did not start a play-test')
         draw_seg(p, LINE_X)
+        if kind == 'pauseLast' and not p.evaluate("levelStarted"):
+            click(p, *p.evaluate(PLAY_ICON_JS))  # the last level's line does not start the run by itself
         click(p, *p.evaluate(PLAY_ICON_JS))  # pause the run
         open_menu(p)
         if not p.evaluate("drawMenu"):
-            raise RuntimeError('pause menu did not open')
+            raise RuntimeError('pause menu did not open (%s)' % kind)
+        if kind == 'pausePlaytest' and not p.evaluate("!!playtestLevel"):
+            raise RuntimeError('pause menu left the play-test')
         return
     if kind == 'win':
         draw_seg(p, LINE_X)
@@ -3483,7 +3511,8 @@ def menu_page_setup(p, kind):
 def menu_click_ok(kind, bid, before, after, ui, events):
     ctx = 'L%s' % before['srcId']
     if kind == 'pause':
-        want_ui = {'resume': ['resume'], 'restart': ['restart'], 'editor': ['editor_open'], 'Levels': ['map_open']}[bid]
+        want_ui = {'resume': ['resume'], 'restart': ['restart'], 'editor': ['editor_open'], 'Levels': ['map_open'],
+                   'skip level': ['skip_level']}[bid]
         want_ui = ['ui:%s:%s' % (u, ctx) for u in want_ui] + ['ui:menu_close:%s' % ctx]
     elif kind == 'winPlaytest':
         want_ui = []  # play-tests send no ui: events (TELEMETRY uiActive, docs/telemetry.md)
@@ -3500,7 +3529,7 @@ def menu_click_ok(kind, bid, before, after, ui, events):
         st = closed and after['editorMode'] is True and not after['playtest']
     elif bid == 'Levels':
         st = closed and after['drawMap'] is True and not after['editorMode']
-    else:  # next level
+    else:  # next level, skip level (pause)
         st = closed and after['thisLevel'] == before['thisLevel'] + 1 and not after['drawMap']
     r = {'wantUi': want_ui, 'uiOk': ui == want_ui, 'stateOk': bool(st)}
     if kind != 'pause':  # the win closed the attempt: nothing after it may abandon or fail it
@@ -3508,6 +3537,52 @@ def menu_click_ok(kind, bid, before, after, ui, events):
         r['abandonAfterWin'] = bad
         r['noAbandonOk'] = not bad
     return r
+
+
+MENU_SKIP_STATE_JS = """() => ({thisLevel, srcId: levels[thisLevel].srcId, drawMenu, drawMap,
+    solved: progressSolved(), mapNext: mapLevelStates().next, mapSt: mapLevelStates().st.slice(0, 3)})"""
+
+
+def menu_skip_check(page):
+    # TASK-260: pause-menu 'skip level' from srcId 1 (play-order index 0) with one placed line, own fresh context
+    errs = []
+    with telemetry_page(page, errs) as p:
+        menu_page_setup(p, 'pause')
+        placed = p.evaluate("playerLineCoords()")
+        before = p.evaluate(MENU_SKIP_STATE_JS)
+        n = p.evaluate("ANALYTICS.debugLog.length")
+        pt = p.evaluate(menu_btn_js('pause', 'skip level'))
+        click(p, *pt)
+        frames(p)
+        after = p.evaluate(MENU_SKIP_STATE_JS)
+        stored = p.evaluate("async () => PLATFORM.storage.getMany([PROGRESS_STORE, LINES_STORE, STATS_STORE])")
+        events = p.evaluate(MENU_EVENTS_JS, n)
+        lamp = p.evaluate("(() => { const s = mapLevelStates(); return {next: s.next, nextSrcId: levels[s.next].srcId, st0: s.st[0]} })()")
+        playOrderNext = before['thisLevel'] + 1
+    sid = before['srcId']
+    prog = json.loads(stored.get('bp.progress.v1') or '{"solved":[]}')
+    lines_store = json.loads(stored.get('bp.lines.v1') or '{}')
+    stats = json.loads(stored.get('bp.stats.v1') or '{}')
+    draft = (lines_store.get(str(sid)) or {}).get('draft')
+    design = [e[1] for e in events if e[0] == 'addDesignEvent']
+    sk = 'level:%s:' % sid
+    checks = {
+        'nextPlayOrder': after['thisLevel'] == playOrderNext and after['srcId'] != sid,
+        'menuClosed': not after['drawMenu'] and not after['drawMap'],
+        'notSolvedMemory': sid not in after['solved'],
+        'notSolvedStored': sid not in (prog.get('solved') or []),
+        'draftIsPlacedLine': bool(placed) and len(placed) == 1 and draft == placed,
+        'lampOnSkipped': lamp['next'] == before['thisLevel'] and lamp['nextSrcId'] == sid and lamp['st0'] == 'next',
+        'uiSkip': 'ui:skip_level:L%s' % sid in design,
+        'levelSkip': sk + 'skip' in design,
+        'noAbandon': sk + 'abandon' not in design,
+        'skipsCounter': (stats.get(str(sid)) or {}).get('skips') == 1 and (stats.get(str(sid)) or {}).get('abandons') == 0,
+        'nextStarted': ['addProgressionEvent', 'Start', 'L%s' % after['srcId']] in [e[:3] for e in events],
+        'noConsoleErrors': not errs,
+    }
+    return {'skippedSrcId': sid, 'click': pt, 'placedLine': placed, 'before': before, 'after': after, 'progress': prog,
+            'draft': draft, 'stats': stats.get(str(sid)), 'lamp': lamp, 'designEvents': design, 'events': events,
+            'consoleErrors': errs, 'checks': checks, 'pass': all(checks.values())}
 
 
 def sc_menu_layout(page, info):
@@ -3521,23 +3596,33 @@ def sc_menu_layout(page, info):
     lay = {'pause': pause, 'pauseCheck': layout_check(pause, MENU_IDS['pause'], MENU_LABELS['pause'])}
     click(page, *page.evaluate(menu_btn_js('pause', 'resume')))
     frames(page)
-    for kind in ('win', 'winLast', 'winPlaytest'):  # each variant in the state of a real win
+    for kind in ('pauseLast', 'pausePlaytest', 'win', 'winLast', 'winPlaytest'):  # each variant in its real state
         errs = []
         with telemetry_page(page, errs) as p:
             menu_page_setup(p, kind)
+            frames(p)
             p.screenshot(path=os.path.join(OUT_DIR, MENU_PNG[kind]))
-            L = p.evaluate("menuLayout('win')")
+            L = p.evaluate("menuLayout('%s')" % ('pause' if kind.startswith('pause') else 'win'))
             st = p.evaluate(MENU_STATE_JS)
         lay[kind] = L
         lay[kind + 'Check'] = layout_check(L, MENU_IDS[kind], MENU_LABELS[kind])
         lay[kind + 'Check'].update({'srcId': st['srcId'], 'playtest': st['playtest'], 'consoleErrors': errs})
         if errs:
             lay[kind + 'Check']['pass'] = False
+    for kind in MENU_IDS:  # panel inside the 1280x800 field
+        P = lay[kind]['panel']
+        lay[kind + 'Check']['panelInField'] = inf = P[0] >= 0 and P[1] >= 0 and P[0] + P[2] <= 1280 and P[1] + P[3] <= 800
+        lay[kind + 'Check']['pass'] = bool(lay[kind + 'Check']['pass'] and inf)
     lay['pass'] = all(lay[k + 'Check']['pass'] for k in MENU_IDS)
     with open(os.path.join(OUT_DIR, 'layout.json'), 'w') as f:
         json.dump(lay, f, separators=(',', ':'))
+    skip = menu_skip_check(page)
+    with open(os.path.join(OUT_DIR, 'skip.json'), 'w') as f:
+        json.dump(skip, f, separators=(',', ':'))
     clicks = {}
     for kind, ids in MENU_IDS.items():
+        if kind in ('pauseLast', 'pausePlaytest'):
+            continue  # layout-only variants (their buttons are the pause buttons clicked below)
         for bid in ids:
             errs = []
             with telemetry_page(page, errs) as p:
@@ -3557,7 +3642,9 @@ def sc_menu_layout(page, info):
     clicks_out = {'clicks': clicks, 'pass': all(c['pass'] for c in clicks.values())}
     with open(os.path.join(OUT_DIR, 'clicks.json'), 'w') as f:
         json.dump(clicks_out, f, separators=(',', ':'))
-    info['menuLayout'] = {'layout': lay['pass'], 'clicks': {k: c['pass'] for k, c in clicks.items()}}
+    info['menuLayout'] = {'layout': lay['pass'], 'skip': skip['pass'], 'clicks': {k: c['pass'] for k, c in clicks.items()}}
+    if not skip['pass']:
+        raise RuntimeError('skip level check failed (skip.json): %s' % skip['checks'])
     if not lay['pass']:
         raise RuntimeError('menu layout check failed: %s' % {k: v for k, v in lay.items() if k.endswith('Check')})
     if not clicks_out['pass']:

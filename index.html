@@ -312,8 +312,20 @@
                     }
                     return
                 }
-                TELEMETRY.ui(id == 'Levels' ? 'map_open' : id == 'editor' ? 'editor_open' : id) // TASK-192, then menu_close
+                TELEMETRY.ui(id == 'Levels' ? 'map_open' : id == 'editor' ? 'editor_open' : id == 'skip level' ? 'skip_level' : id) // TASK-192, then menu_close
                 TELEMETRY.ui('menu_close')
+                if (id == 'skip level')
+                {
+                    // TASK-260: the next level in play order (as 'next level'); the skipped level stays unsolved,
+                    // its lines are kept as a draft, the open attempt ends with 'skip' instead of 'abandon'
+                    drawMenu = false
+                    drawMenuIcon = true
+                    linesSaveDraft()
+                    TELEMETRY.skip()
+                    levelChoosed(++thisLevel)
+                    TELEMETRY.levelStart('skip')
+                    return
+                }
                 if (id == 'Levels')
                 {
                     TELEMETRY.leave() // an unwon attempt is abandoned (js/telemetry.js)

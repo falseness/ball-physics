@@ -5,6 +5,7 @@
 //   boot      - the page opens the current level (index.html boot)
 //   map       - a level picked on the route map (levelPick)
 //   next      - 'next level' on the completion window
+//   skip      - 'skip level' in the pause menu (TASK-260)
 //   restart   - a restart button (HUD box, pause menu, completion window)
 //   offmap    - the automatic restart after the ball left the map
 //   resume    - the first run when no attempt is open (back from the editor, after the map was closed, bfcache)
@@ -20,6 +21,7 @@
 //          level:<srcId>:fail:offmap
 //          level:<srcId>:restart      the player pressed a restart button
 //          level:<srcId>:abandon      left an unwon attempt (map, next level, page hide)
+//          level:<srcId>:skip         pause-menu 'skip level' on an unwon attempt (instead of abandon, TASK-260)
 //
 // TASK-192: UI, line and session events (same facade, catalogue in docs/telemetry.md):
 //   ui:<name>:<ctx>            a button; ctx = 'L<srcId>' inside a level, 'map' on the route map; value: see ui()
@@ -65,7 +67,7 @@
 //   edit:<h>:back        back to the editor (HUD 'edit' box, completion window 'editor', pause menu 'editor')
 // Play-tests send no level:, lines: or ui: events and never touch bp.stats.v1.
 // Per-user counters: PLATFORM.storage key STATS_STORE ('bp.stats.v1'), JSON
-//   {[srcId]: {attempts, wins, restarts, offmap, abandons, seconds}}; seconds = time inside attempts (wall clock).
+//   {[srcId]: {attempts, wins, restarts, offmap, abandons, skips, seconds}}; seconds = time inside attempts (wall clock).
 // Boot (index.html) reads the key with getMany and passes the values to TELEMETRY.load.
 // Play-tests and the editor send and count nothing (active() is false there).
 const STATS_STORE = 'bp.stats.v1'
@@ -145,7 +147,7 @@ const TELEMETRY = (function()
         let e = stats[id]
         if (!e || typeof e != 'object')
             e = stats[id] = {}
-        for (const k of ['attempts', 'wins', 'restarts', 'offmap', 'abandons', 'seconds'])
+        for (const k of ['attempts', 'wins', 'restarts', 'offmap', 'abandons', 'skips', 'seconds'])
             if (typeof e[k] != 'number' || !isFinite(e[k]))
                 e[k] = 0
         return e
@@ -599,7 +601,7 @@ const TELEMETRY = (function()
         // a level start (see the reasons above)
         levelStart(reason)
         {
-            if (reason == 'map' || reason == 'next')
+            if (reason == 'map' || reason == 'next' || reason == 'skip')
                 f30Step('level_change') // TASK-239
             start(reason)
         },
@@ -745,6 +747,17 @@ const TELEMETRY = (function()
             if (!active())
                 return void end(null)
             leave()
+        },
+        // TASK-260: pause-menu 'skip level' (before the next level starts): an unwon attempt sends 'skip' + Fail
+        // (no abandon) and counts in skips; a won attempt just ends
+        skip()
+        {
+            const a = open()
+            if (!active() || !a || a.won)
+                return void end(null)
+            design(a.srcId, 'skip')
+            ++entry(a.srcId).skips
+            end('Fail')
         },
         // the editor opens: the attempt ends without an event
         close()
