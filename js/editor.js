@@ -36,14 +36,17 @@ const EDITOR_ERROR_POS = { x: 30, y: 100, size: 28 } // left / alphabetic baseli
 // kind 'tool' = selectable tool (editor.tool), 'action' = one-shot action (editor.lastAction),
 // 'toggle' = on/off switch (editor[id], e.g. editor.snap), 'value' = lineK display (no hit area).
 const EDITOR_BAR = { x: 30, y: 22, h: 38, gap: 6, pad: 8 }
+const EDITOR_LABEL_FONT = 20  // toolbar label size (px)
+const EDITOR_FLAG_LABEL_DX = -12, EDITOR_FLAG_ICON_DX = 22 // flag rotate buttons: label / arrow centre from the button centre
 const EDITOR_BUTTONS = (function()
 {
     const spec = [
-        ['select', 'tool', 'select', 70], ['line', 'tool', 'line', 56], ['snap', 'toggle', 'snap', 56], ['portal', 'tool', 'portal', 70],
-        ['delete', 'tool', 'delete', 70], ['flagCCW', 'action', 'flag', 70], ['flagCW', 'action', 'flag', 70],
-        ['portalSmaller', 'action', 'size -', 62], ['portalBigger', 'action', 'size +', 62],
-        ['linesDec', 'action', 'lines -', 66], ['lineK', 'value', '', 36], ['linesInc', 'action', 'lines +', 66],
-        ['play', 'action', 'play', 56], ['export', 'action', 'export', 70], ['import', 'action', 'import', 70],
+        // TASK-264: widths fit the EDITOR_LABEL_FONT px Finger Paint labels (label width <= button width - 8)
+        ['select', 'tool', 'select', 74], ['line', 'tool', 'line', 50], ['snap', 'toggle', 'snap', 62], ['portal', 'tool', 'portal', 74],
+        ['delete', 'tool', 'delete', 74], ['flagCCW', 'action', 'flag', 76], ['flagCW', 'action', 'flag', 76],
+        ['portalSmaller', 'action', 'size -', 70], ['portalBigger', 'action', 'size +', 72],
+        ['linesDec', 'action', 'lines -', 76], ['lineK', 'value', '', 36], ['linesInc', 'action', 'lines +', 78],
+        ['play', 'action', 'play', 56], ['export', 'action', 'export', 78], ['import', 'action', 'import', 82],
         ['new', 'action', 'new', 50], ['exit', 'action', 'exit', 50]
     ]
     let x = EDITOR_BAR.x
@@ -348,7 +351,7 @@ function drawEditIcon()
     const r = editIconRect()
     ctx.save()
     hudBox(r[0], r[1])
-    menuLabel('edit', r[0] + r[2] / 2, r[1] + r[3] / 2, 30)
+    menuLabel('edit', r[0] + r[2] / 2, r[1] + r[3] / 2, 26) // TASK-264: 26 px fits the 63 px box
     ctx.restore()
 }
 
@@ -822,7 +825,7 @@ function editorShowError(text, ms = EDITOR_ERROR_MS)
 function editorErrorRect()
 {
     const e = EDITOR_ERROR_POS
-    return [e.x, e.y - e.size, 360, e.size + 10]
+    return [e.x, e.y - e.size, 440, e.size + 10] // TASK-264: 440 holds the longest message in Finger Paint (405 px)
 }
 
 function editorDrawError()
@@ -893,6 +896,12 @@ function editorDrawSelection()
     ctx.restore()
     if (P)
         editorDrawPortalSize(P)
+    else
+    {
+        // TASK-264: the selected line's readouts, the game's player-line pair (length dimension + slope angle)
+        drawDimension(l)
+        drawPlayerAngle(l)
+    }
 }
 
 // 'h = NN' next to the selected portal: in front of it (along its normal), just outside the dashed ring
@@ -1087,11 +1096,11 @@ function editorDrawToolbar()
         const col = active ? THEME.coral : THEME.ink
         if (b.id == 'flagCCW' || b.id == 'flagCW')
         {
-            menuLabel(b.label, cx - 9, cy, 24, col)
-            editorRotIcon(cx + 21, cy, b.id == 'flagCW' ? 1 : -1, col)
+            menuLabel(b.label, cx + EDITOR_FLAG_LABEL_DX, cy, EDITOR_LABEL_FONT, col)
+            editorRotIcon(cx + EDITOR_FLAG_ICON_DX, cy, b.id == 'flagCW' ? 1 : -1, col)
         }
         else
-            menuLabel(b.label, cx, cy, 24, col)
+            menuLabel(b.label, cx, cy, EDITOR_LABEL_FONT, col)
     }
 }
 

@@ -103,6 +103,18 @@ function playerAngleGeom(l)
         if (shift > PLAYER_ANGLE_SHIFT)
             shift = PLAYER_ANGLE_SHIFT
     }
+    // TASK-264: nothing free (e.g. a steep line at the field edge): mirror the bisector to the other side of the line,
+    // and if that is blocked too keep the box inside the field
+    if (blocked(box))
+    {
+        for (let p = 0; p <= PLAYER_ANGLE_PUSH; p += 2)
+        {
+            const b = boxAt(x1 - bx * (base + p), y1 + by * (base + p))
+            if (!blocked(b)) { box = b; push = p; bx = -bx; break }
+        }
+        box.x = Math.min(Math.max(box.x, 0), GAME_W - box.w)
+        box.y = Math.min(Math.max(box.y, 0), GAME_H - box.h)
+    }
     return { vertex: [x1, y1], r: r, a0: 0, a1: a1, ccw: a1 < 0, sector: sector, refLen: sector ? r + 20 : 0,
         bisector: [bx, by], labelBox: box, push: push, shift: shift, label: label, deg: deg,
         line: [x1, y1, x2, y2], dimBox: obstacles[1] }

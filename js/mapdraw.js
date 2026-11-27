@@ -149,6 +149,17 @@ function mapHop(g, a, b, via, coral)
     g.restore()
 }
 
+const MAP_FLAG_FONT = 15 // flag number size (px; >= 14 for the TASK-264 fit check)
+// number disc of a flag at (x, y) with scale s: {x, y, r} (centre + radius, logical px)
+function mapFlagDisc(g, x, y, s, num)
+{
+    g.save(); g.font = MAP_FLAG_FONT + 'px ' + THEME.fontStack
+    const w = g.measureText(String(num)).width
+    g.restore()
+    const r = Math.max(15 * s, w / 2 + 5)
+    return { x: x, y: y - 5 * s - r, r: r }
+}
+
 // flag pin on a platform: pole + pennant (the game's flagCoords shape, scaled), number disc on the pole.
 // solved = filled coral pennant + green check, open = outlined cyan, next = green.
 function mapFlag(g, x, y, s, num, state)
@@ -177,13 +188,14 @@ function mapFlag(g, x, y, s, num, state)
     g.shadowBlur = 0
     g.restore()
     hatch(g, path, bx, by, bw, bh, Math.PI / 4, 4, state === 'solved' ? 'rgba(120,20,10,0.8)' : col, 1.1, state === 'open' ? .4 : .5)
-    // number disc
-    const dy = y - 20 * s, dr = 15 * s
+    // number disc (TASK-264: MAP_FLAG_FONT px Finger Paint; the disc grows to hold the number with 5 px each side and
+    // keeps its bottom on the pole where the old 15 * s disc had it)
+    const d = mapFlagDisc(g, x, y, s, num)
     g.save()
     g.fillStyle = '#0b2747'; g.strokeStyle = col; g.lineWidth = 2
-    g.beginPath(); g.arc(x, dy, dr, 0, Math.PI * 2); g.fill(); g.stroke()
-    g.fillStyle = THEME.ink; g.font = Math.round(24 * s) + 'px ' + THEME.fontStack
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(num), x, dy + 1)
+    g.beginPath(); g.arc(x, d.y, d.r, 0, Math.PI * 2); g.fill(); g.stroke()
+    g.fillStyle = THEME.ink; g.font = MAP_FLAG_FONT + 'px ' + THEME.fontStack
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(num), x, d.y + 1)
     // check mark on solved flags
     if (state === 'solved')
     {
@@ -269,7 +281,8 @@ function mapRender(g)
         const [cx, top, w, s] = M.slots[id], i = assign[id]
         mapFlag(g, cx + 12 * s / 0.62, top, s, i + 1, st[i])
         stats.flags[st[i]]++
-        stats.slots[id] = { n: i + 1, srcId: levels[i].srcId, state: st[i] }
+        const d = mapFlagDisc(g, cx + 12 * s / 0.62, top, s, i + 1)
+        stats.slots[id] = { n: i + 1, srcId: levels[i].srcId, state: st[i], disc: [d.x, d.y, d.r] }
     }
     // the ball resting on the next level (the game's Ball drawing)
     if (nextSlot)
@@ -292,7 +305,9 @@ function mapRender(g)
 // Draw the map for this frame (rebuilding the cached layer when the progress or backing size changed)
 function mapDraw()
 {
-    const key = canvas.width + 'x' + canvas.height + ':' + levels.map(l => l.unlock == 2 ? 1 : 0).join('')
+    // TASK-264: the font state is part of the key, so a layer drawn before Finger Paint was ready is rebuilt once it is
+    const font = !document.fonts || document.fonts.check(MAP_FLAG_FONT + 'px ' + THEME.fontStack) ? 'f' : '-'
+    const key = canvas.width + 'x' + canvas.height + ':' + font + ':' + levels.map(l => l.unlock == 2 ? 1 : 0).join('')
     if (!mapCanvas || key !== mapKey)
     {
         if (!mapCanvas) mapCanvas = document.createElement('canvas')
@@ -346,7 +361,7 @@ function mapOpen()
 // level, starts it; a first click / tap only selects.
 let mapHover = -1, mapSel = -1
 window.mapCard = null
-const MAP_CARD = { thumbW: 192, pad: 12, head: 44, gap: 8, play: 40, ptr: 16, gapFlag: 18, margin: 6 }
+const MAP_CARD = { thumbW: 192, pad: 12, head: 44, numW: 64, gap: 8, play: 40, ptr: 16, gapFlag: 18, margin: 6 }
 MAP_CARD.thumbH = MAP_CARD.thumbW * GAME_H / GAME_W
 MAP_CARD.w = MAP_CARD.thumbW + MAP_CARD.pad * 2
 MAP_CARD.h = MAP_CARD.pad * 2 + MAP_CARD.head + MAP_CARD.thumbH + MAP_CARD.gap + MAP_CARD.play
@@ -512,9 +527,10 @@ function mapCardDraw(g, c)
     g.restore()
     // header: number, one glyph per allowed line, portal badge
     const hy = y0 + C.pad + C.head / 2 - 2
-    g.save(); g.font = '40px ' + THEME.fontStack; g.fillStyle = THEME.ink; g.textBaseline = 'middle'
+    g.save(); g.font = '40px ' + THEME.fontStack; g.fillStyle = THEME.ink; g.textBaseline = 'middle'; g.textAlign = 'left'
     g.fillText(String(c.n), x0 + C.pad, hy + 2); g.restore()
-    for (let k = 0; k < L.lineK; k++) mapLineGlyph(g, x0 + C.pad + 60 + k * 26, hy, 0.8)
+    // TASK-264: the number (40 px) has the cell x0 .. x0 + pad + numW - 14 (left ink of the first glyph)
+    for (let k = 0; k < L.lineK; k++) mapLineGlyph(g, x0 + C.pad + C.numW + k * 26, hy, 0.8)
     if (L.portals && L.portals.length) mapPortalBadge(g, x0 + W - C.pad - 12, hy, 18)
     const th = mapThumb(g, L, x0 + C.pad, y0 + C.pad + C.head, C.thumbW)
     mapPlayButton(g, c.play[0], c.play[1], c.play[2], mapPlayHot)

@@ -3809,13 +3809,19 @@ def sc_map_editor(page, info):
 # (dimension / angle labels), the run (trail labels, live readout, 3x box), the pause menu, every level at its start
 # (portal labels, angle callouts, target leaders), the win window and the last-level win window ('Thanks for playing!').
 # Writes fit.json and level1.png, pause.png, win.png, win_last.png, portal.png.
+# TASK-264 adds the in-game selection UI ('delete', drag / lock hints at the edges), the route map (the cached map
+# layer is recorded too: flag numbers boxed by their disc), the preview card (number cell), the map's editor button and
+# the editor (toolbar labels boxed by their button, 'h = NN', selected-line readouts, every error message boxed by
+# editorErrorRect, the play-test 'edit' box): fit.json 'mapEditor' + map.png, card.png, editor.png (never overwritten).
+# The map has no title text and the editor no tooltips (nothing to fit there).
 FIT_HOOK_JS = r"""() => {
     if (window.__fitHook) return
     window.__fitHook = true; window.__fit = []; window.__fitOn = false; window.__fitTag = ''
     const P = CanvasRenderingContext2D.prototype, orig = P.fillText
     const skip = /^(menuLabel|annotText)$|fillText/
     P.fillText = function(t, x, y) {
-        if (this === ctx && window.__fitOn) {
+        const onMap = typeof mapCanvas !== 'undefined' && mapCanvas && this.canvas === mapCanvas
+        if ((this === ctx || onMap) && window.__fitOn) {
             const names = (new Error().stack || '').split('\n').slice(1)
                 .map(l => (l.match(/at (?:Object\.|window\.)?([\w$.]+) \(/) || [])[1]).filter(n => n && !skip.test(n))
             const m = this.measureText(t), T = this.getTransform(), k = canvas.width / GAME_W
@@ -3828,7 +3834,32 @@ FIT_HOOK_JS = r"""() => {
             const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
             const r = {tag: window.__fitTag, fn: names[0] || '?', text: String(t), font: this.font, align: al,
                 textWidth: w * Math.hypot(T.a, T.b) / k, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys)}
-            if (r.fn == 'menuButton' || r.fn == 'drawMenuLayout' || r.fn == 'drawLogo') {
+            const R4 = q => [q[0], q[1], q[0] + q[2], q[1] + q[3]]
+            const cx = (r.x0 + r.x1) / 2
+            if (r.fn == 'menuButton' && drawMap && r.text == 'editor') {
+                r.box = routeEditorButton(levels).rect.slice()  // TASK-264: the map's editor button ([x0, y0, x1, y1])
+            } else if (r.fn == 'mapFlag') {  // the flag's number disc (square around it)
+                r.box = null
+                for (const [scx, top, , s] of Object.values(ROUTEMAP.slots)) {
+                    const px = scx + 12 * s / 0.62
+                    if (Math.abs(px - x) > 0.01) continue
+                    const d = mapFlagDisc(this, px, top, s, t)
+                    if (Math.abs(d.y + 1 - y) < 0.01) r.box = [px - d.r, d.y - d.r, px + d.r, d.y + d.r]
+                }
+                r.box = r.box || [0, 0, 0, 0]
+            } else if (r.fn == 'mapCardDraw') {  // header cell: card edge .. left ink of the first line glyph
+                const c = window.mapCard, C = MAP_CARD
+                r.box = [c.x, c.y + C.pad, c.x + C.pad + C.numW - 14 * 0.8 - 3.5 * 0.8, c.y + C.pad + C.head]
+            } else if (r.fn == 'editorDrawToolbar') {  // the button under the label (flag: up to the rotate arrow)
+                const b = EDITOR_BUTTONS.find(b => (b.label == r.text || (b.kind == 'value' && String(editor.level.lineK) == r.text))
+                    && b.x <= cx && cx <= b.x + b.w)
+                r.box = b ? [b.x, b.y, b.id == 'flagCCW' || b.id == 'flagCW' ? b.x + b.w / 2 + EDITOR_FLAG_ICON_DX - 7 : b.x + b.w, b.y + b.h]
+                    : [0, 0, 0, 0]
+            } else if (r.fn == 'drawEditIcon') {
+                r.box = R4(editIconRect())
+            } else if (r.fn == 'editorDrawError') {
+                r.box = R4(editorErrorRect())
+            } else if (r.fn == 'menuButton' || r.fn == 'drawMenuLayout' || r.fn == 'drawLogo') {
                 const L = menuLayout(drawMenu ? 'pause' : 'win'), b = L.buttons.find(b => b.id == r.text)
                 r.box = r.fn == 'menuButton' && b ? [b.rect[0], b.rect[1], b.rect[0] + b.rect[2], b.rect[1] + b.rect[3]]
                     : [L.panel[0], L.panel[1], L.panel[0] + L.panel[2], L.panel[1] + L.panel[3]]
@@ -3846,11 +3877,19 @@ FIT_HOOK_JS = r"""() => {
 FIT_WHERE = {'menuButton': 'menu_button', 'drawLogo': 'logo_title', 'drawMenuLayout': 'menu_label', 'drawSpeedIcon': 'speed_box',
              'guide': 'guide_hint', 'drawStartMarker': 'start_marker', 'drawPortal': 'portal_label', 'drawNewLine': 'newline_readout',
              'drawAngleCallout': 'angle_callout', 'drawTargetLeader': 'target_leader', 'drawDimension': 'dimension_label',
-             'drawPlayerAngle': 'player_angle'}
+             'drawPlayerAngle': 'player_angle',
+             # TASK-264: route map, editor and the in-game selection UI
+             'mapFlag': 'map_flag_number', 'mapCardDraw': 'map_card_number', 'editorDrawToolbar': 'editor_toolbar',
+             'editorDrawPortalSize': 'editor_portal_h', 'editorDrawError': 'editor_error', 'drawEditIcon': 'editor_edit_box',
+             'drawSelection': 'select_delete', 'drawDragHint': 'drag_hint', 'drawLockHint': 'lock_hint'}
 # sites whose text changes from frame to frame (numbers): one row per site and state, the worst label of that state
 FIT_NUMERIC = ('trail_arrow', 'trail_live', 'newline_readout', 'dimension_label', 'player_angle', 'angle_callout')
 FIT_SITES = ('menu_button', 'logo_title', 'menu_label', 'speed_box', 'guide_hint', 'start_marker', 'portal_label', 'newline_readout',
-             'angle_callout', 'target_leader', 'dimension_label', 'player_angle', 'trail_arrow', 'trail_live')
+             'angle_callout', 'target_leader', 'dimension_label', 'player_angle', 'trail_arrow', 'trail_live',
+             'select_delete', 'drag_hint', 'lock_hint',
+             'map_flag_number', 'map_card_number', 'map_editor_button',
+             'editor_toolbar', 'editor_portal_h', 'editor_error', 'editor_edit_box')
+FIT_MAP_EDITOR_SITES = FIT_SITES[FIT_SITES.index('select_delete'):]  # TASK-264 rows
 
 
 def fit_capture(p, tag, n=2):
@@ -3862,6 +3901,8 @@ def fit_capture(p, tag, n=2):
 def fit_where(r):
     if r['fn'] == 'trailAnnotate':
         return 'trail_live' if r['text'].startswith('v = ') else 'trail_arrow'
+    if r['fn'] == 'menuButton' and r['tag'].startswith('map'):
+        return 'map_editor_button'
     return FIT_WHERE.get(r['fn'], r['fn'])
 
 
@@ -3910,11 +3951,12 @@ def fit_overlaps(recs):
         w = fit_where(r)
         if w in ('trail_arrow', 'trail_live'):
             continue
-        layer = 'menu' if w in FIT_MENU_SITES else 'field'
+        # the preview card is an opaque panel over the map's flags: its number is compared with the card layer only
+        layer = 'menu' if w in FIT_MENU_SITES else 'card' if w == 'map_card_number' else 'field'
         if r['tag'] in ('pause', 'win', 'winLast') and layer == 'field':
             continue
-        by_tag.setdefault(r['tag'], []).append((w, r))
-    for tag, rs in by_tag.items():
+        by_tag.setdefault((r['tag'], layer), []).append((w, r))
+    for (tag, _), rs in by_tag.items():
         for i in range(len(rs)):
             for j in range(i + 1, len(rs)):
                 (wa, a), (wb, b) = rs[i], rs[j]
@@ -3934,6 +3976,117 @@ def fit_win(page, kind, png, errs):
         fit_capture(p, kind)
         p.screenshot(path=os.path.join(OUT_DIR, png))
         return p.evaluate("window.__fit")
+
+
+def fit_shot(page, name):
+    # TASK-264: never overwrite an image (another scenario of the same run may have written <name>.png): -v2, -v3, ...
+    path, k = os.path.join(OUT_DIR, name + '.png'), 1
+    while os.path.exists(path):
+        k += 1
+        path = os.path.join(OUT_DIR, '%s-v%d.png' % (name, k))
+    page.screenshot(path=path)
+    return os.path.basename(path)
+
+
+def fit_select_ui(page):
+    # TASK-264: in-game selection UI on level 1 with the placed player line: the 'delete' bin label of the selected
+    # line, the rejected-drop hint and the locked-after-run hint (both also pushed against the right / bottom / top edge)
+    li = page.evaluate("lines.findIndex(l => l.type == 'player')")
+    if li < 0 or not page.evaluate("selectionEditable()"):
+        raise RuntimeError('level 1: no editable player line for the selection UI')
+    page.evaluate("i => { playerSel = i }", li)
+    frames(page)
+    fit_capture(page, 'select')
+    for tag, (x, y) in (('select_hint', (640, 400)), ('select_hint_right', (1275, 400)), ('select_hint_top', (1275, 5)),
+                        ('select_hint_bottom', (5, 795))):
+        page.evaluate("([x, y]) => { playerSel = null; dragHint = {text: 'too close to the ball', x: x, y: y, until: performance.now() + 60000};"
+                      " lockHint = null }", [x, y])
+        frames(page)
+        fit_capture(page, tag + '_drag')
+        page.evaluate("([x, y]) => { dragHint = null; lockHint = {x: x, y: y, t0: performance.now() + 60000} }", [x, y])
+        frames(page)
+        fit_capture(page, tag + '_lock')
+    page.evaluate("() => { dragHint = null; lockHint = null; playerSel = null }")
+    frames(page)
+
+
+def fit_map_editor(page):
+    # TASK-264: the route map (cached layer rebuilt while the hook records), the preview card of the first, a middle
+    # and the last level, the map's editor button, then the editor opened from that button by a real click: toolbar,
+    # three lines (one at the right edge), a portal pair, the selected portal ('h = NN'), a selected line (dimension +
+    # angle readouts), every editor error message and the play-test 'edit' box. Writes map.png, card.png, editor.png.
+    out = {'shots': {}}
+    page.evaluate("() => mapOpen()")
+    frames(page)
+    if not page.evaluate("drawMap"):
+        raise RuntimeError('map did not open')
+    page.evaluate("() => { window.__fitTag = 'map'; window.__fitOn = true; mapKey = '' }")  # rebuild the cached layer
+    frames(page)
+    page.evaluate("() => { window.__fitOn = false }")
+    out['mapBuilds'] = page.evaluate("mapState.builds")
+    out['fontReady'] = page.evaluate("document.fonts.check(MAP_FLAG_FONT + 'px ' + THEME.fontStack)")
+    out['shots']['map'] = fit_shot(page, 'map')
+    n = page.evaluate("levels.length")
+    out['cards'] = []
+    for i in (0, n // 2, n - 1):
+        page.mouse.move(*to_client(page, *page.evaluate("i => routeLevelPoint(levels, i)", i)))
+        frames(page)
+        if page.evaluate("!window.mapCard || mapCard.i") != i:
+            raise RuntimeError('no preview card for level %d' % i)
+        fit_capture(page, 'card%d' % (i + 1))
+        out['cards'].append(i + 1)
+    out['shots']['card'] = fit_shot(page, 'card')
+    page.mouse.move(*to_client(page, 640, 20))
+    frames(page)
+    b = page.evaluate("routeEditorButton(levels)")
+    click(page, b['x'] + b['w'] / 2, b['y'] + b['h'] / 2)
+    if not page.evaluate("editorMode"):
+        raise RuntimeError('map editor button did not open the editor')
+    frames(page)
+    fit_capture(page, 'editor')
+    tb = lambda bid: editor_tool(page, bid)
+    tb('line')
+    for k in 'CDE':
+        click(page, *EDITOR_OBJ[k][0])
+        click(page, *EDITOR_OBJ[k][1])
+    tb('portal')
+    click(page, 400, 240)
+    click(page, 800, 240)
+    if page.evaluate("editor.level.lines.length") != 3 or page.evaluate("editor.level.portals.length") != 2:
+        raise RuntimeError('editor lines / portal pair not placed')
+    tb('select')
+    for j in range(2):
+        click(page, *page.evaluate("i => { const P = editorPortals()[i]; return [P.x, P.y] }", j))
+        frames(page)
+        if page.evaluate("JSON.stringify(editor.selected)") != '{"kind":"portal","i":%d}' % j:
+            raise RuntimeError('portal %d not selected' % j)
+        fit_capture(page, 'editor_portal%d' % j)
+    click(page, *EDITOR_OBJ['E'][0][:1], 400)  # line E at the right edge
+    frames(page)
+    if not page.evaluate("!!editorSelectedLine()"):
+        raise RuntimeError('line E not selected')
+    fit_capture(page, 'editor_line_edge')
+    click(page, 450, 450)  # line D
+    frames(page)
+    if page.evaluate("JSON.stringify(editor.selected)") != '{"kind":"line","i":1}':
+        raise RuntimeError('line D not selected')
+    fit_capture(page, 'editor_line')
+    out['shots']['editor'] = fit_shot(page, 'editor')
+    out['editorReadouts'] = [r['text'] for r in page.evaluate("window.__fit") if r['tag'] == 'editor_line'
+                             and r['fn'] in ('drawDimension', 'drawPlayerAngle')]
+    out['errors'] = [m['message'] for m in editor_error_messages()]
+    for k, msg in enumerate(out['errors']):
+        page.evaluate("m => editorShowError(m, 60000)", msg)
+        frames(page)
+        fit_capture(page, 'editor_error%d' % k)
+    page.evaluate("() => { editor.error = null }")
+    tb('play')
+    frames(page)
+    if not page.evaluate("!!playtestLevel"):
+        raise RuntimeError('play-test did not start')
+    fit_capture(page, 'playtest')
+    out['pass'] = bool(out['fontReady'] and len(out['editorReadouts']) == 2 and out['errors'])
+    return out
 
 
 def sc_font_fit(page, info):
@@ -3969,6 +4122,7 @@ def sc_font_fit(page, info):
     frames(page)
     fit_capture(page, 'level1_line')
     page.screenshot(path=os.path.join(OUT_DIR, 'level1.png'))
+    fit_select_ui(page)
     open_menu(page)
     if not page.evaluate("drawMenu"):
         raise RuntimeError('pause menu did not open')
@@ -3987,6 +4141,7 @@ def sc_font_fit(page, info):
             page.screenshot(path=os.path.join(OUT_DIR, 'portal.png'))
     page.evaluate("() => { thisLevel = 0; levelChoosed(0) }")
     frames(page)
+    map_editor = fit_map_editor(page)
     recs = page.evaluate("window.__fit")
     errs = []
     recs += fit_win(page, 'win', 'win.png', errs)
@@ -3996,11 +4151,18 @@ def sc_font_fit(page, info):
     unknown = sorted({r['where'] for r in rows if r['where'] not in FIT_SITES})
     bad = [r for r in rows if not r['ok']]
     overlaps = fit_overlaps(recs)
+    me_rows = [r for r in rows if r['where'] in FIT_MAP_EDITOR_SITES or any(t.startswith(('map', 'card', 'editor', 'playtest', 'select'))
+                                                                             for t in r['states'])]
+    map_editor['rows'] = len(me_rows)
+    map_editor['notOk'] = sum(not r['ok'] for r in me_rows)
+    map_editor['minSize'] = min((r['size'] for r in me_rows), default=0)
     out = {'overlaps': overlaps, 'rows': rows, 'nRows': len(rows), 'sites': {s: sum(r['where'] == s for r in rows) for s in FIT_SITES},
+           'mapEditor': map_editor,
            'missingSites': missing, 'unknownSites': unknown, 'notOk': len(bad), 'portalShotSrcId': portal_shot,
            'minSize': min(r['size'] for r in rows), 'consoleErrors': errs,
            'hudLines': 'drawLinesK draws one line glyph per allowed line, no text: no fit row'}
-    out['pass'] = bool(rows and not bad and not overlaps and not missing and not unknown and not errs and portal_shot is not None)
+    out['pass'] = bool(rows and not bad and not overlaps and not missing and not unknown and not errs and portal_shot is not None
+                       and map_editor['pass'])
     with open(os.path.join(OUT_DIR, 'fit.json'), 'w') as f:
         json.dump(out, f, separators=(',', ':'))
     info['fontFit'] = {'rows': len(rows), 'notOk': len(bad), 'overlaps': len(overlaps), 'missing': missing, 'unknown': unknown, 'pass': out['pass']}
