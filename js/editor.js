@@ -14,7 +14,7 @@ function curLevel()
 {
     return playtestLevel || levels[thisLevel]
 }
-let editor = { tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null,
+let editor = { origin: null, tool: 'select', level: null, lastAction: null, actions: 0, mouse: null, pending: null, drag: null, flagPoly: null,
                portalPending: null, selected: null, error: null, snap: false, barDrag: null, barDropAt: null }
 const EDITOR_DELETE_LINE_DIST = 8     // delete tool: max distance to a line segment
 const EDITOR_DELETE_PORTAL_DIST = 12  // delete tool: max distance to a portal opening (c ± h·t)
@@ -130,14 +130,17 @@ function editorCloneLevel(L)
     }
 }
 
-// from: 'menu' (pause menu) | 'win' (completion window), for TELEMETRY.editorOpened (TASK-232)
+// from: 'menu' (pause menu) | 'win' (completion window) | 'map' (route map button, TASK-258), for
+// TELEMETRY.editorOpened (TASK-232). editor.origin = from. A 'map' session edits a blank level (editorNewLevel's
+// content) and its 'exit' goes back to the route map without touching levels[] or thisLevel.
 function editorOpen(from)
 {
     drawMenu = false
     drawMenuIcon = true
     physics = false
     line = false
-    editor.level = editorCloneLevel(levels[thisLevel])
+    editor.origin = from
+    editor.level = from == 'map' ? editorBlankLevel() : editorCloneLevel(levels[thisLevel])
     editor.tool = 'select'
     editor.snap = false
     editor.lastAction = null
@@ -155,10 +158,13 @@ function editorOpen(from)
     TELEMETRY.editorOpened(from)
 }
 
-// Write the working copy back to levels[thisLevel] (session only) and reload the level
+// Write the working copy back to levels[thisLevel] (session only) and reload the level.
+// TASK-258: a session opened from the route map writes nothing back and returns to the map.
 function editorExit()
 {
     TELEMETRY.editorExit() // TASK-232: summary, actions, exit (while editorMode is still on)
+    if (editor.origin == 'map')
+        return editorExitToMap()
     const L = levels[thisLevel], W = editorCloneLevel(editor.level)
     L.ballX = W.ballX; L.ballY = W.ballY
     L.flagX = W.flagX; L.flagY = W.flagY; L.flagRotate = W.flagRotate
@@ -170,6 +176,23 @@ function editorExit()
         delete L.portals
     editorMode = false
     editorPreviewClear()
+    editorClearSession()
+    editor.origin = null
+    levelChoosed(thisLevel)
+}
+
+// TASK-258: end of a route-map session: drop the working copy, show the map again (levels[] and thisLevel unchanged)
+function editorExitToMap()
+{
+    editorMode = false
+    editorPreviewClear()
+    editorClearSession()
+    editor.origin = null
+    levelChoosed(thisLevel) // the level under the map as it was (a play-test may have loaded its own lines)
+    mapOpen()
+}
+function editorClearSession()
+{
     editor.level = null
     editor.pending = null
     editor.drag = null
@@ -177,7 +200,6 @@ function editorExit()
     editor.selected = null
     editor.error = null
     editor.flagPoly = null
-    levelChoosed(thisLevel)
 }
 
 function editorButtonAt(coords)
@@ -273,9 +295,13 @@ function editorClick(coords)
 
 // 'new': an empty working copy (ball start top-left, flag bottom-right, lineK 1, no lines/portals)
 const EDITOR_NEW_LEVEL = { ballX: 200, ballY: 200, flagX: 1000, flagY: 600, flagRotate: 0, lineK: 1 }
+function editorBlankLevel()
+{
+    return Object.assign({}, EDITOR_NEW_LEVEL, { lines: [], portals: [] })
+}
 function editorNewLevel()
 {
-    editor.level = Object.assign({}, EDITOR_NEW_LEVEL, { lines: [], portals: [] })
+    editor.level = editorBlankLevel()
     editor.pending = null
     editor.drag = null
     editor.portalPending = null

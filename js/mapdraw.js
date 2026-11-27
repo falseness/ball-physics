@@ -310,6 +310,7 @@ function mapDraw()
     if (mapSel >= 0 && mapSel !== mapHover) mapHighlight(ctx, mapSel, 0.1)
     const ci = mapCardLevel()
     window.mapCard = ci >= 0 ? mapCardLayout(ci) : null
+    mapEditorButtonDraw()
     if (window.mapCard) mapCardDraw(ctx, window.mapCard)
     menuIcon()
 }
@@ -381,7 +382,7 @@ function mapCardLayout(i)
     const C = MAP_CARD, W = C.w, H = C.h, F = routeFlagRect(id), [cx, top, , s] = ROUTEMAP.slots[id]
     const nid = i + 1 < levels.length ? routeSlotOf(levels, i + 1) : null, NF = nid === null ? null : routeFlagRect(nid)
     const ax = cx + 12 * s / 0.62, ay = top - 30 * s / 0.62, icon = mapMenuIconBox()
-    const avoid = [icon, F].concat(NF ? [NF] : [])
+    const EB = routeEditorButton(levels), avoid = [icon, F].concat(NF ? [NF] : [], EB ? [EB.rect] : []) // TASK-258: the editor button too
     const T = [0.5, 0.3, 0.7, 0.15, 0.85, 0.09, 0.91]
     let best = null
     for (const lift of [0, 40, 80, 120])
@@ -553,7 +554,7 @@ function mapMove(coords)
     }
     mapPlayHot = false
     mapHover = routeLevelAt(levels, x, y)
-    mapCursor(mapHover >= 0 || inMenuIcon(coords) ? 'pointer' : '')
+    mapCursor(mapHover >= 0 || inMenuIcon(coords) || mapInEditorButton(coords) ? 'pointer' : '')
 }
 
 function mapStart(i)
@@ -588,12 +589,38 @@ function mapClick(coords)
     }
     if (c && mapRectHit(c.all, coords[0], coords[1]))
         return
+    if (mapInEditorButton(coords))
+        return mapEditor()
     const i = routeLevelAt(levels, coords[0], coords[1])
     if (i >= 0)
         TELEMETRY.ui('map_level', levels[i].srcId) // TASK-192: select or (selected already) start
     if (i >= 0 && i === mapSel)
         return mapStart(i)
     mapSel = i
+}
+
+// ---- TASK-258: 'editor' button after the last level (geometry: routeEditorButton in js/routemap.js) ----
+function mapEditorButtonDraw()
+{
+    const b = routeEditorButton(levels)
+    if (b) menuButton(b.x, b.y, b.w, b.h, 'editor')
+    window.mapEditorBtn = b // what this frame drew (tests read it)
+}
+function mapInEditorButton(coords)
+{
+    const b = routeEditorButton(levels)
+    return !!b && collisionWithRect(coords[0], coords[1], b.rect[0], b.rect[1], b.rect[2], b.rect[3])
+}
+// The button opens the editor on a blank level (editorNewLevel content); the session's origin is 'map' ('exit' comes
+// back here and changes no level)
+function mapEditor()
+{
+    TELEMETRY.ui('map_editor') // ui:map_editor:map (drawMap still on)
+    mapSel = mapHover = -1
+    mapPlayHot = false
+    mapCursor('')
+    drawMap = false
+    editorOpen('map')
 }
 
 // Test hook: the card layout of every level (or the given ones) with its overlap / on-screen checks

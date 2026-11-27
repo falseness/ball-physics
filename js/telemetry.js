@@ -36,7 +36,8 @@
 // TASK-232: editor session and level summary events (catalogue in docs/telemetry.md), sent through editor(name, value)
 // only while editorActive() (editorMode on, no play-test). <ctx> = 'L<srcId>' of the level the editor was opened on,
 // <h> = levelHash(working copy) (8-hex FNV-1a of editorLevelToJSON):
-//   editor:open:<ctx>:<from>         from = 'menu' (pause menu) | 'win' (completion window)
+//   editor:open:<ctx>:<from>         from = 'menu' (pause menu) | 'win' (completion window) | 'map' (route map
+//                                    'editor' button: blank level, <ctx> = 'new' for the whole session, TASK-258)
 //   editor:sum:<ctx>:<h>:lines       value = level lines      } sent at play, export and exit,
 //   editor:sum:<ctx>:<h>:portals     value = portals (0 | 2)  } before the action itself
 //   editor:sum:<ctx>:<h>:linek       value = lineK            }
@@ -528,12 +529,12 @@ const TELEMETRY = (function()
         editorActive,
         levelHash,
         editorSession() { return ed },
-        // editorOpen (editor.level is the fresh copy, editorMode on); from = 'menu' | 'win'
+        // editorOpen (editor.level is the fresh copy, editorMode on); from = 'menu' | 'win' | 'map' (TASK-258: blank level, ctx 'new')
         editorOpened(from)
         {
             if (!editorActive())
                 return
-            ed = {ctx: 'L' + srcId(), t0: now(), json0: editorLevelToJSON(editor.level), actions: 0, playAt: null, playMs: 0}
+            ed = {ctx: from == 'map' ? 'new' : 'L' + srcId(), t0: now(), json0: editorLevelToJSON(editor.level), actions: 0, playAt: null, playMs: 0}
             editorEvent('open:' + ed.ctx + ':' + from)
         },
         // TASK-233: toolbar event 'editor:<kind>:<ctx>[:<rest>]' (tool, snap, rotate, portal_size, linek, btn, import,
@@ -603,7 +604,7 @@ const TELEMETRY = (function()
             start(reason)
         },
         // a button. name: run, pause, restart, menu_open, menu_close, resume, map_open, map_close, map_level,
-        // preview_play, next_level, speed_on, speed_off, editor_open, line_delete_bin; value: srcId for map_level
+        // preview_play, next_level, speed_on, speed_off, editor_open, map_editor, line_delete_bin; value: srcId for map_level
         // and preview_play, else none
         ui(name, value)
         {

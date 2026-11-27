@@ -184,3 +184,17 @@ function routeSlotOf(levels, i, map = ROUTEMAP)
         if (assign[id] === i) return id
     return null
 }
+
+// TASK-258: the route map's 'editor' button (a plain menuButton), placed after the last used slot of the floor row
+// (the extra branch, routeAssign), on the floor row to its right: left edge EDITOR_BTN.gap px right of that slot's box
+// (routeSlotBox), bottom EDITOR_BTN.lift px above the platform top. It follows the level count. Returns
+// {x, y, w, h, rect: [x1, y1, x2, y2], after: slot id}; null when the extra branch has no level.
+const ROUTE_EDITOR_BTN = { w: 150, h: 50, gap: 20, lift: 4 }
+function routeEditorButton(levels, map = ROUTEMAP)
+{
+    const assign = routeAssign(levels, map), used = map.branches.extra.filter(id => id in assign)
+    if (!used.length) return null
+    const after = used[used.length - 1], b = routeSlotBox(after, map), B = ROUTE_EDITOR_BTN
+    const x = b[2] + B.gap, y = map.slots[after][1] - B.lift - B.h
+    return { x, y, w: B.w, h: B.h, rect: [x, y, x + B.w, y + B.h], after }
+}

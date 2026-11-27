@@ -10,7 +10,10 @@
 //   a level has no slot; two slots closer than MIN_DIST; an obstacle (or the central wall / a portal)
 //   intersects a platform box or a flag box (50x70 above the platform centre); a hop references a
 //   missing slot or level, or a consecutive pair of used slots has no hop; a slot or obstacle lies
-//   outside x 30..1250, y 30..772; a slot overlaps the menu-icon rect; fewer than 4 spare main slots.
+//   outside x 30..1250, y 30..772; a slot overlaps the menu-icon rect; fewer than 4 spare main slots;
+//   TASK-258: the 'editor' button (routeEditorButton) is missing, not right of the last floor-row level's slot box,
+//   outside the bounds, or overlaps a used slot's platform / flag box / flag rect, an obstacle (wall, portals), the
+//   menu icon or any level's preview card (mapCardLayout from js/mapdraw.js, loaded with a window stub).
 import fs from 'fs'
 import path from 'path'
 import vm from 'vm'
@@ -37,7 +40,8 @@ if (gw) { ctx.GAME_W = +gw[1]; ctx.GAME_H = +gw[2] }
 // levels.js and routemap.js share one script scope, as in index.html
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'levels.js'), 'utf8') + '\n;\n' +
     fs.readFileSync(MAP_PATH, 'utf8') +
-    '\n;this.__out = { levels, map: ROUTEMAP, assign: routeAssign(levels, ROUTEMAP), branchOf: i => routeBranch(levels, i) }', ctx)
+    '\n;this.__out = { levels, map: ROUTEMAP, assign: routeAssign(levels, ROUTEMAP), branchOf: i => routeBranch(levels, i),' +
+    ' editorButton: routeEditorButton(levels, ROUTEMAP), slotBox: id => routeSlotBox(id, ROUTEMAP), flagRect: id => routeFlagRect(id, ROUTEMAP) }', ctx)
 const { levels, map, assign } = ctx.__out
 
 // menu icon rect from index.html: menuIconRect = [[GAME_W - a - b, y], [w, h]]
@@ -46,6 +50,17 @@ const mm = /menuIconRect\s*=\s*\[\s*\[\s*GAME_W\s*-\s*(\d+)\s*-\s*(\d+)\s*,\s*(\
 if (!mm) { console.log(JSON.stringify({ pass: false, problems: ['menuIconRect not found in index.html'] })); process.exit(2) }
 const menu = { x1: ctx.GAME_W - +mm[1] - +mm[2], y1: +mm[3] }
 menu.x2 = menu.x1 + +mm[4]; menu.y2 = menu.y1 + +mm[5]
+// TASK-258: preview cards come from js/mapdraw.js (its top level only needs window and menuIconRect; the same script scope)
+let cards = null, cardsError = null
+try
+{
+    ctx.window = ctx
+    vm.runInContext('var menuIconRect = [[' + menu.x1 + ', ' + menu.y1 + '], [' + (+mm[4]) + ', ' + (+mm[5]) + ']]', ctx)
+    if (typeof ctx.THEME === 'undefined') ctx.THEME = {} // mapdraw's top level reads THEME colours only in functions / MAP_COL
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'mapdraw.js'), 'utf8'), ctx)
+    cards = ctx.mapCardCheck()
+}
+catch (e) { cardsError = String(e) }
 
 // --- boxes -----------------------------------------------------------------------------------------
 const r1 = v => Math.round(v * 10) / 10
@@ -166,6 +181,38 @@ for (const id of slotIds)
 }
 for (const s of solids) if (s.box && !inside(s.box)) { offscreen.push([s.id]); problems.push(s.kind + ' ' + s.id + ' is outside x 30..1250, y 30..772') }
 
+// 7. TASK-258: the route map's 'editor' button
+const eb = ctx.__out.editorButton
+const ebCheck = { rect: null, after: null, lastLevelSlot: null, lastLevelBox: null, rightOfAfter: false, rightOfLast: false,
+    inside: false, overlaps: [], cardsChecked: 0 }
+if (!eb) problems.push('no editor button (routeEditorButton returned null)')
+else
+{
+    const R = rect(eb.rect[0], eb.rect[1], eb.rect[2], eb.rect[3]), box = a => rect(a[0], a[1], a[2], a[3])
+    const afterBox = box(ctx.__out.slotBox(eb.after))
+    const lastSlot = usedSlots.find(id => levelOfSlot[id] === levels.length - 1), lastBox = lastSlot ? box(ctx.__out.slotBox(lastSlot)) : null
+    Object.assign(ebCheck, { rect: R, after: eb.after, afterBox, lastLevelSlot: lastSlot, lastLevelBox: lastBox,
+        rightOfAfter: R.x1 >= afterBox.x2, rightOfLast: !!lastBox && R.x1 >= lastBox.x2, inside: inside(R) })
+    if (!ebCheck.rightOfAfter) problems.push('editor button is not right of slot ' + eb.after)
+    if (!ebCheck.rightOfLast) problems.push('editor button is not right of the last level slot ' + lastSlot)
+    if (!ebCheck.inside) problems.push('editor button ' + JSON.stringify(R) + ' is outside x 30..1250, y 30..772')
+    for (const id of usedSlots)
+    {
+        const sb = slotBoxes(id)
+        for (const [part, b] of [['platform', sb.platform], ['flag', sb.flag], ['flagRect', box(ctx.__out.flagRect(id))]])
+            if (hit(R, b)) ebCheck.overlaps.push([id, part])
+    }
+    for (const s of solids) if (s.box && hit(R, s.box)) ebCheck.overlaps.push([s.id, s.kind])
+    if (hit(R, menu)) ebCheck.overlaps.push(['menuIcon'])
+    if (!cards) problems.push('preview cards not computed: ' + cardsError)
+    else for (const c of cards)
+    {
+        ebCheck.cardsChecked++
+        if (hit(R, box(c.all))) ebCheck.overlaps.push(['card', c.srcId, c.side])
+    }
+    for (const o of ebCheck.overlaps) problems.push('editor button overlaps ' + o.join(' '))
+}
+
 const out = {
     pass: problems.length === 0,
     routemap: path.relative(process.cwd(), MAP_PATH),
@@ -183,6 +230,7 @@ const out = {
     offscreen: offscreen.length,
     menuIconRect: menu, menuOverlaps: menuOverlaps.length,
     noSlot: noSlot.length,
+    editorButton: ebCheck, editorButtonOverlaps: ebCheck.overlaps.length,
     assignment: Object.fromEntries(usedSlots.map(id => [id, levels[levelOfSlot[id]].srcId])),
     problems
 }

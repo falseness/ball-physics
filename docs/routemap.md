@@ -6,6 +6,15 @@ window (next level / restart / editor / Levels; TASK-255, both from `menuLayout(
 hovering or the first click/tap on a level shows its preview card, the card's play button or a
 second click/tap on the same level starts it. The HUD menu icon goes back to the pause menu.
 
+TASK-258: a plain `editor` button (the menus' `menuButton` look, 150x50) sits after the last level, on the floor row:
+`routeEditorButton(levels)` (js/routemap.js) puts it 20 px right of the box of the last used extra-branch slot
+(`routeAssign`; X7 = play-order level 27 with 27 levels), its bottom 4 px above that platform's top, so it follows the
+level count. A click or tap sends `ui:map_editor:map` and opens the editor on a blank level (`editorBlankLevel()`, the
+`new` content) with `editor.origin = 'map'` (`editor:open:new:map`); play-test / back, export and import work as
+usual, and `exit` returns to the map without writing anything into `levels[]` or changing `thisLevel`. Preview cards
+avoid the button (`mapCardLayout`), and map_check fails when the button leaves the 30..1250 area or overlaps a used
+flag / platform, an obstacle, a preview card or the menu icon.
+
 Files:
 
 | File | Role |
@@ -175,6 +184,8 @@ identical trails) and the `speed_*` scenarios of tests/visual/shoot.py.
    `branchLevels`, `slotsUsed`, `spareSlots` and `assignment`. The main branch keeps spare slots
    (M19-M27 at the time of writing, the validator requires at least 4); the extra branch
    (X1-X8) has one spare slot (X8); once it is used, a new non-portal level needs a new `X` slot.
+   The map's `editor` button follows the last used `X` slot: with X8 used it would leave the field, so
+   map_check fails until the floor row (or `ROUTE_EDITOR_BTN`) is rearranged.
 4. To add a slot, in `js/routemap.js`:
    - add `ID: [cx, top, w, s]` to `slots` (platform centre x, platform top y, platform width,
      flag scale; 1280x800 game coordinates);
@@ -191,7 +202,8 @@ identical trails) and the `speed_*` scenarios of tests/visual/shoot.py.
    map_check fails when a level has no slot, two slots are closer than 70 px, an obstacle / the
    wall / a portal intersects a platform or flag box, a hop is missing or references an unknown
    slot, a slot or obstacle is off the 30..1250 x 30..772 area, a slot overlaps the menu icon, or
-   fewer than 4 spare main slots remain. `problems` lists the failures.
+   fewer than 4 spare main slots remain, or the `editor` button (TASK-258) is misplaced or overlaps
+   something. `problems` lists the failures.
 6. Run the map scenarios: `python3 tests/visual/shoot.py --task <dir> --scenarios map,map_progress,map_open,map_play`.
 
 ## Debug hook

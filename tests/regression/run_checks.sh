@@ -1,7 +1,7 @@
 #!/bin/bash
 # Full physics/visual regression (ported from the TASK-213 tools). Usage:
 #   tests/regression/run_checks.sh <preview|full> <outdir>
-# preview (~3.5 min): a subset of every check. full (~17 min): 75 shoot scenarios (shard0..3.txt; TASK-248: 79 before srcId 8, 11, 14, 27, 29 were removed; TASK-257: + menu_layout), 24 sim
+# preview (~3.5 min): a subset of every check. full (~17 min): 76 shoot scenarios (shard0..3.txt; TASK-248: 79 before srcId 8, 11, 14, 27, 29 were removed; TASK-257: + menu_layout; TASK-258: + map_editor), 24 sim
 # scenarios, 12 portal fuzz runs, full invariants/rimtrap/embed. Everything is written under <outdir> (logs/*.log,
 # per-check JSON, shoot PNGs); <outdir>/regression.log is assembled at the end (tests/regression/assemble.py) and
 # ends with '# SUMMARY', 'failed rows: N [...]' and 'ALL PASS' when N = 0. Exit 0 = ALL PASS, 1 otherwise.

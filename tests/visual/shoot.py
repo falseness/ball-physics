@@ -142,6 +142,8 @@ WIN_RESTART_JS = menu_btn_js('win', 'restart')
 WIN_EDITOR_JS = menu_btn_js('win', 'editor')
 WIN_LEVELS_JS = menu_btn_js('win', 'Levels')
 LEVEL_POINT_JS = "i => routeLevelPoint(levels, i)"
+# TASK-258: centre of the route map's 'editor' button (routeEditorButton, js/routemap.js)
+MAP_EDITOR_BTN_JS = "(() => { const b = routeEditorButton(levels); return [b.x + b.w / 2, b.y + b.h / 2] })()"
 
 
 def open_map(page):
@@ -1956,7 +1958,8 @@ def telemetry_doc_ids():
             elif cell.startswith('facade'):
                 rows.append({'row': cell, 'kind': 'facade', 'fn': toks[0]})
             elif ':' in toks[0]:
-                ph = {'<srcId>': r'\d+', '<ctx>': r'(L\d+|map)', '<from>': '(menu|win)', '<h>': '[0-9a-f]{8}',
+                ph = {'<srcId>': r'\d+',  # TASK-258: <ctx> new, <from> map
+                      '<ctx>': r'(L\d+|map|new)', '<from>': '(menu|win|map)', '<h>': '[0-9a-f]{8}',
                       '<code>': '[a-z0-9_]{1,64}',  # TASK-232; TASK-234 <code>
                       # TASK-241: first-30 rows (load: / ctx: / f30:)
                       '<k>': '(new|ret)', '<step>': '(' + '|'.join(F30_STEPS + ['none']) + ')',
@@ -2079,6 +2082,13 @@ def sc_telemetry_ui(page, info):
             raise RuntimeError('map menu icon did not go back to the pause menu')
         step('map_close')
         click(p, *p.evaluate(LEVELS_BUTTON_JS))
+        click(p, *p.evaluate(MAP_EDITOR_BTN_JS))  # TASK-258: the map's editor button (ui:map_editor:map), exit -> map
+        if not p.evaluate("editorMode && editor.origin == 'map'"):
+            raise RuntimeError('map editor button did not open the editor')
+        editor_tool(p, 'exit')
+        if not p.evaluate("drawMap && !editorMode"):
+            raise RuntimeError('map editor exit did not go back to the map')
+        step('map_editor')
         pt = p.evaluate(LEVEL_POINT_JS, 1)
         click(p, *pt)  # select level 2: card shown
         play = p.evaluate("mapCardLayout(1).play")
@@ -3554,6 +3564,153 @@ def sc_menu_layout(page, info):
         raise RuntimeError('menu click check failed: %s' % [k for k, c in clicks.items() if not c['pass']])
 
 
+# TASK-258: the route map's 'editor' button after the last level (routeEditorButton, js/routemap.js). Own none-backend
+# context (telemetry_page): open the map (map.png), check the button rect against the last level's slot box, the field,
+# the used flags / platforms, every preview card and the menu icon (plus tests/visual/map_check.mjs's own editorButton
+# check); click it -> editor on a blank level (editorBlankLevel), editor.origin 'map'; line tool + one line; play-test and
+# the HUD 'edit' box back; export (download = the working copy); import (a changed copy replaces it); exit -> the map, with
+# levels[] (sha256 of JSON.stringify) and thisLevel unchanged. A second context taps (touch) menu icon, 'Levels' and the
+# button. Writes map_editor.json, levels_unchanged.json, telemetry.json (+ map.png, export_level.json, import_level.json).
+MAP_EDITOR_STATE_JS = """() => ({drawMap, drawMenu, editorMode, thisLevel, srcId: levels[thisLevel].srcId, playtest: !!playtestLevel,
+    origin: editor.origin, working: editor.level ? editorLevelToJSON(editor.level) : null, physics, levelCompletedWindow})"""
+MAP_EDITOR_RECTS_JS = """() => {
+    const b = routeEditorButton(levels), A = routeAssign(levels), last = routeSlotOf(levels, levels.length - 1)
+    const hit = (a, c) => a[0] < c[2] && c[0] < a[2] && a[1] < c[3] && c[1] < a[3], R = b.rect, over = []
+    for (const id in A) { if (hit(R, routeSlotBox(id))) over.push(['slotBox', id]); if (hit(R, routeFlagRect(id))) over.push(['flagRect', id]) }
+    for (const c of mapCardCheck()) if (hit(R, c.all)) over.push(['card', c.srcId])
+    if (hit(R, mapMenuIconBox())) over.push(['menuIcon'])
+    return {button: b, drawn: window.mapEditorBtn, lastIndex: levels.length - 1, lastSrcId: levels[levels.length - 1].srcId,
+        lastSlot: last, lastSlotBox: routeSlotBox(last), field: [GAME_W, GAME_H], cards: mapCardCheck().length, overlaps: over} }"""
+MAP_EDITOR_EVENTS_JS = "() => ANALYTICS.debugLog.filter(e => e.fn == 'addDesignEvent').map(e => [e.args[0], e.args[1] ?? null])"
+
+
+def map_editor_levels_sha(p):
+    import hashlib
+    return hashlib.sha256(p.evaluate("JSON.stringify(levels)").encode('utf-8')).hexdigest()
+
+
+def sc_map_editor(page, info):
+    import subprocess
+    errors = []
+    d = {}
+    with telemetry_page(page, errors) as p:
+        backend = p.evaluate("ANALYTICS_BACKEND.backendId")
+        tb = lambda bid: editor_tool(p, bid)
+        open_map(p)
+        frames(p, 3)
+        p.screenshot(path=os.path.join(OUT_DIR, 'map.png'))
+        rects = p.evaluate(MAP_EDITOR_RECTS_JS)
+        R, LB = rects['button']['rect'], rects['lastSlotBox']
+        mc = json.loads(subprocess.run(['node', os.path.join(ROOT, 'tests', 'visual', 'map_check.mjs')], capture_output=True,
+                                       text=True, cwd=ROOT).stdout)
+        rects.update({'rightOfLastSlot': R[0] >= LB[2], 'insideField': R[0] >= 0 and R[1] >= 0 and R[2] <= 1280 and R[3] <= 800,
+                      'drawnMatches': rects['drawn'] == rects['button'],
+                      'mapCheck': {'pass': mc['pass'], 'editorButton': mc['editorButton'], 'editorButtonOverlaps': mc['editorButtonOverlaps']}})
+        d['button'] = rects
+        before = p.evaluate(MAP_EDITOR_STATE_JS)
+        sha0 = map_editor_levels_sha(p)
+        click(p, *p.evaluate(MAP_EDITOR_BTN_JS))
+        opened = p.evaluate(MAP_EDITOR_STATE_JS)
+        blank = p.evaluate("editorLevelToJSON(editorBlankLevel())")
+        opened['workingIsBlank'] = opened['working'] == blank
+        p.screenshot(path=os.path.join(OUT_DIR, 'editor_open.png'))
+        tb('line')
+        click(p, *EDITOR_LINE[0])
+        click(p, *EDITOR_LINE[1])
+        line_added = p.evaluate("editor.level.lines.length")
+        tb('play')
+        playtest = p.evaluate(MAP_EDITOR_STATE_JS)
+        frames(p, 10)
+        click(p, *box_centre(p, "editIconRect()"))
+        back = p.evaluate(MAP_EDITOR_STATE_JS)
+        with p.expect_download() as dl:
+            tb('export')
+        exp_path = os.path.join(OUT_DIR, 'export_level.json')
+        dl.value.save_as(exp_path)
+        with open(exp_path) as f:
+            exported = f.read()
+        working = p.evaluate("editorLevelToJSON(editor.level)")
+        imp = json.loads(exported)
+        imp['ballX'] = 420
+        imp_path = os.path.join(OUT_DIR, 'import_level.json')
+        with open(imp_path, 'w') as f:
+            json.dump(imp, f, separators=(',', ':'))
+
+        def pick():
+            n = p.evaluate("ANALYTICS.debugLog.length")
+            p.set_input_files('#editorImportFile', imp_path)
+            p.wait_for_function(EDITOR_IMPORT_WAIT_JS, arg=n, timeout=10000, polling=50)
+        tb('import')
+        pick()
+        imported = p.evaluate(MAP_EDITOR_STATE_JS)
+        tb('exit')
+        frames(p, 3)
+        after = p.evaluate(MAP_EDITOR_STATE_JS)
+        sha1 = map_editor_levels_sha(p)
+        p.screenshot(path=os.path.join(OUT_DIR, 'map_after_exit.png'))
+        events = p.evaluate(MAP_EDITOR_EVENTS_JS)
+    errs_touch = []
+    with telemetry_page(page, errs_touch, has_touch=True) as t:
+        for pt in (t.evaluate(MENU_ICON_JS), t.evaluate(LEVELS_BUTTON_JS), t.evaluate(MAP_EDITOR_BTN_JS)):
+            t.touchscreen.tap(*to_client(t, *pt))
+            frames(t)
+        touch_open = t.evaluate(MAP_EDITOR_STATE_JS)
+        touch_open['workingIsBlank'] = touch_open['working'] == t.evaluate("editorLevelToJSON(editorBlankLevel())")
+        t.touchscreen.tap(*to_client(t, *t.evaluate(EDITOR_BTN_CENTRE_JS, 'exit')))
+        frames(t, 3)
+        touch_after = t.evaluate(MAP_EDITOR_STATE_JS)
+        touch_events = t.evaluate(MAP_EDITOR_EVENTS_JS)
+    ids = [e[0] for e in events]
+    d.update({
+        'before': before, 'opened': opened, 'lineAdded': line_added, 'playtest': playtest, 'back': back,
+        'export': {'file': exported, 'equalsWorking': exported == working, 'lines': len(imp['lines'])},
+        'imported': {'ballX': json.loads(imported['working'])['ballX'], 'replaced': json.loads(imported['working']) == {**json.loads(working), 'ballX': 420}},
+        'after': after,
+        'touch': {'opened': touch_open, 'after': touch_after, 'consoleErrors': errs_touch,
+                  'events': [e for e in touch_events if e[0].startswith(('ui:map', 'editor:open', 'editor:exit'))]},
+        'consoleErrors': errors})
+    checks = {
+        'buttonRightOfLastSlot': rects['rightOfLastSlot'], 'buttonInsideField': rects['insideField'],
+        'buttonOverlaps0': not rects['overlaps'] and mc['editorButtonOverlaps'] == 0 and mc['pass'], 'buttonDrawn': rects['drawnMatches'],
+        'mapBefore': before['drawMap'] and not before['editorMode'],
+        'openEditorMode': opened['editorMode'] and not opened['drawMap'], 'openBlank': opened['workingIsBlank'], 'openOriginMap': opened['origin'] == 'map',
+        'lineAdded': line_added == 1, 'playtestStarted': playtest['playtest'] and not playtest['editorMode'],
+        'playtestBack': back['editorMode'] and not back['playtest'] and back['working'] == working,
+        'exportIsWorking': exported == working and len(imp['lines']) == 1,
+        'importReplaced': d['imported']['replaced'],
+        'exitDrawMap': after['drawMap'] and not after['editorMode'] and after['origin'] is None and not after['playtest'],
+        'thisLevelUnchanged': after['thisLevel'] == before['thisLevel'],
+        'touchOpens': touch_open['editorMode'] and touch_open['origin'] == 'map' and touch_open['workingIsBlank'],
+        'touchExitMap': touch_after['drawMap'] and not touch_after['editorMode'],
+        'noConsoleErrors': not errors and not errs_touch}
+    d['checks'] = checks
+    d['pass'] = all(checks.values())
+    with open(os.path.join(OUT_DIR, 'map_editor.json'), 'w') as f:
+        json.dump(d, f, separators=(',', ':'))
+    lv = {'before': sha0, 'after': sha1, 'equal': sha0 == sha1, 'thisLevelBefore': before['thisLevel'], 'thisLevelAfter': after['thisLevel']}
+    lv['pass'] = lv['equal'] and lv['thisLevelBefore'] == lv['thisLevelAfter']
+    with open(os.path.join(OUT_DIR, 'levels_unchanged.json'), 'w') as f:
+        json.dump(lv, f, separators=(',', ':'))
+    tel = {'backend': backend, 'events': [e for e in events if e[0].startswith(('ui:map', 'editor:', 'edit:'))],
+           'touchEvents': d['touch']['events']}
+    tel['checks'] = {
+        'backendNone': backend == 'none',
+        'uiMapEditor': ['ui:map_editor:map', None] in events,
+        'editorOpenMap': ['editor:open:new:map', None] in events,
+        'uiBeforeOpen': 'ui:map_editor:map' in ids and 'editor:open:new:map' in ids and ids.index('ui:map_editor:map') < ids.index('editor:open:new:map'),
+        'sessionCtxNew': all(':new' in e[0] for e in events if e[0].startswith('editor:') and not e[0].startswith('editor:open:new')) and
+                          any(e[0] == 'editor:exit:new' for e in events),
+        'touchUiMapEditor': ['ui:map_editor:map', None] in touch_events and ['editor:open:new:map', None] in touch_events}
+    tel['pass'] = all(tel['checks'].values())
+    with open(os.path.join(OUT_DIR, 'telemetry.json'), 'w') as f:
+        json.dump(tel, f, separators=(',', ':'))
+    info['mapEditor'] = {'pass': d['pass'], 'levelsUnchanged': lv['pass'], 'telemetry': tel['pass']}
+    open_map(page)  # the scenario's own screenshot (map_editor.png) shows the map with the button
+    frames(page, 3)
+    if not (d['pass'] and lv['pass'] and tel['pass']):
+        raise RuntimeError('map_editor check failed: %s %s %s' % ([k for k, v in checks.items() if not v], lv, [k for k, v in tel['checks'].items() if not v]))
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3_open': sc_level3,  # level 3 opened, no lines (was 'level3' before TASK-202)
@@ -3631,6 +3788,7 @@ SCENARIOS = {
     'telemetry_editor': sc_telemetry_editor,
     'telemetry_first30': sc_telemetry_first30,
     'menu_layout': sc_menu_layout,
+    'map_editor': sc_map_editor,  # TASK-258
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

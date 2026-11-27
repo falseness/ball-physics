@@ -1,1 +1,1 @@
-level3_open,menu,complete_next,editor,level2,level6,level10,level18,level22,level26,level30,l24_center_entry,map,map_touch,map_card_edge,lines_passed_restore,lines_backends,speed_hidden
+level3_open,menu,complete_next,editor,level2,level6,level10,level18,level22,level26,level30,l24_center_entry,map,map_touch,map_card_edge,lines_passed_restore,lines_backends,speed_hidden,map_editor

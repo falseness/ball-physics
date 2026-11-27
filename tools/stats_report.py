@@ -24,9 +24,9 @@ UI_RE = re.compile(r'^ui:([a-z_]+):(L\d+|map)$')
 SESSION_RE = re.compile(r'^session:(play_seconds|hide|levels_seen)$')
 PROG_RE = re.compile(r'^(Start|Complete|Fail):L(\d+)$')
 # TASK-236: editor (TASK-232..234) and play-test (TASK-235) events, docs/telemetry.md 'Editor events'
-EDITOR_RE = re.compile(r'^editor:([a-z_]+):(L\d+)(?::(.+))?$')
+EDITOR_RE = re.compile(r'^editor:([a-z_]+):(L\d+|new)(?::(.+))?$')  # TASK-258: ctx 'new' = route-map session
 EDITOR_REST = {  # name -> pattern of the parts after <ctx> (None = no more parts)
-    'open': r'(menu|win)', 'sum': r'([0-9a-f]{8}):(lines|portals|linek|changed)', 'actions': None, 'exit': None,
+    'open': r'(menu|win|map)', 'sum': r'([0-9a-f]{8}):(lines|portals|linek|changed)', 'actions': None, 'exit': None,
     'abandon': None, 'tool': r'(select|line|portal|delete)', 'snap': r'(on|off)', 'rotate': r'(cw|ccw):(flag|portal|line)',
     'portal_size': r'(bigger|smaller)', 'linek': r'(inc|dec)', 'btn': r'(new|play|export|import|exit)',
     'import': r'(ok|invalid|old_format)', 'bar_move': None, 'line': r'(add|cancel)', 'line_move': r'(ok|refused)',
@@ -145,10 +145,10 @@ def editor_event(ed, eid, val, elevels):
     a = r.group(1) if r else None
     if name == 'open':
         ed['sessions'] += 1
-        ed['opens'][a] += 1
+        ed['opens'][a] = ed['opens'].get(a, 0) + 1  # TASK-258: 'map' only when seen
         lv = elevels.setdefault(ctx, {'opens': 0, 'from': {'menu': 0, 'win': 0}, 'exits': 0, 'abandons': 0, '_users': set()})
         lv['opens'] += 1
-        lv['from'][a] += 1
+        lv['from'][a] = lv['from'].get(a, 0) + 1
     elif name == 'sum':
         hs = ed['hashes'].setdefault(a, new_hash())
         if ctx not in hs['ctx']:

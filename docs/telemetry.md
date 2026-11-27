@@ -88,6 +88,7 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `ui:map_open:<ctx>` | pause menu or completion window 'Levels' opens the route map (TASK-255: the completion window has no `menu_close`; TASK-256: after a win it sends no `abandon`, the won attempt is already closed; a play-test's completion window sends no `ui:` event) | - | TASK-192 |
 | `ui:map_close:<ctx>` | the map closes: its menu icon (back to the pause menu) or a level starts from it | - | TASK-192 |
 | `ui:map_level:<ctx>` | a click / tap on a level slot on the map (selects it, or starts the selected one) | srcId of that level | TASK-192 |
+| `ui:map_editor:<ctx>` | the route map's `editor` button after the last level (`<ctx>` = `map`); then `editor:open:new:map` | - | TASK-258 |
 | `ui:preview_play:<ctx>` | the preview card's play button | srcId of that level | TASK-192 |
 | `ui:next_level:<ctx>` | completion window 'next level' (buttons top to bottom: next level / restart / editor / Levels; no 'next level' on the last level or in a play-test, TASK-255) | - | TASK-192 |
 | `ui:speed_on:<ctx>` | the HUD speed box switches to 3x | - | TASK-192 |
@@ -102,7 +103,7 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `session:play_seconds` | active play time reaches a milestone | 30, 60, 120, 300, 600 (each once per session) | TASK-192 |
 | `session:hide` | `visibilitychange` to hidden | - | TASK-192 |
 | `session:levels_seen` | `pagehide` (before `flush` / `endSession`) | distinct srcIds with an attempt this session | TASK-192 |
-| `editor:open:<ctx>:<from>` | the editor opens; `<from>` = `menu` (pause menu button) or `win` (completion window button) | - | TASK-232 |
+| `editor:open:<ctx>:<from>` | the editor opens; `<from>` = `menu` (pause menu button), `win` (completion window button) or `map` (the route map's `editor` button, TASK-258: a blank level, so `<ctx>` = `new` for every `editor:` event of that session; its `exit` returns to the map and changes no level) | - | TASK-232 |
 | `editor:sum:<ctx>:<h>:lines` | level summary at `play`, `export` and `exit`, before the action | level lines | TASK-232 |
 | `editor:sum:<ctx>:<h>:portals` | same moment, after `lines` | portals (0 or 2) | TASK-232 |
 | `editor:sum:<ctx>:<h>:linek` | same moment, after `portals` | `lineK` | TASK-232 |
@@ -353,9 +354,9 @@ Writes `DIR/report.json` and `DIR/report.md`:
   drag rejected, over the limit, runs, max lines used; button counts by name (and by `<ctx>`), play seconds (sum of
   the highest `session:play_seconds` milestone per session), hides, totals;
 - per level: users tried / won, attempts, wins, win rate (wins / attempts), median attempt number of the first win.
-- `editor` (TASK-236), from the `editor:` / `edit:` rows of the catalogue (`<ctx>` = `L<srcId>` the editor was opened on,
+- `editor` (TASK-236), from the `editor:` / `edit:` rows of the catalogue (`<ctx>` = `L<srcId>` the editor was opened on, or `new` for a route-map session,
   `<h>` = 8-hex FNV-1a of `editorLevelToJSON`, see "Editor events"):
-  - `editor.users[<user>]` (users with any editor / play-test event): editor sessions (`open`) by source (`menu` / `win`),
+  - `editor.users[<user>]` (users with any editor / play-test event): editor sessions (`open`) by source (`menu` / `win`; `map` once seen, TASK-258),
     exits, abandons, seconds in the editor (sum of `exit` + `abandon` values, play-test time already excluded),
     actions (counted: every editor event except `open`, `sum`, `actions`, `exit`, `abandon`, `error`) and
     `actions_reported` (sum of the `editor:actions` values; the two agree for complete sessions), event counts by name
