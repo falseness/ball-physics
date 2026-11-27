@@ -42,6 +42,7 @@ document.addEventListener('mousemove', function(event)
 // Line being drawn: faint construction line running 60px past both ends,
 // a firmer 1.6px segment between the actual endpoints and a handwritten (x, y) readout of the cursor end
 // l defaults to the in-progress player line (the editor passes its own preview)
+const NEWLINE_FONT = 20
 function drawNewLine(l = line)
 {
     if (!l)
@@ -63,7 +64,11 @@ function drawNewLine(l = line)
     ctx.fillStyle = THEME.ink
     ctx.beginPath(); ctx.arc(x1, y1, 2.5, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = THEME.soft
-    ctx.font = '20px ' + THEME.fontStack; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-    ctx.fillText('(' + Math.round(x2) + ', ' + Math.round(y2) + ')', x2 + 14, y2 + 34)
+    ctx.font = NEWLINE_FONT + 'px ' + THEME.fontStack; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+    const t = '(' + Math.round(x2) + ', ' + Math.round(y2) + ')', w = ctx.measureText(t).width
+    // TASK-263: right of the cursor end, mirrored to its left when the readout would pass the field's right edge;
+    // above the cursor when it would pass the bottom edge
+    const tx = x2 + 14 + w > GAME_W - 4 ? x2 - 14 - w : x2 + 14, ty = y2 + 34 > GAME_H - 6 ? y2 - 16 : y2 + 34
+    ctx.fillText(t, Math.max(4, tx), ty)
     ctx.restore()
 }

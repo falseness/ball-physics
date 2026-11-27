@@ -171,6 +171,7 @@ function drawDimension(l)
     ctx.restore()
     return label
 }
+const TARGET_LABEL_FONT = 26
 function drawTargetLeader(x, y)
 {
     if (flag.length < 5)
@@ -181,6 +182,21 @@ function drawTargetLeader(x, y)
     let sx = tx >= px ? 1 : -1, sy = ty > py ? 1 : -1
     if (tx + sx * 140 > GAME_W - 40 || tx + sx * 140 < 40) sx = -sx
     if (ty + sy * 70 < 40 || ty + sy * 70 > GAME_H - 40) sy = -sy
+    // TASK-263: the first of (sx, sy), (-sx, sy), (sx, -sy), (-sx, -sy) whose label stays in the field and clear of
+    // the fixed labels (fixedLabelBoxes); none free -> the first
+    ctx.save(); ctx.font = TARGET_LABEL_FONT + 'px ' + THEME.fontStack
+    const tw = ctx.measureText('target').width
+    ctx.restore()
+    const fixed = fixedLabelBoxes()
+    const labelBox = (dx, dy) =>
+    {
+        const lx = tx + dx * 76, ly = ty + dy * 60
+        return dx > 0 ? [lx, ly - TARGET_LABEL_FONT / 2, lx + tw, ly + TARGET_LABEL_FONT / 2] : [lx - tw, ly - TARGET_LABEL_FONT / 2, lx, ly + TARGET_LABEL_FONT / 2]
+    }
+    const free = ([dx, dy]) => { const b = labelBox(dx, dy)
+        return b[0] >= 4 && b[2] <= GAME_W - 4 && b[1] >= 0 && b[3] <= GAME_H && !fixed.some(f => boxesTouch(b, f)) }
+    const pick = [[sx, sy], [-sx, sy], [sx, -sy], [-sx, -sy]].find(free)
+    if (pick) [sx, sy] = pick
     const ex = tx + sx * 70, ey = ty + sy * 60
     const R = sketchRng(sketchSeed([x, y, tx, ty, 11]))
     ctx.save()
@@ -189,7 +205,7 @@ function drawTargetLeader(x, y)
     ctx.fillStyle = THEME.soft
     ctx.beginPath(); ctx.arc(tx + sx * 6, ty + sy * 5, 2, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
-    annotText('target', ex + sx * 6, ey, 26, THEME.ink, 0, sx > 0 ? 'left' : 'right')
+    annotText('target', ex + sx * 6, ey, TARGET_LABEL_FONT, THEME.ink, 0, sx > 0 ? 'left' : 'right')
     return 'target'
 }
 function firstSlopedLevelLine()
@@ -233,11 +249,12 @@ function calloutGeom(l)
     const d = LINE_HATCH_DEPTH
     const band = [[x1, y1], [x2, y2], [x2 + n[0] * d, y2 + n[1] * d], [x1 + n[0] * d, y1 + n[1] * d]]
     const boxAt = (cx, cy) => ({ x: cx - w / 2, y: cy - h / 2, w: w, h: h })
+    const fixed = fixedLabelBoxes()
     let box = null, push = 0, shift = 0
     for (push = 0; push <= CALLOUT_PUSH_MAX; push += 2)
     {
         box = boxAt(x1 + bx * (r + CALLOUT_LABEL_GAP + push), y1 + by * (r + CALLOUT_LABEL_GAP + push))
-        if (!calloutBoxBlocked(box, band))
+        if (!calloutBoxBlocked(box, band, fixed))
             break
     }
     if (push > CALLOUT_PUSH_MAX)
@@ -249,7 +266,7 @@ function calloutGeom(l)
         for (shift = 2; shift <= CALLOUT_SHIFT_MAX; shift += 2)
         {
             box = boxAt(cx - n[0] * shift, cy - n[1] * shift)
-            if (!calloutBoxBlocked(box, band))
+            if (!calloutBoxBlocked(box, band, fixed))
                 break
         }
     }
@@ -257,11 +274,38 @@ function calloutGeom(l)
         labelBox: box, push: push, shift: shift, label: label, deg: deg, solidNormal: n, line: [x1, y1, x2, y2] }
 }
 // true when the box crosses the line segment / hatch parallelogram band, or leaves the field
-function calloutBoxBlocked(b, band)
+// (TASK-263: or touches a fixed label: the start marker's 'start' or a portal label)
+function calloutBoxBlocked(b, band, fixed = fixedLabelBoxes())
 {
     if (b.x < 0 || b.y < 0 || b.x + b.w > GAME_W || b.y + b.h > GAME_H)
         return true
-    return convexOverlap([[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]], band)
+    const B = [b.x, b.y, b.x + b.w, b.y + b.h]
+    return convexOverlap(boxPoly(B), band) || fixed.some(f => boxesTouch(B, f))
+}
+function boxPoly(b)
+{
+    return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]
+}
+function boxesTouch(a, b, pad = 2)
+{
+    return a[0] < b[2] + pad && b[0] < a[2] + pad && a[1] < b[3] + pad && b[1] < a[3] + pad
+}
+// TASK-263: [x0, y0, x1, y1] of the labels with a fixed place on the current level, which the angle callout and the
+// target leader keep clear of: 'start' (startLabelPos, drawn before the run) and the portal labels (portalLabelPos)
+function fixedLabelBoxes()
+{
+    const L = curLevel(), out = [startLabelPos(L.ballX, L.ballY).box]
+    const P = currentPortals()
+    if (P)
+        P.forEach((p, i) =>
+        {
+            const label = PORTAL_STYLE[i % 2].label, lp = portalLabelPos(p, label)
+            ctx.save(); ctx.font = PORTAL_LABEL_FONT + 'px ' + THEME.fontStack
+            const w = ctx.measureText(label).width
+            ctx.restore()
+            out.push([lp.x - w / 2, lp.y - PORTAL_LABEL_FONT, lp.x + w / 2, lp.y + 6])
+        })
+    return out
 }
 // separating-axis test for two convex polygons (touching counts as overlap)
 function convexOverlap(P, Q)

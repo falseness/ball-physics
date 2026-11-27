@@ -3798,6 +3798,217 @@ def sc_map_editor(page, info):
         raise RuntimeError('map_editor check failed: %s %s %s' % ([k for k, v in checks.items() if not v], lv, [k for k, v in tel['checks'].items() if not v]))
 
 
+# TASK-263: text fit of every game-screen label after the Finger Paint switch. A fillText hook on the game ctx records
+# each label drawn while __fitOn (text, ctx.font, measureText width, the ink + advance box mapped through the current
+# transform into logical 1280x800 coordinates) and the drawing function from the call stack. Rows (one per site +
+# text, worst position over every state it was drawn in) get their box: menu buttons -> the menuLayout button rect,
+# the logo title and the win-window labels -> the panel, the '3x' label -> speedIconRect(), the rest -> the field.
+# ok = textWidth <= boxWidth - 8, inside the box and the field (x and y), size >= 14 px, family Finger Paint;
+# fit_overlaps: no two static labels of one state intersect.
+# States: level 1 at boot (guide hints, start marker), the line being drawn (newline readout), a placed line
+# (dimension / angle labels), the run (trail labels, live readout, 3x box), the pause menu, every level at its start
+# (portal labels, angle callouts, target leaders), the win window and the last-level win window ('Thanks for playing!').
+# Writes fit.json and level1.png, pause.png, win.png, win_last.png, portal.png.
+FIT_HOOK_JS = r"""() => {
+    if (window.__fitHook) return
+    window.__fitHook = true; window.__fit = []; window.__fitOn = false; window.__fitTag = ''
+    const P = CanvasRenderingContext2D.prototype, orig = P.fillText
+    const skip = /^(menuLabel|annotText)$|fillText/
+    P.fillText = function(t, x, y) {
+        if (this === ctx && window.__fitOn) {
+            const names = (new Error().stack || '').split('\n').slice(1)
+                .map(l => (l.match(/at (?:Object\.|window\.)?([\w$.]+) \(/) || [])[1]).filter(n => n && !skip.test(n))
+            const m = this.measureText(t), T = this.getTransform(), k = canvas.width / GAME_W
+            const al = this.textAlign, w = m.width
+            const lx = al == 'center' ? x - w / 2 : (al == 'right' || al == 'end') ? x - w : x
+            const ix0 = Math.min(lx, x - m.actualBoundingBoxLeft), ix1 = Math.max(lx + w, x + m.actualBoundingBoxRight)
+            const iy0 = y - m.actualBoundingBoxAscent, iy1 = y + m.actualBoundingBoxDescent
+            const pts = [[ix0, iy0], [ix1, iy0], [ix1, iy1], [ix0, iy1]].map(([u, v]) =>
+                [(T.a * u + T.c * v + T.e) / k, (T.b * u + T.d * v + T.f) / k])
+            const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
+            const r = {tag: window.__fitTag, fn: names[0] || '?', text: String(t), font: this.font, align: al,
+                textWidth: w * Math.hypot(T.a, T.b) / k, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys)}
+            if (r.fn == 'menuButton' || r.fn == 'drawMenuLayout' || r.fn == 'drawLogo') {
+                const L = menuLayout(drawMenu ? 'pause' : 'win'), b = L.buttons.find(b => b.id == r.text)
+                r.box = r.fn == 'menuButton' && b ? [b.rect[0], b.rect[1], b.rect[0] + b.rect[2], b.rect[1] + b.rect[3]]
+                    : [L.panel[0], L.panel[1], L.panel[0] + L.panel[2], L.panel[1] + L.panel[3]]
+            } else if (r.fn == 'drawSpeedIcon') {
+                const s = speedIconRect(); r.box = [s[0], s[1], s[0] + s[2], s[1] + s[3]]
+            } else
+                r.box = [0, 0, GAME_W, GAME_H]
+            const key = [r.tag, r.fn, r.text, Math.round(r.x0), Math.round(r.y0)].join('|')
+            if (!window.__fitSeen) window.__fitSeen = new Set()
+            if (!window.__fitSeen.has(key)) { window.__fitSeen.add(key); window.__fit.push(r) }
+        }
+        return orig.apply(this, arguments)
+    }
+}"""
+FIT_WHERE = {'menuButton': 'menu_button', 'drawLogo': 'logo_title', 'drawMenuLayout': 'menu_label', 'drawSpeedIcon': 'speed_box',
+             'guide': 'guide_hint', 'drawStartMarker': 'start_marker', 'drawPortal': 'portal_label', 'drawNewLine': 'newline_readout',
+             'drawAngleCallout': 'angle_callout', 'drawTargetLeader': 'target_leader', 'drawDimension': 'dimension_label',
+             'drawPlayerAngle': 'player_angle'}
+# sites whose text changes from frame to frame (numbers): one row per site and state, the worst label of that state
+FIT_NUMERIC = ('trail_arrow', 'trail_live', 'newline_readout', 'dimension_label', 'player_angle', 'angle_callout')
+FIT_SITES = ('menu_button', 'logo_title', 'menu_label', 'speed_box', 'guide_hint', 'start_marker', 'portal_label', 'newline_readout',
+             'angle_callout', 'target_leader', 'dimension_label', 'player_angle', 'trail_arrow', 'trail_live')
+
+
+def fit_capture(p, tag, n=2):
+    p.evaluate("t => { window.__fitTag = t; window.__fitOn = true }", tag)
+    frames(p, n)
+    p.evaluate("() => { window.__fitOn = false }")
+
+
+def fit_where(r):
+    if r['fn'] == 'trailAnnotate':
+        return 'trail_live' if r['text'].startswith('v = ') else 'trail_arrow'
+    return FIT_WHERE.get(r['fn'], r['fn'])
+
+
+def fit_rows(recs):
+    rows = {}
+    for r in recs:
+        where = fit_where(r)
+        key = (where, r['tag']) if where in FIT_NUMERIC else (where, r['text'])
+        m = re.match(r'(\d+(?:\.\d+)?)px (.*)$', r['font'])
+        size, family = (float(m.group(1)), m.group(2)) if m else (0, r['font'])
+        bx0, by0, bx1, by1 = r['box']
+        bw = bx1 - bx0
+        margin = min(r['x0'] - bx0, bx1 - r['x1'], r['y0'] - by0, by1 - r['y1'])
+        cur = rows.get(key)
+        if cur is None or r['textWidth'] - bw > cur['textWidth'] - cur['boxWidth'] or margin < cur['_margin']:
+            rows[key] = cur = {'where': where, 'text': r['text'], 'font': r['font'], 'size': size, 'textWidth': round(r['textWidth'], 2),
+                               'boxWidth': bw, 'box': [round(v, 1) for v in r['box']], 'x0': round(r['x0'], 2), 'x1': round(r['x1'], 2),
+                               'y0': round(r['y0'], 2), 'y1': round(r['y1'], 2), '_margin': margin, 'states': (cur or {}).get('states', [])}
+        if r['tag'] not in cur['states']:
+            cur['states'].append(r['tag'])
+        cur['familyOk'] = '"Finger Paint"' in family
+    out = []
+    for row in rows.values():
+        bx0, by0, bx1, by1 = row['box']
+        row['checks'] = {
+            'width': row['textWidth'] <= row['boxWidth'] - 8,
+            'inBox': row['x0'] >= bx0 and row['x1'] <= bx1 and row['y0'] >= by0 and row['y1'] <= by1,
+            'inField': row['x0'] >= 0 and row['x1'] <= 1280 and row['y0'] >= 0 and row['y1'] <= 800,
+            'size': row['size'] >= 14, 'family': row.pop('familyOk')}
+        row['margin'] = round(row.pop('_margin'), 2)
+        row['ok'] = all(row['checks'].values())
+        out.append(row)
+    out.sort(key=lambda r: (FIT_SITES.index(r['where']) if r['where'] in FIT_SITES else 99, r['text']))
+    return out
+
+
+# static labels of one state whose boxes intersect (trail labels move with the ball every frame and the menus' own
+# labels are compared only with each other: the field behind the panel is dimmed and covered)
+FIT_MENU_SITES = ('menu_button', 'logo_title', 'menu_label')
+
+
+def fit_overlaps(recs):
+    out = []
+    by_tag = {}
+    for r in recs:
+        w = fit_where(r)
+        if w in ('trail_arrow', 'trail_live'):
+            continue
+        layer = 'menu' if w in FIT_MENU_SITES else 'field'
+        if r['tag'] in ('pause', 'win', 'winLast') and layer == 'field':
+            continue
+        by_tag.setdefault(r['tag'], []).append((w, r))
+    for tag, rs in by_tag.items():
+        for i in range(len(rs)):
+            for j in range(i + 1, len(rs)):
+                (wa, a), (wb, b) = rs[i], rs[j]
+                if (wa, a['text'], round(a['x0']), round(a['y0'])) == (wb, b['text'], round(b['x0']), round(b['y0'])):
+                    continue
+                if a['x0'] < b['x1'] and b['x0'] < a['x1'] and a['y0'] < b['y1'] and b['y0'] < a['y1']:
+                    out.append({'state': tag, 'a': [wa, a['text'], [round(a['x0']), round(a['y0']), round(a['x1']), round(a['y1'])]],
+                                'b': [wb, b['text'], [round(b['x0']), round(b['y0']), round(b['x1']), round(b['y1'])]]})
+    return out
+
+
+def fit_win(page, kind, png, errs):
+    with telemetry_page(page, errs) as p:
+        p.evaluate(FIT_HOOK_JS)
+        menu_page_setup(p, kind)
+        frames(p)
+        fit_capture(p, kind)
+        p.screenshot(path=os.path.join(OUT_DIR, png))
+        return p.evaluate("window.__fit")
+
+
+def sc_font_fit(page, info):
+    page.evaluate(FIT_HOOK_JS)
+    if page.evaluate("levels[thisLevel].srcId") != 1:
+        raise RuntimeError('boot did not open srcId 1')
+    frames(page)
+    fit_capture(page, 'level1')
+    (x1, y1), (x2, y2) = LINE_X
+    click(page, x1, y1)
+    move(page, x2, y2)
+    frames(page)
+    fit_capture(page, 'newline')
+    # a second readout near the right edge (the readout is left-aligned at x2 + 14)
+    move(page, 1180, 640)
+    frames(page)
+    fit_capture(page, 'newline_right')
+    move(page, 1250, 790)
+    frames(page)
+    fit_capture(page, 'newline_corner')
+    move(page, x2, y2)
+    frames(page)
+    click(page, x2, y2)  # level 1 has lineK 1: the line starts the run
+    if not page.evaluate("levelStarted && physics"):
+        raise RuntimeError('the level-1 line did not start the run')
+    for i in range(8):  # trail arrows, live readout and the 3x box over the run
+        page.wait_for_timeout(120)
+        fit_capture(page, 'run', 1)
+    click(page, *page.evaluate(PLAY_ICON_JS))  # pause: line, dimension, angle labels stay
+    frames(page)
+    fit_capture(page, 'run_paused')
+    page.evaluate("() => { physics = false; levelChoosed(thisLevel) }")  # level 1 again, the placed line kept
+    frames(page)
+    fit_capture(page, 'level1_line')
+    page.screenshot(path=os.path.join(OUT_DIR, 'level1.png'))
+    open_menu(page)
+    if not page.evaluate("drawMenu"):
+        raise RuntimeError('pause menu did not open')
+    frames(page)
+    fit_capture(page, 'pause')
+    page.screenshot(path=os.path.join(OUT_DIR, 'pause.png'))
+    click(page, *page.evaluate(PAUSE_RESUME_JS))
+    frames(page)
+    portal_shot = None
+    for i in range(page.evaluate("levels.length")):  # every level at its start
+        sid = page.evaluate("i => { physics = false; thisLevel = i; levelChoosed(i); return levels[i].srcId }", i)
+        frames(page)
+        fit_capture(page, 'L%s' % sid)
+        if portal_shot is None and page.evaluate("!!(currentPortals() && currentPortals().length)"):
+            portal_shot = sid
+            page.screenshot(path=os.path.join(OUT_DIR, 'portal.png'))
+    page.evaluate("() => { thisLevel = 0; levelChoosed(0) }")
+    frames(page)
+    recs = page.evaluate("window.__fit")
+    errs = []
+    recs += fit_win(page, 'win', 'win.png', errs)
+    recs += fit_win(page, 'winLast', 'win_last.png', errs)
+    rows = fit_rows(recs)
+    missing = [s for s in FIT_SITES if not any(r['where'] == s for r in rows)]
+    unknown = sorted({r['where'] for r in rows if r['where'] not in FIT_SITES})
+    bad = [r for r in rows if not r['ok']]
+    overlaps = fit_overlaps(recs)
+    out = {'overlaps': overlaps, 'rows': rows, 'nRows': len(rows), 'sites': {s: sum(r['where'] == s for r in rows) for s in FIT_SITES},
+           'missingSites': missing, 'unknownSites': unknown, 'notOk': len(bad), 'portalShotSrcId': portal_shot,
+           'minSize': min(r['size'] for r in rows), 'consoleErrors': errs,
+           'hudLines': 'drawLinesK draws one line glyph per allowed line, no text: no fit row'}
+    out['pass'] = bool(rows and not bad and not overlaps and not missing and not unknown and not errs and portal_shot is not None)
+    with open(os.path.join(OUT_DIR, 'fit.json'), 'w') as f:
+        json.dump(out, f, separators=(',', ':'))
+    info['fontFit'] = {'rows': len(rows), 'notOk': len(bad), 'overlaps': len(overlaps), 'missing': missing, 'unknown': unknown, 'pass': out['pass']}
+    if not out['pass']:
+        raise RuntimeError('font fit failed: %s' % (['%s:%s w=%s box=%s x=%s..%s %s' % (r['where'], r['text'], r['textWidth'], r['boxWidth'],
+                           r['x0'], r['x1'], [k for k, v in r['checks'].items() if not v]) for r in bad][:12] + overlaps[:6] + missing + unknown + errs,))
+
+
 SCENARIOS = {
     'start': sc_start,
     'level3_open': sc_level3,  # level 3 opened, no lines (was 'level3' before TASK-202)
@@ -3876,6 +4087,7 @@ SCENARIOS = {
     'telemetry_first30': sc_telemetry_first30,
     'menu_layout': sc_menu_layout,
     'map_editor': sc_map_editor,  # TASK-258
+    'font_fit': sc_font_fit,  # TASK-263
 }
 
 # Extra browser.new_page() options per scenario (the viewport stays the default/--viewport one).

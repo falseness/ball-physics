@@ -805,10 +805,15 @@ function portalBounds(P)
 }
 
 // Label anchor: centred above the bounding box, alphabetic baseline 18 px above its top
-function portalLabelPos(P)
+// TASK-263: the label centre is clamped so the (wider Finger Paint) 'portal A' stays 4 px inside the field's side edges
+const PORTAL_LABEL_FONT = 24
+function portalLabelPos(P, label = 'portal A')
 {
     const b = portalBounds(P)
-    return { x: (b[0] + b[2]) / 2, y: b[1] - 18 }
+    ctx.save(); ctx.font = PORTAL_LABEL_FONT + 'px ' + THEME.fontStack
+    const hw = ctx.measureText(label).width / 2 + 4
+    ctx.restore()
+    return { x: Math.min(Math.max((b[0] + b[2]) / 2, hw), GAME_W - hw), y: b[1] - 18 }
 }
 
 function drawPortal(P, st)
@@ -833,9 +838,9 @@ function drawPortal(P, st)
     ctx.lineTo(P.x + f.nx * (a1 - 2), P.y + f.ny * (a1 - 2)); ctx.stroke()
     arrowHead(ctx, P.x + f.nx * a1, P.y + f.ny * a1, P.angle, PORTAL_RING.arrowHead, st.color)
     // handwritten label above the bounding box
-    const lp = portalLabelPos(P)
+    const lp = portalLabelPos(P, st.label)
     ctx.shadowBlur = 8; ctx.fillStyle = st.color
-    ctx.font = '24px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+    ctx.font = PORTAL_LABEL_FONT + 'px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
     ctx.fillText(st.label, lp.x, lp.y)
     ctx.restore()
 }

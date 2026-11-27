@@ -99,7 +99,24 @@ function drawIcons()
     drawLinesK()
     menuIcon()
 }
-// Dashed circle + handwritten 'start' at the level's spawn point; only shown before the level runs
+// Dashed circle + handwritten 'start' at the level's spawn point; only shown before the level runs.
+// TASK-263: the label sits above the circle; below it when the top would leave the field or the box above crosses
+// a level line and the one below does not. Its centre is clamped so the (wider Finger Paint) word stays 4 px inside
+// the side edges. startLabelPos: {x, y (alphabetic baseline), box [x0, y0, x1, y1]}.
+const START_LABEL_FONT = 22
+function startLabelPos(x, y)
+{
+    ctx.save(); ctx.font = START_LABEL_FONT + 'px ' + THEME.fontStack
+    const w = ctx.measureText('start').width
+    ctx.restore()
+    const cx = Math.min(Math.max(x, w / 2 + 4), GAME_W - w / 2 - 4)
+    const at = by => ({ x: cx, y: by, box: [cx - w / 2, by - START_LABEL_FONT, cx + w / 2, by + 6] })
+    const above = at(y - ball.radius - 12), below = at(y + ball.radius + 12 + START_LABEL_FONT)
+    const crosses = p => curLevel().lines.some(l => convexOverlap(boxPoly(p.box), [[l.posX, l.posY], [l.posX2, l.posY2]]))
+    if (above.box[1] < 0 || (crosses(above) && !crosses(below) && below.box[3] <= GAME_H))
+        return below
+    return above
+}
 function drawStartMarker(x, y)
 {
     ctx.save()
@@ -108,8 +125,9 @@ function drawStartMarker(x, y)
     ctx.beginPath(); ctx.arc(x, y, ball.radius + 6, 0, Math.PI * 2); ctx.stroke()
     ctx.setLineDash([])
     ctx.globalAlpha = .9; ctx.fillStyle = THEME.soft
-    ctx.font = '22px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
-    ctx.fillText('start', x, y - ball.radius - 12)
+    ctx.font = START_LABEL_FONT + 'px ' + THEME.fontStack; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+    const p = startLabelPos(x, y)
+    ctx.fillText('start', p.x, p.y)
     ctx.restore()
 }
 function draw()
