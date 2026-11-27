@@ -1,7 +1,7 @@
 #!/bin/bash
 # Full physics/visual regression (ported from the TASK-213 tools). Usage:
 #   tests/regression/run_checks.sh <preview|full> <outdir>
-# preview (~3.5 min): a subset of every check. full (~17 min): all 74 shoot scenarios (shard0..3.txt; TASK-248: 79 before srcId 8, 11, 14, 27, 29 were removed), 24 sim
+# preview (~3.5 min): a subset of every check. full (~17 min): 75 shoot scenarios (shard0..3.txt; TASK-248: 79 before srcId 8, 11, 14, 27, 29 were removed; TASK-257: + menu_layout), 24 sim
 # scenarios, 12 portal fuzz runs, full invariants/rimtrap/embed. Everything is written under <outdir> (logs/*.log,
 # per-check JSON, shoot PNGs); <outdir>/regression.log is assembled at the end (tests/regression/assemble.py) and
 # ends with '# SUMMARY', 'failed rows: N [...]' and 'ALL PASS' when N = 0. Exit 0 = ALL PASS, 1 otherwise.
@@ -15,7 +15,7 @@ H="head=$(git rev-parse HEAD) dirty=$(git status --porcelain | grep -v '^?? arti
 echo "$H" > "$L/head.txt"
 T0=$(date +%s)
 if [ "$M" = preview ]; then FC="--cases 40"; SC=S1,W1; RP=--preview; IS="--scenes 50"; PC="--portal-cases 50"; TS="--runs 1 --fills 1"; SEEDS=1
-  SH0=level1,level16,map,speed_on; SH1=level32,telemetry_levels; SH2=telemetry_ui,progress_reload,telemetry_editor; SH3=l19_rim_backside,next_level_order,lines_passed_restore,lines_storage_blocked,telemetry_first30
+  SH0=level1,level16,map,speed_on; SH1=level32,telemetry_levels; SH2=telemetry_ui,progress_reload,telemetry_editor,menu_layout; SH3=l19_rim_backside,next_level_order,lines_passed_restore,lines_storage_blocked,telemetry_first30
 else FC=""; SC=S1,S2,S3,S4,S6,S7,S8,S9,S10,S11,S12,S13,S14,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11; RP=""; IS=""; PC=""; TS=""; SEEDS="1 2 3"
   SH0=$(cat "$TL/shard0.txt"); SH1=$(cat "$TL/shard1.txt"); SH2=$(cat "$TL/shard2.txt"); SH3=$(cat "$TL/shard3.txt"); fi
 # what this run checks, read by assemble.py

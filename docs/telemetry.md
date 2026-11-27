@@ -82,17 +82,17 @@ is opened from the level. Leaving an unwon attempt by opening the map, by 'next 
 | `ui:run:<ctx>` | the HUD play box starts or resumes the run | - | TASK-192 |
 | `ui:pause:<ctx>` | the HUD play box pauses the run | - | TASK-192 |
 | `ui:restart:<ctx>` | a restart button: HUD restart box, pause menu 'restart', completion window 'restart' (before the `level:` events) | - | TASK-192 |
-| `ui:menu_open:<ctx>` | the HUD menu icon opens the pause menu | - | TASK-192 |
+| `ui:menu_open:<ctx>` | the HUD menu icon opens the pause menu (buttons top to bottom: resume / restart / editor / Levels, TASK-255) | - | TASK-192 |
 | `ui:menu_close:<ctx>` | the pause menu closes by any of its buttons, right after that button's event | - | TASK-192 |
 | `ui:resume:<ctx>` | pause menu 'resume' | - | TASK-192 |
 | `ui:map_open:<ctx>` | pause menu or completion window 'Levels' opens the route map (TASK-255: the completion window has no `menu_close`; TASK-256: after a win it sends no `abandon`, the won attempt is already closed; a play-test's completion window sends no `ui:` event) | - | TASK-192 |
 | `ui:map_close:<ctx>` | the map closes: its menu icon (back to the pause menu) or a level starts from it | - | TASK-192 |
 | `ui:map_level:<ctx>` | a click / tap on a level slot on the map (selects it, or starts the selected one) | srcId of that level | TASK-192 |
 | `ui:preview_play:<ctx>` | the preview card's play button | srcId of that level | TASK-192 |
-| `ui:next_level:<ctx>` | completion window 'next level' | - | TASK-192 |
+| `ui:next_level:<ctx>` | completion window 'next level' (buttons top to bottom: next level / restart / editor / Levels; no 'next level' on the last level or in a play-test, TASK-255) | - | TASK-192 |
 | `ui:speed_on:<ctx>` | the HUD speed box switches to 3x | - | TASK-192 |
 | `ui:speed_off:<ctx>` | the HUD speed box switches back to 1x | - | TASK-192 |
-| `ui:editor_open:<ctx>` | the editor button (pause menu or completion window; not in play-tests) | - | TASK-192 |
+| `ui:editor_open:<ctx>` | the editor button, under 'restart' (pause menu or completion window; the small logo-frame editor button is gone, TASK-255; not in play-tests) | - | TASK-192 |
 | `ui:line_delete_bin:<ctx>` | the bin of a selected player line | - | TASK-192 |
 | `lines:<srcId>:place` | a player line is placed (second click / touch release) | the line's index in this attempt (1, 2, ...) | TASK-192 |
 | `lines:<srcId>:delete` | a player line is deleted with the bin (after `ui:line_delete_bin`) | - | TASK-192 |
@@ -148,7 +148,7 @@ sent outside the editor and outside play-tests (the map counts even when it was 
 events are sent for real levels only. Nothing is sampled, rate-limited or deduplicated; touch taps and drags go
 through the same handlers as mouse clicks (`handleClick`, `dragDrop`), so they send the same events.
 
-Order of a pause menu button: the button (`resume`, `restart`, `map_open`, `editor_open`), then `menu_close`, then
+Order of a pause menu button (menu order resume / restart / editor / Levels): the button (`resume`, `restart`, `editor_open`, `map_open`), then `menu_close`, then
 the level events it causes (`restart` / `Fail` / `Start`, `abandon`). A level started from the map:
 `map_level` or `preview_play`, `map_close`, then `Start` + `attempt`.
 
