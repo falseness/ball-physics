@@ -3821,7 +3821,9 @@ FIT_HOOK_JS = r"""() => {
     const skip = /^(menuLabel|annotText)$|fillText/
     P.fillText = function(t, x, y) {
         const onMap = typeof mapCanvas !== 'undefined' && mapCanvas && this.canvas === mapCanvas
-        if ((this === ctx || onMap) && window.__fitOn) {
+        // TASK-265: the logo title is drawn on the logo cache canvas (js/logo.js), blitted at logoCache.x/y
+        const onLogo = typeof logoCache !== 'undefined' && logoCache.canvas && this.canvas === logoCache.canvas
+        if ((this === ctx || onMap || onLogo) && window.__fitOn) {
             const names = (new Error().stack || '').split('\n').slice(1)
                 .map(l => (l.match(/at (?:Object\.|window\.)?([\w$.]+) \(/) || [])[1]).filter(n => n && !skip.test(n))
             const m = this.measureText(t), T = this.getTransform(), k = canvas.width / GAME_W
@@ -3829,11 +3831,12 @@ FIT_HOOK_JS = r"""() => {
             const lx = al == 'center' ? x - w / 2 : (al == 'right' || al == 'end') ? x - w : x
             const ix0 = Math.min(lx, x - m.actualBoundingBoxLeft), ix1 = Math.max(lx + w, x + m.actualBoundingBoxRight)
             const iy0 = y - m.actualBoundingBoxAscent, iy1 = y + m.actualBoundingBoxDescent
+            const ox = onLogo ? logoCache.x : 0, oy = onLogo ? logoCache.y : 0
             const pts = [[ix0, iy0], [ix1, iy0], [ix1, iy1], [ix0, iy1]].map(([u, v]) =>
-                [(T.a * u + T.c * v + T.e) / k, (T.b * u + T.d * v + T.f) / k])
+                [ox + (T.a * u + T.c * v + T.e) / k, oy + (T.b * u + T.d * v + T.f) / k])
             const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
             const r = {tag: window.__fitTag, fn: names[0] || '?', text: String(t), font: this.font, align: al,
-                textWidth: w * Math.hypot(T.a, T.b) / k, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys)}
+                textWidth: w * Math.hypot(T.a, T.b) / k, sizeScale: onLogo ? Math.hypot(T.a, T.b) / k : 1, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys)}
             const R4 = q => [q[0], q[1], q[0] + q[2], q[1] + q[3]]
             const cx = (r.x0 + r.x1) / 2
             if (r.fn == 'menuButton' && drawMap && r.text == 'editor') {
@@ -3859,7 +3862,7 @@ FIT_HOOK_JS = r"""() => {
                 r.box = R4(editIconRect())
             } else if (r.fn == 'editorDrawError') {
                 r.box = R4(editorErrorRect())
-            } else if (r.fn == 'menuButton' || r.fn == 'drawMenuLayout' || r.fn == 'drawLogo') {
+            } else if (r.fn == 'menuButton' || r.fn == 'drawMenuLayout' || r.fn == 'logoTitle') {
                 const L = menuLayout(drawMenu ? 'pause' : 'win'), b = L.buttons.find(b => b.id == r.text)
                 r.box = r.fn == 'menuButton' && b ? [b.rect[0], b.rect[1], b.rect[0] + b.rect[2], b.rect[1] + b.rect[3]]
                     : [L.panel[0], L.panel[1], L.panel[0] + L.panel[2], L.panel[1] + L.panel[3]]
@@ -3874,7 +3877,7 @@ FIT_HOOK_JS = r"""() => {
         return orig.apply(this, arguments)
     }
 }"""
-FIT_WHERE = {'menuButton': 'menu_button', 'drawLogo': 'logo_title', 'drawMenuLayout': 'menu_label', 'drawSpeedIcon': 'speed_box',
+FIT_WHERE = {'menuButton': 'menu_button', 'logoTitle': 'logo_title', 'drawMenuLayout': 'menu_label', 'drawSpeedIcon': 'speed_box',
              'guide': 'guide_hint', 'drawStartMarker': 'start_marker', 'drawPortal': 'portal_label', 'drawNewLine': 'newline_readout',
              'drawAngleCallout': 'angle_callout', 'drawTargetLeader': 'target_leader', 'drawDimension': 'dimension_label',
              'drawPlayerAngle': 'player_angle',
@@ -3893,7 +3896,8 @@ FIT_MAP_EDITOR_SITES = FIT_SITES[FIT_SITES.index('select_delete'):]  # TASK-264 
 
 
 def fit_capture(p, tag, n=2):
-    p.evaluate("t => { window.__fitTag = t; window.__fitOn = true }", tag)
+    # TASK-265: the logo cache was built before the capture: drop it so the title is drawn (and recorded) again
+    p.evaluate("t => { window.__fitTag = t; window.__fitOn = true; if (typeof logoCache !== 'undefined') logoCache.key = '' }", tag)
     frames(p, n)
     p.evaluate("() => { window.__fitOn = false }")
 
@@ -3913,6 +3917,7 @@ def fit_rows(recs):
         key = (where, r['tag']) if where in FIT_NUMERIC else (where, r['text'])
         m = re.match(r'(\d+(?:\.\d+)?)px (.*)$', r['font'])
         size, family = (float(m.group(1)), m.group(2)) if m else (0, r['font'])
+        size = round(size * r.get('sizeScale', 1), 2)  # TASK-265: logo title drawn scaled on the logo cache canvas
         bx0, by0, bx1, by1 = r['box']
         bw = bx1 - bx0
         margin = min(r['x0'] - bx0, bx1 - r['x1'], r['y0'] - by0, by1 - r['y1'])

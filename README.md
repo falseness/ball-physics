@@ -1,4 +1,16 @@
 # ball-physics
+
+## Font and logo
+
+All game text uses **Finger Paint** (`fonts/finger-paint-400.woff2`, one 400 weight,
+SIL Open Font License: `fonts/OFL-FingerPaint.txt`). The boot waits for it to load.
+
+The logo in the pause menu and the level-complete window is drawn in code by
+`drawLogo()` in `js/logo.js` (concept 129): a tilted 'Ball physics' title on a coral line,
+purple portal B high-left and orange portal A low-right drawn as tunnel holes, and a
+comet trail ending in the game ball, with faint dots into A. It is rendered once to an
+offscreen canvas and redrawn only when the logo box, the pixel ratio or the font changes.
+
 ## Recording freezes in your own browser (`?visualsPerf=1`)
 
 1. Open the game with `?visualsPerf=1` added to the address, e.g.
